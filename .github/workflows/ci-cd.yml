@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [cicddev]
 
-env:
-  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
-  BACKEND_IMAGE_NAME: gaia-backend
-  FRONTEND_IMAGE_NAME: gaia-frontend
-
 jobs:
   # ==================== BACKEND JOBS ====================
   backend-lint:
