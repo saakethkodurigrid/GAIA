@@ -114,10 +114,10 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
       
-      - name: Build backend image tags
-        id: tags
+      - name: Set up Docker tags
+        id: docker_tags
         run: |
-          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}:cicddev,${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}:latest,${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}:cicddev-${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "BACKEND_IMAGE=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}" >> $GITHUB_ENV
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -125,7 +125,10 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:cicddev
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:cicddev-${{ github.sha }}
       
       - name: Image digest
         run: |
@@ -226,10 +229,10 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
       
-      - name: Build frontend image tags
-        id: tags
+      - name: Set up Docker tags
+        id: docker_tags
         run: |
-          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:cicddev,${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:latest,${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:cicddev-${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "FRONTEND_IMAGE=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}" >> $GITHUB_ENV
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -237,7 +240,10 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:cicddev
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:cicddev-${{ github.sha }}
       
       - name: Image digest
         run: |
