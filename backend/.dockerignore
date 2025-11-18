@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Outputs and temp files
+services/code_executor/outputs/
+services/code_executor/demo_problems/comparison_outputs/
+*.tmp
+*.temp
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+

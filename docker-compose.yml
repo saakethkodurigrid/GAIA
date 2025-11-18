@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: gaia-postgres
+    environment:
+      POSTGRES_USER: gaia_user
+      POSTGRES_PASSWORD: gaia_password
+      POSTGRES_DB: gaia_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gaia_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gaia-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gaia-backend
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://gaia_user:gaia_password@postgres:5432/gaia_db
+      BACKEND_URL: http://localhost:5000
+      FRONTEND_URL: http://localhost:80
+      DEBUG: "True"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    networks:
+      - gaia-network
+    command: uvicorn app:app --host 0.0.0.0 --port 5000 --reload
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gaia-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - gaia-network
+
+volumes:
+  postgres_data:
+
+networks:
+  gaia-network:
+    driver: bridge
+
