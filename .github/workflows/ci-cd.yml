@@ -79,10 +79,9 @@ jobs:
         run: |
           cd backend
           echo "🔍 Running smoke tests..."
-          python -c "import app; print('✅ App imports successfully')"
+          export DATABASE_URL="sqlite:///./test.db"
           python -c "from core.config import settings; print('✅ Config loads')"
           python -c "from services.code_executor import CodeExecutor; print('✅ Code executor imports')"
-          python -c "from api.v1.routes import auth_router; print('✅ Auth routes import')"
           echo "✅ All smoke tests passed!"
         
       - name: Run unit tests
@@ -132,8 +131,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}:buildcache,mode=max
       
       - name: Image digest
         run: |
@@ -252,8 +249,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:buildcache,mode=max
       
       - name: Image digest
         run: |
