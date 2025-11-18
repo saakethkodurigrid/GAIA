@@ -128,8 +128,8 @@ jobs:
       - name: Image digest
         run: |
           echo "✅ Backend image pushed successfully"
-          echo "📦 Image: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}"
-          echo "🏷️  Tags: ${{ steps.meta.outputs.tags }}"
+          echo "📦 Image: ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-backend"
+          echo "🏷️  Tags: cicddev, latest, ${{ github.sha }}"
 
   # ==================== FRONTEND JOBS ====================
   frontend-lint:
@@ -238,8 +238,8 @@ jobs:
       - name: Image digest
         run: |
           echo "✅ Frontend image pushed successfully"
-          echo "📦 Image: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}"
-          echo "🏷️  Tags: ${{ steps.meta.outputs.tags }}"
+          echo "📦 Image: ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-frontend"
+          echo "🏷️  Tags: cicddev, latest, ${{ github.sha }}"
 
   # ==================== DEPLOYMENT SUMMARY ====================
   deployment-summary:
