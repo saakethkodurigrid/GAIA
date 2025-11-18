@@ -114,11 +114,6 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
       
-      - name: Set up Docker tags
-        id: docker_tags
-        run: |
-          echo "BACKEND_IMAGE=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}" >> $GITHUB_ENV
-      
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -126,9 +121,9 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ env.BACKEND_IMAGE }}:cicddev
-            ${{ env.BACKEND_IMAGE }}:latest
-            ${{ env.BACKEND_IMAGE }}:cicddev-${{ github.sha }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-backend:cicddev
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-backend:latest
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-backend:${{ github.sha }}
       
       - name: Image digest
         run: |
@@ -229,11 +224,6 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
       
-      - name: Set up Docker tags
-        id: docker_tags
-        run: |
-          echo "FRONTEND_IMAGE=${{ secrets.DOCKER_HUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}" >> $GITHUB_ENV
-      
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -241,9 +231,9 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:cicddev
-            ${{ env.FRONTEND_IMAGE }}:latest
-            ${{ env.FRONTEND_IMAGE }}:cicddev-${{ github.sha }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-frontend:cicddev
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-frontend:latest
+            ${{ secrets.DOCKER_HUB_USERNAME }}/gaia-frontend:${{ github.sha }}
       
       - name: Image digest
         run: |
