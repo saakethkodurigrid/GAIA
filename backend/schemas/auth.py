@@ -1,7 +1,7 @@
 """
 Authentication schemas for request and response validation.
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional
 from enum import Enum
 
@@ -34,6 +34,8 @@ class CandidateLoginRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     """Response schema for authentication."""
+    model_config = ConfigDict(extra='ignore')
+    
     success: bool
     message: str
     user_type: Optional[UserType] = None

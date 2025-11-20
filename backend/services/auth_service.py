@@ -2,6 +2,7 @@
 Authentication service with Google OAuth and business logic.
 Handles user authentication, authorization, and routing based on user type and status.
 """
+import logging
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
 from models.recruiter_admin import RecruiterAdmin
@@ -9,6 +10,8 @@ from models.candidate import Candidate
 from core.security import GoogleOAuth
 from core.config import settings
 from schemas.auth import AuthResponse, UserType, CandidateStatus, ErrorResponse
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -88,6 +91,29 @@ class AuthService:
             Candidate.email_id == email.lower()
         ).first()
     
+    def _get_user_type_from_role_id(self, role_id: int) -> UserType:
+        """
+        Map role_id to UserType enum.
+        
+        Args:
+            role_id: Role ID from database
+                - 0 = Candidate
+                - 1 = Recruiter
+                - 2 = Admin
+        
+        Returns:
+            UserType enum value
+        """
+        if role_id == 0:
+            return UserType.CANDIDATE
+        elif role_id == 1:
+            return UserType.RECRUITER
+        elif role_id == 2:
+            return UserType.ADMIN
+        else:
+            # Default to candidate for unknown role_id
+            return UserType.CANDIDATE
+    
     def authenticate_admin_recruiter(self, token: str) -> AuthResponse:
         """
         Authenticate admin/recruiter user.
@@ -126,13 +152,18 @@ class AuthService:
             # Domain matches but not in recruiter table - treat as candidate
             return self._handle_candidate_authentication(email, user_info.get('name'))
         
+        # Determine user_type based on role_id
+        user_type = self._get_user_type_from_role_id(recruiter.role_id)
+        
         # User is admin/recruiter
         return AuthResponse(
             success=True,
             message="Authentication successful",
-            user_type=UserType.ADMIN,
+            user_type=user_type,
             email=email,
-            name=user_info.get('name')
+            name=user_info.get('name'),
+            status=None,
+            candidate_id=None
         )
     
     def authenticate_candidate(self, token: str, candidate_id: str) -> AuthResponse:
@@ -177,6 +208,16 @@ class AuthService:
                 message="Email does not match candidate record"
             )
         
+        # Determine user_type based on role_id (should be 0 for candidates)
+        user_type = self._get_user_type_from_role_id(candidate.role_id)
+        
+        # Verify candidate has correct role_id
+        if candidate.role_id != 0:
+            return AuthResponse(
+                success=False,
+                message=f"Invalid role_id for candidate: {candidate.role_id}. Expected 0."
+            )
+        
         # Handle status-based routing
         status = candidate.status.lower()
         
@@ -205,7 +246,7 @@ class AuthService:
         return AuthResponse(
             success=True,
             message="Authentication successful",
-            user_type=UserType.CANDIDATE,
+            user_type=user_type,
             email=email,
             name=user_info.get('name'),
             status=status_enum,
@@ -232,6 +273,16 @@ class AuthService:
                 message="Access denied. User not found in database."
             )
         
+        # Determine user_type based on role_id (should be 0 for candidates)
+        user_type = self._get_user_type_from_role_id(candidate.role_id)
+        
+        # Verify candidate has correct role_id
+        if candidate.role_id != 0:
+            return AuthResponse(
+                success=False,
+                message=f"Invalid role_id for candidate: {candidate.role_id}. Expected 0."
+            )
+        
         # Handle status-based routing
         status = candidate.status.lower()
         
@@ -260,7 +311,7 @@ class AuthService:
         return AuthResponse(
             success=True,
             message="Authentication successful",
-            user_type=UserType.CANDIDATE,
+            user_type=user_type,
             email=email,
             name=name,
             status=status_enum,
@@ -278,40 +329,78 @@ class AuthService:
         Returns:
             AuthResponse with user type, status, and candidate_id
         """
+        logger.info("Starting authenticate_user")
+        
         # Verify Google token first
         user_info = self.google_oauth.verify_google_token(token)
         if not user_info:
+            logger.warning("Google token verification failed")
             return AuthResponse(
                 success=False,
                 message="Invalid Google token"
             )
         
         email = user_info.get('email', '').lower()
+        logger.info(f"Token verified, user email: {email}")
         
         # If candidate_id is provided, authenticate as candidate
         if candidate_id:
             return self.authenticate_candidate(token, candidate_id)
         
         # Check if domain matches company domain
+        logger.info(f"Checking domain for email: {email}")
+        
         if self._is_company_domain(email):
+            logger.info(f"Email {email} matches company domain")
             # Check if user is in recruiter table
-            recruiter = self._get_recruiter_admin(email)
+            try:
+                recruiter = self._get_recruiter_admin(email)
+                logger.info(f"Recruiter query result: {recruiter is not None}")
+                if recruiter:
+                    logger.info(f"Recruiter object: email_id={recruiter.email_id}, role_id={recruiter.role_id}, name={recruiter.name}")
+            except Exception as e:
+                logger.error(f"Error querying recruiter: {str(e)}", exc_info=True)
+                recruiter = None
+            
             if recruiter:
+                # Log recruiter details for debugging
+                logger.info(f"Recruiter found: email={email}, role_id={recruiter.role_id}, name={recruiter.name}")
+                
+                # Determine user_type based on role_id (1 = Recruiter, 2 = Admin)
+                user_type = self._get_user_type_from_role_id(recruiter.role_id)
+                logger.info(f"User type determined: {user_type.value} (from role_id={recruiter.role_id})")
+                
                 # Admin/Recruiter login
-                return AuthResponse(
+                response = AuthResponse(
                     success=True,
                     message="Authentication successful",
-                    user_type=UserType.ADMIN,
+                    user_type=user_type,
                     email=email,
-                    name=user_info.get('name')
+                    name=user_info.get('name'),
+                    status=None,
+                    candidate_id=None
                 )
+                logger.info(f"Returning successful auth response: user_type={response.user_type.value if response.user_type else None}")
+                return response
             else:
+                logger.info(f"Recruiter not found for {email}, treating as candidate")
                 # Domain matches but not in recruiter table - treat as candidate
                 return self._handle_candidate_authentication(email, user_info.get('name'))
         else:
+            logger.info(f"Email {email} does NOT match company domain")
             # Not company domain - check if candidate exists
             candidate = self._get_candidate_by_email(email)
             if candidate:
+                # Determine user_type based on role_id (should be 0 for candidates)
+                user_type = self._get_user_type_from_role_id(candidate.role_id)
+                
+                # Verify candidate has correct role_id
+                if candidate.role_id != 0:
+                    return AuthResponse(
+                        success=False,
+                        message=f"Invalid role_id for candidate: {candidate.role_id}. Expected 0."
+                    )
+                
                 # Candidate exists - handle status-based routing
                 status = candidate.status.lower()
                 
@@ -339,7 +428,7 @@ class AuthService:
                 return AuthResponse(
                     success=True,
                     message="Authentication successful",
-                    user_type=UserType.CANDIDATE,
+                    user_type=user_type,
                     email=email,
                     name=user_info.get('name'),
                     status=status_enum,

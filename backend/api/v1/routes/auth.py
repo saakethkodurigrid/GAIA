@@ -46,47 +46,50 @@ async def google_callback(
     code: Optional[str] = Query(None, description="Authorization code from Google OAuth"),
     error: Optional[str] = Query(None, description="Error from Google OAuth"),
     state: Optional[str] = Query(None, description="State parameter for CSRF protection"),
+    return_json: Optional[bool] = Query(False, description="Return JSON instead of redirecting (for testing)"),
     db: Session = Depends(get_db)
 ):
     """
     Google OAuth callback endpoint.
     Exchanges authorization code for token and authenticates user.
-    Then redirects to frontend with auth result.
+    Then redirects to backend callback endpoint with auth result.
     
     Args:
         code: Authorization code from Google OAuth (required if no error)
         error: Error message from Google OAuth (if authentication failed)
         state: State parameter for CSRF protection
+        return_json: Return JSON instead of redirecting (for testing)
         db: Database session
         
     Returns:
-        RedirectResponse to frontend callback page with auth data
+        RedirectResponse to backend callback page with auth data, or JSON if return_json=True
     """
-    # Get frontend URL from settings
-    frontend_url = settings.FRONTEND_URL
+    # Get backend URL from settings
+    backend_url = settings.BACKEND_URL
     
     # Remove trailing slash if present
-    if frontend_url and frontend_url.endswith('/'):
-        frontend_url = frontend_url.rstrip('/')
+    if backend_url and backend_url.endswith('/'):
+        backend_url = backend_url.rstrip('/')
     
-    # Validate FRONTEND_URL is set
-    if not frontend_url or frontend_url.strip() == '':
+    # Validate BACKEND_URL is set
+    if not backend_url or backend_url.strip() == '':
         import logging
         logger = logging.getLogger(__name__)
-        logger.error("FRONTEND_URL is not set! Cannot redirect to frontend.")
+        logger.error("BACKEND_URL is not set! Cannot redirect to backend.")
         # Return error as JSON since we can't redirect
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Configuration error: FRONTEND_URL is not set. Please configure FRONTEND_URL environment variable."
+            detail="Configuration error: BACKEND_URL is not set. Please configure BACKEND_URL environment variable."
         )
     
-    callback_url = f"{frontend_url}/auth/callback"
+    callback_url = f"{backend_url}/auth/callback"
     
     # Debug logging
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"OAuth callback received - code: {code is not None}, error: {error}, state: {state}")
-    logger.info(f"Frontend URL: {frontend_url}, Callback URL: {callback_url}")
+    logger.info(f"OAuth callback received - code: {code is not None}, error: {error}, state: {state}, return_json: {return_json}")
+    logger.info(f"BACKEND_URL from settings: '{settings.BACKEND_URL}'")
+    logger.info(f"Backend URL (processed): '{backend_url}', Callback URL: '{callback_url}'")
     
     # Handle OAuth errors from Google
     if error:
@@ -131,6 +134,15 @@ async def google_callback(
     auth_service = AuthService(db)
     response = auth_service.authenticate_user(token=id_token_str)
     
+    # Log authentication result
+    logger.info(f"Authentication result: success={response.success}, user_type={response.user_type.value if response.user_type else None}, message={response.message}")
+    logger.info(f"Response details: email={response.email}, name={response.name}, status={response.status.value if response.status else None}, candidate_id={response.candidate_id}")
+    
+    # If return_json is True, return JSON response instead of redirecting (for testing)
+    if return_json:
+        logger.info("Returning JSON response instead of redirecting (return_json=true)")
+        return response
+    
     if not response.success:
         # Special handling for ongoing status (multiple login)
         if response.status == CandidateStatus.ONGOING:
@@ -166,7 +178,7 @@ async def google_callback(
     auth_json = json.dumps(auth_data)
     auth_encoded = base64.urlsafe_b64encode(auth_json.encode()).decode()
     
-    # Redirect to frontend with auth data
+    # Redirect to backend with auth data
     redirect_params = urlencode({
         'auth': auth_encoded,
         'state': state or ''
@@ -175,20 +187,20 @@ async def google_callback(
     redirect_url = f"{callback_url}?{redirect_params}"
     
     # Debug logging
-    logger.info(f"Redirecting to frontend: {redirect_url}")
-    logger.info(f"FRONTEND_URL from settings: {settings.FRONTEND_URL}")
+    logger.info(f"Redirecting to backend: {redirect_url}")
+    logger.info(f"BACKEND_URL from settings: {settings.BACKEND_URL}")
     logger.info(f"Auth data: {auth_data}")
     
     # Ensure redirect URL is valid
     if not redirect_url.startswith('http://') and not redirect_url.startswith('https://'):
         logger.error(f"Invalid redirect URL (not absolute): {redirect_url}")
-        logger.error(f"FRONTEND_URL value: {settings.FRONTEND_URL}")
-        # If FRONTEND_URL is not set correctly, we can't redirect, so return error
+        logger.error(f"BACKEND_URL value: {settings.BACKEND_URL}")
+        # If BACKEND_URL is not set correctly, we can't redirect, so return error
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
-                "error": "Configuration error: Invalid redirect URL. FRONTEND_URL may not be set correctly.",
-                "frontend_url": settings.FRONTEND_URL,
+                "error": "Configuration error: Invalid redirect URL. BACKEND_URL may not be set correctly.",
+                "backend_url": settings.BACKEND_URL,
                 "redirect_url": redirect_url,
                 "auth_data": auth_data  # Include auth data in error for debugging
             }
@@ -207,39 +219,6 @@ async def google_callback(
     
     # IMPORTANT: Return RedirectResponse, not the auth_data dict
     return redirect_response
-
-
-@router.post("/admin/login", response_model=AuthResponse)
-async def admin_login(
-    request: GoogleTokenRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Admin/Recruiter login endpoint.
-    
-    Flow:
-    1. Verify Google token
-    2. Check if email domain is company domain (@griddynamics.com)
-    3. Check if user exists in RECRUITER_ADMIN table
-    4. Redirect to admin dashboard
-    
-    Args:
-        request: Google OAuth token request
-        db: Database session
-        
-    Returns:
-        AuthResponse with redirect URL or error
-    """
-    auth_service = AuthService(db)
-    response = auth_service.authenticate_admin_recruiter(request.token)
-    
-    if not response.success:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=response.message
-        )
-    
-    return response
 
 
 @router.post("/candidate/login", response_model=AuthResponse)

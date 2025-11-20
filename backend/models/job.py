@@ -13,7 +13,7 @@ class Job(Base):
     
     job_id = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
     job_description = Column(Text, nullable=False)
-    job_role = Column(String(255), nullable=False)
+    job_role = Column(Text, nullable=False)  # Changed from String(255) to Text for unlimited length
     recruiter_email_id = Column(
         String(255),
         ForeignKey('recruiter_admin.email_id'),

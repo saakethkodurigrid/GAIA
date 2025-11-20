@@ -43,3 +43,5 @@ class RecruiterAdminCandidate(Base):
     job = relationship('Job', back_populates='candidate_assignments')
 
 
+
+
