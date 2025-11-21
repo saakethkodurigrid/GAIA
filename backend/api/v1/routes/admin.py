@@ -3,7 +3,7 @@ Admin API routes for managing recruiters and admins.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_admin
@@ -15,10 +15,14 @@ from schemas.admin import (
     AddJobRequest,
     AddJobResponse,
     ListJobsResponse,
-    ListInterviewsResponse
+    ListInterviewsResponse,
+    AssignQuestionRequest,
+    AssignQuestionResponse,
+    AssignedQuestionResponse
 )
 from services.job_service import JobService
 from services.interview_service import InterviewService
+from services.question_assignment_service import QuestionAssignmentService
 from core.dependencies import get_current_recruiter_admin
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -268,4 +272,157 @@ async def list_today_interviews(
         )
     
     return response
+
+
+@router.post("/assign-system-design-question/{candidate_id}", response_model=AssignQuestionResponse)
+async def assign_system_design_question(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: AssignQuestionRequest = ...,
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Assign a system design question to a candidate.
+    
+    If question_uuid is provided, assigns that specific question.
+    If question_uuid is not provided, auto-selects question based on candidate's job role.
+    
+    Only recruiters and admins can assign questions.
+    
+    Args:
+        candidate_id: Candidate UUID
+        request: AssignQuestionRequest with optional question_uuid
+        current_user: Current recruiter/admin user (verified by dependency)
+        db: Database session
+        
+    Returns:
+        AssignQuestionResponse with success status and assigned question UUID
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or assignment fails
+            - 401: If authentication fails
+            - 403: If user is not a recruiter or admin
+            - 404: If candidate not found
+    """
+    assignment_service = QuestionAssignmentService(db)
+    result = assignment_service.assign_question_to_candidate(
+        candidate_id=candidate_id,
+        question_uuid=request.question_uuid
+    )
+    
+    if not result["success"]:
+        if "not found" in result["message"].lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["message"]
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+    
+    return AssignQuestionResponse(
+        success=True,
+        message=result["message"],
+        question_uuid=result.get("question_uuid")
+    )
+
+
+@router.get("/candidates/{candidate_id}/assigned-question", response_model=AssignedQuestionResponse)
+async def get_assigned_question(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the assigned system design question for a candidate.
+    
+    Only recruiters and admins can view assigned questions.
+    
+    Args:
+        candidate_id: Candidate UUID
+        current_user: Current recruiter/admin user (verified by dependency)
+        db: Database session
+        
+    Returns:
+        AssignedQuestionResponse with question details
+        
+    Raises:
+        HTTPException: 
+            - 404: If candidate not found or no question assigned
+            - 401: If authentication fails
+            - 403: If user is not a recruiter or admin
+    """
+    assignment_service = QuestionAssignmentService(db)
+    question_details = assignment_service.get_assigned_question_details(candidate_id)
+    
+    if not question_details:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No question assigned to this candidate or candidate not found"
+        )
+    
+    return AssignedQuestionResponse(**question_details)
+
+
+@router.put("/assign-system-design-question/{candidate_id}", response_model=AssignQuestionResponse)
+async def reassign_system_design_question(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: AssignQuestionRequest = ...,
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Reassign a system design question to a candidate.
+    
+    Only allowed if candidate has not completed the test (score is NULL).
+    question_uuid is required for reassignment.
+    
+    Only recruiters and admins can reassign questions.
+    
+    Args:
+        candidate_id: Candidate UUID
+        request: AssignQuestionRequest with required question_uuid
+        current_user: Current recruiter/admin user (verified by dependency)
+        db: Database session
+        
+    Returns:
+        AssignQuestionResponse with success status and new question UUID
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails, test already completed, or question_uuid not provided
+            - 401: If authentication fails
+            - 403: If user is not a recruiter or admin
+            - 404: If candidate or question not found
+    """
+    if not request.question_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="question_uuid is required for reassignment"
+        )
+    
+    assignment_service = QuestionAssignmentService(db)
+    result = assignment_service.assign_question_to_candidate(
+        candidate_id=candidate_id,
+        question_uuid=request.question_uuid
+    )
+    
+    if not result["success"]:
+        if "not found" in result["message"].lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["message"]
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+    
+    return AssignQuestionResponse(
+        success=True,
+        message=result["message"],
+        question_uuid=result.get("question_uuid")
+    )
 

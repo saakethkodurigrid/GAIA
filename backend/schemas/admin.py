@@ -2,7 +2,7 @@
 Admin management schemas for request and response validation.
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 
 class AddRecruiterAdminRequest(BaseModel):
@@ -78,4 +78,28 @@ class ListInterviewsResponse(BaseModel):
     message: str
     count: int
     interviews: List[InterviewResponse] = []
+
+
+class AssignQuestionRequest(BaseModel):
+    """Request schema for assigning system design question."""
+    question_uuid: Optional[str] = Field(None, description="Question UUID. If not provided, auto-selects based on job role.")
+
+
+class AssignedQuestionResponse(BaseModel):
+    """Response schema for assigned question details."""
+    candidate_id: str
+    question_uuid: str
+    question: str
+    evaluation_criteria: str
+    tags: Optional[Dict[str, Any]] = None
+    score: Optional[int] = None
+    diagram: Optional[str] = None
+    test_completed: bool
+
+
+class AssignQuestionResponse(BaseModel):
+    """Response schema for question assignment."""
+    success: bool
+    message: str
+    question_uuid: Optional[str] = None
 

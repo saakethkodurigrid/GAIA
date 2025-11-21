@@ -4,8 +4,11 @@ Candidate API routes for interview-related operations.
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from core.database import get_db
+from core.dependencies import get_current_candidate
+from models.candidate import Candidate
 from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
+from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -75,6 +78,46 @@ async def save_mcq_answers(
     
     # Return response even if some failed, but raise exception if all failed
     if response.failed_count == len(request.answers):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
+
+
+@router.post("/schedule-test", response_model=ScheduleTestResponse)
+async def schedule_test(
+    request: ScheduleTestRequest,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Schedule a test for the authenticated candidate.
+    
+    This endpoint:
+    1. Saves the scheduled date and time for the candidate
+    2. Updates the candidate's status to 'scheduled'
+    3. Automatically assigns a system design question to the candidate
+    
+    Args:
+        request: ScheduleTestRequest with scheduled_date (datetime)
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        ScheduleTestResponse with success status and scheduled_date
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails, candidate not found, or invalid status
+            - 401: If authentication fails
+            - 403: If user is not a candidate
+    """
+    interview_service = InterviewService(db)
+    response = interview_service.save_test_schedule(current_candidate.candidate_id, request)
+    
+    if not response.success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=response.message

@@ -221,6 +221,24 @@ class AuthService:
         # Handle status-based routing
         status = candidate.status.lower()
         
+        # Auto-assign system design question if status is 'scheduled' and question not assigned
+        if status == 'scheduled':
+            try:
+                from services.question_assignment_service import QuestionAssignmentService
+                assignment_service = QuestionAssignmentService(self.db)
+                
+                # Check if question already assigned
+                if not assignment_service.get_assigned_question(candidate_id):
+                    # Auto-assign question based on job role
+                    assignment_result = assignment_service.assign_question_to_candidate(candidate_id)
+                    if assignment_result.get("success"):
+                        logger.info(f"Auto-assigned system design question to candidate {candidate_id}: {assignment_result.get('question_uuid')}")
+                    else:
+                        logger.warning(f"Failed to auto-assign question to candidate {candidate_id}: {assignment_result.get('message')}")
+            except Exception as e:
+                # Don't fail authentication if assignment fails
+                logger.error(f"Error auto-assigning question to candidate {candidate_id}: {str(e)}")
+        
         # Check for 'ongoing' status - multiple login error
         if status == 'ongoing':
             return AuthResponse(

@@ -14,7 +14,7 @@ class SystemDesignQuestionBank(Base):
     uuid = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
     question = Column(Text, nullable=False)
     evaluation_criteria = Column(Text, nullable=False)
-    tag = Column(JSONB, nullable=True)
+    tags = Column(JSONB, nullable=True)
 
 
 

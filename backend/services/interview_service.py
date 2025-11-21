@@ -11,6 +11,7 @@ from models.job import Job
 from models.interview_mcq import InterviewMCQ
 from schemas.admin import ListInterviewsResponse, InterviewResponse
 from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
+from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 
 
 class InterviewService:
@@ -362,5 +363,80 @@ class InterviewService:
                 saved_count=saved_count,
                 failed_count=len(request.answers) - saved_count,
                 failed_questions=[item.question_uuid for item in request.answers[saved_count:]]
+            )
+    
+    def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+        """
+        Save test schedule for a candidate and assign system design question.
+        
+        This method:
+        1. Updates the candidate's scheduled_date and status to 'scheduled'
+        2. Calls QuestionAssignmentService to assign a system design question
+        
+        Args:
+            candidate_id: UUID of the candidate
+            request: ScheduleTestRequest with scheduled_date
+            
+        Returns:
+            ScheduleTestResponse with success status and scheduled_date
+        """
+        try:
+            # Verify candidate exists
+            candidate = self.db.query(Candidate).filter(
+                Candidate.candidate_id == candidate_id
+            ).first()
+            
+            if not candidate:
+                return ScheduleTestResponse(
+                    success=False,
+                    message=f"Candidate with ID {candidate_id} not found",
+                    scheduled_date=None
+                )
+            
+            # Validate that candidate is in 'registered' status
+            if candidate.status not in ['registered', 'scheduled']:
+                return ScheduleTestResponse(
+                    success=False,
+                    message=f"Cannot schedule test. Candidate status is '{candidate.status}'. Only 'registered' or 'scheduled' candidates can schedule tests.",
+                    scheduled_date=None
+                )
+            
+            # Update candidate's scheduled_date and status
+            candidate.scheduled_date = request.scheduled_date
+            candidate.status = 'scheduled'
+            
+            # Commit the schedule update first
+            self.db.commit()
+            
+            # Assign system design question to candidate
+            from services.question_assignment_service import QuestionAssignmentService
+            assignment_service = QuestionAssignmentService(self.db)
+            assignment_result = assignment_service.assign_question_to_candidate(
+                candidate_id=candidate_id,
+                question_uuid=None  # Auto-select based on job role
+            )
+            
+            # Check if question assignment was successful
+            if not assignment_result.get("success"):
+                # Schedule was saved but question assignment failed
+                return ScheduleTestResponse(
+                    success=True,
+                    message=f"Test scheduled successfully for {request.scheduled_date.isoformat()}, but failed to assign system design question: {assignment_result.get('message', 'Unknown error')}",
+                    scheduled_date=request.scheduled_date.isoformat()
+                )
+            
+            return ScheduleTestResponse(
+                success=True,
+                message=f"Test scheduled successfully for {request.scheduled_date.isoformat()}",
+                scheduled_date=request.scheduled_date.isoformat()
+            )
+            
+        except Exception as e:
+            # Rollback on error
+            self.db.rollback()
+            return ScheduleTestResponse(
+                success=False,
+                message=f"Failed to save test schedule. An unexpected error occurred: {str(e)}",
+                scheduled_date=None
             )
 
