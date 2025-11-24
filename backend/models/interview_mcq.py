@@ -15,9 +15,10 @@ class InterviewMCQ(Base):
     uuid = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
     candidate_id = Column(String(36), ForeignKey('candidate.candidate_id'), nullable=False, index=True)
     question = Column(Text, nullable=False)
-    correct_answer = Column(Text, nullable=False)
-    candidate_answer = Column(Text, nullable=True)
+    correct_answer = Column(Integer, nullable=False)  # Stores correct option number (1, 2, 3, or 4)
+    candidate_answer = Column(Integer, nullable=True)  # Stores candidate's selected option number (1, 2, 3, or 4)
     score = Column(Integer, nullable=True)
+    options = Column(JSONB, nullable=True)  # List of answer options [option1, option2, option3, option4]
     tags = Column(JSONB, nullable=True)
     difficulty = Column(String(50), nullable=True)
     

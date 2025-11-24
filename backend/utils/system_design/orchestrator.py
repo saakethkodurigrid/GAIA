@@ -1,11 +1,11 @@
 """
 Conversation Orchestrator - determines when and how the AI should respond
 """
-import os
 import httpx
 import time
 from typing import Dict, Any, List, Optional, Tuple
 import json
+from core.config import settings
 from utils.system_design.models import Session, ChatMessage
 from utils.system_design.canvas_parser import CanvasParser
 from utils.system_design.guardrails import guardrails
@@ -15,7 +15,7 @@ class ConversationOrchestrator:
     """Manages conversation flow and AI response triggers"""
     
     def __init__(self):
-        self.api_key = os.getenv("GROQ_API_KEY", "")
+        self.api_key = settings.GROQ_API_KEY
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
         self.model = "llama-3.1-8b-instant"  # Groq model (faster and more reliable)
         self.parser = CanvasParser()

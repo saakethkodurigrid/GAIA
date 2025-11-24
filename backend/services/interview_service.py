@@ -10,7 +10,7 @@ from models.recruiter_admin_candidate import RecruiterAdminCandidate
 from models.job import Job
 from models.interview_mcq import InterviewMCQ
 from schemas.admin import ListInterviewsResponse, InterviewResponse
-from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
+from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse, GenerateMCQRequest
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 
 
@@ -261,16 +261,14 @@ class InterviewService:
             # Convert to response format
             questions_list = []
             for mcq in mcq_records:
-                # Extract options from tags if available, otherwise empty list
-                # Assuming options might be stored in tags as a JSON array
+                # Extract options from dedicated options column
                 options = []
-                if mcq.tags and isinstance(mcq.tags, dict):
-                    # Check if options are in tags
+                if mcq.options and isinstance(mcq.options, list):
+                    options = mcq.options
+                # Fallback: check tags for backward compatibility (if old data exists)
+                elif mcq.tags and isinstance(mcq.tags, dict):
                     if 'options' in mcq.tags and isinstance(mcq.tags['options'], list):
                         options = mcq.tags['options']
-                    elif isinstance(mcq.tags, list):
-                        # If tags is a list, it might be the options
-                        options = mcq.tags
                 
                 questions_list.append(
                     MCQQuestionResponse(
@@ -297,18 +295,26 @@ class InterviewService:
     
     def save_mcq_answers(self, candidate_id: str, request: SaveMCQAnswerRequest) -> SaveMCQAnswerResponse:
         """
-        Save or update candidate's answers for multiple MCQ questions.
+        Save or update candidate's answers for multiple MCQ questions and calculate scores.
+        
+        For each answer:
+        - Compares candidate_answer with correct_answer
+        - Sets score = 1 if correct, 0 if incorrect
+        - Updates both candidate_answer and score in database
         
         Args:
             candidate_id: UUID of the candidate
             request: SaveMCQAnswerRequest with list of question-answer pairs
             
         Returns:
-            SaveMCQAnswerResponse with success status and counts
+            SaveMCQAnswerResponse with success status, counts, and score information
         """
         saved_count = 0
         failed_count = 0
         failed_questions = []
+        total_score = 0
+        correct_answers = 0
+        incorrect_answers = 0
         
         try:
             # Process each answer in the list
@@ -325,8 +331,37 @@ class InterviewService:
                         failed_questions.append(answer_item.question_uuid)
                         continue
                     
-                    # Update the candidate answer
-                    mcq.candidate_answer = answer_item.candidate_answer
+                    # Find which option number the candidate selected
+                    # Candidate sends answer text, we need to match it to an option and get its index
+                    candidate_answer_text = answer_item.candidate_answer.strip() if answer_item.candidate_answer else ""
+                    candidate_option_number = None
+                    
+                    if mcq.options and isinstance(mcq.options, list):
+                        # Match candidate's answer text to one of the options (case-insensitive)
+                        for i, option_text in enumerate(mcq.options, 1):
+                            if option_text and option_text.strip().lower() == candidate_answer_text.lower():
+                                candidate_option_number = i
+                                break
+                    
+                    # If no match found, mark as failed
+                    if candidate_option_number is None:
+                        failed_count += 1
+                        failed_questions.append(answer_item.question_uuid)
+                        continue
+                    
+                    # Store the option number (not the text)
+                    mcq.candidate_answer = candidate_option_number
+                    
+                    # Calculate score: 1 if correct, 0 if incorrect
+                    # Compare option numbers
+                    if candidate_option_number == mcq.correct_answer:
+                        mcq.score = 1
+                        total_score += 1
+                        correct_answers += 1
+                    else:
+                        mcq.score = 0
+                        incorrect_answers += 1
+                    
                     saved_count += 1
                     
                 except Exception as e:
@@ -340,18 +375,22 @@ class InterviewService:
             
             # Build response message
             if failed_count == 0:
-                message = f"Successfully saved {saved_count} answer(s)"
+                message = f"Successfully saved {saved_count} answer(s). Score: {total_score}/{saved_count} ({correct_answers} correct, {incorrect_answers} incorrect)"
             elif saved_count == 0:
                 message = f"Failed to save all {failed_count} answer(s)"
             else:
-                message = f"Saved {saved_count} answer(s), {failed_count} failed"
+                message = f"Saved {saved_count} answer(s), {failed_count} failed. Score: {total_score}/{saved_count} ({correct_answers} correct, {incorrect_answers} incorrect)"
             
             return SaveMCQAnswerResponse(
                 success=failed_count == 0,
                 message=message,
                 saved_count=saved_count,
                 failed_count=failed_count,
-                failed_questions=failed_questions
+                failed_questions=failed_questions,
+                total_score=total_score,
+                total_questions=saved_count,
+                correct_answers=correct_answers,
+                incorrect_answers=incorrect_answers
             )
             
         except Exception as e:
@@ -362,16 +401,21 @@ class InterviewService:
                 message=f"Failed to save candidate answers. An unexpected error occurred: {str(e)}",
                 saved_count=saved_count,
                 failed_count=len(request.answers) - saved_count,
-                failed_questions=[item.question_uuid for item in request.answers[saved_count:]]
+                failed_questions=[item.question_uuid for item in request.answers[saved_count:]],
+                total_score=total_score,
+                total_questions=saved_count,
+                correct_answers=correct_answers,
+                incorrect_answers=incorrect_answers
             )
     
     def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
         """
-        Save test schedule for a candidate and assign system design question.
+        Save test schedule for a candidate and assign system design question and generate MCQ questions.
         
         This method:
         1. Updates the candidate's scheduled_date and status to 'scheduled'
-        2. Calls QuestionAssignmentService to assign a system design question
+        2. Calls QuestionAssignmentService to assign a system design question (parallel)
+        3. Generates MCQ questions using RAG (parallel)
         
         Args:
             candidate_id: UUID of the candidate
@@ -408,26 +452,78 @@ class InterviewService:
             # Commit the schedule update first
             self.db.commit()
             
-            # Assign system design question to candidate
-            from services.question_assignment_service import QuestionAssignmentService
-            assignment_service = QuestionAssignmentService(self.db)
-            assignment_result = assignment_service.assign_question_to_candidate(
-                candidate_id=candidate_id,
-                question_uuid=None  # Auto-select based on job role
-            )
+            # Get job information for MCQ generation
+            assignment = self.db.query(RecruiterAdminCandidate).filter(
+                RecruiterAdminCandidate.candidate_id == candidate_id
+            ).first()
             
-            # Check if question assignment was successful
-            if not assignment_result.get("success"):
-                # Schedule was saved but question assignment failed
-                return ScheduleTestResponse(
-                    success=True,
-                    message=f"Test scheduled successfully for {request.scheduled_date.isoformat()}, but failed to assign system design question: {assignment_result.get('message', 'Unknown error')}",
-                    scheduled_date=request.scheduled_date.isoformat()
+            # Parallel tasks: System Design Question Assignment and MCQ Generation
+            system_design_result = None
+            mcq_result = None
+            error_messages = []
+            
+            # Task 1: Assign system design question to candidate
+            try:
+                from services.question_assignment_service import QuestionAssignmentService
+                assignment_service = QuestionAssignmentService(self.db)
+                system_design_result = assignment_service.assign_question_to_candidate(
+                    candidate_id=candidate_id,
+                    question_uuid=None  # Auto-select based on job role
                 )
+                if not system_design_result.get("success"):
+                    error_messages.append(f"System design question assignment failed: {system_design_result.get('message', 'Unknown error')}")
+            except Exception as e:
+                error_messages.append(f"System design question assignment error: {str(e)}")
+            
+            # Task 2: Generate and save MCQ questions (if resume and job description are available)
+            if candidate.resume and assignment and assignment.job:
+                try:
+                    from services.mcq_generation_service import MCQGenerationService
+                    mcq_service = MCQGenerationService(self.db)
+                    
+                    # Create request for MCQ generation
+                    mcq_request = GenerateMCQRequest(
+                        resume=candidate.resume,
+                        job_description=assignment.job.job_description,
+                        grade="T2"  # Default to T2, can be made configurable later
+                    )
+                    
+                    # Generate questions
+                    generation_result = mcq_service.generate_questions(mcq_request)
+                    questions = generation_result.get("questions", [])
+                    
+                    if questions:
+                        # Save generated questions to database
+                        save_result = mcq_service.save_generated_questions(
+                            candidate_id=candidate_id,
+                            questions=questions
+                        )
+                        if save_result.get("success"):
+                            mcq_result = {
+                                "success": True,
+                                "message": f"Generated and saved {save_result.get('saved_count', 0)} MCQ questions"
+                            }
+                        else:
+                            error_messages.append(f"MCQ generation succeeded but saving failed: {save_result.get('message', 'Unknown error')}")
+                    else:
+                        error_messages.append("MCQ generation returned no questions")
+                        
+                except Exception as e:
+                    error_messages.append(f"MCQ generation error: {str(e)}")
+            else:
+                if not candidate.resume:
+                    error_messages.append("MCQ generation skipped: Candidate resume not available")
+                elif not assignment or not assignment.job:
+                    error_messages.append("MCQ generation skipped: Job assignment or job description not available")
+            
+            # Build response message
+            base_message = f"Test scheduled successfully for {request.scheduled_date.isoformat()}"
+            if error_messages:
+                base_message += f". Warnings: {'; '.join(error_messages)}"
             
             return ScheduleTestResponse(
                 success=True,
-                message=f"Test scheduled successfully for {request.scheduled_date.isoformat()}",
+                message=base_message,
                 scheduled_date=request.scheduled_date.isoformat()
             )
             

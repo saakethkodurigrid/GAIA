@@ -175,6 +175,7 @@ class SystemDesignService:
                 tags_data = None
             question_responses.append(QuestionResponse(
                 uuid=q.uuid,
+                question_id=q.uuid,
                 question=q.question,
                 evaluation_criteria=q.evaluation_criteria[:200] + "..." if len(q.evaluation_criteria) > 200 else q.evaluation_criteria,
                 tags=tags_data
@@ -197,6 +198,7 @@ class SystemDesignService:
             tags_data = None
         return QuestionResponse(
             uuid=question.uuid,
+            question_id=question.uuid,
             question=question.question,
             evaluation_criteria=question.evaluation_criteria,
             tags=tags_data
@@ -221,6 +223,7 @@ class SystemDesignService:
             tags_data = None
         return QuestionResponse(
             uuid=question.uuid,
+            question_id=question.uuid,
             question=question.question,
             evaluation_criteria=question.evaluation_criteria,
             tags=tags_data

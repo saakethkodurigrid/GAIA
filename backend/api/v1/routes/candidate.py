@@ -16,6 +16,7 @@ router = APIRouter(prefix="/candidate", tags=["Candidate"])
 @router.get("/{candidate_id}/mcq-questions", response_model=MCQQuestionsResponse)
 async def get_mcq_questions(
     candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
     """
@@ -25,8 +26,11 @@ async def get_mcq_questions(
     for the specified candidate. Only returns question text and options,
     no other information from the table.
     
+    Only the authenticated candidate can view their own questions.
+    
     Args:
         candidate_id: UUID of the candidate
+        current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
     Returns:
@@ -35,7 +39,16 @@ async def get_mcq_questions(
     Raises:
         HTTPException: 
             - 400: If validation fails or error occurs while retrieving questions
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's questions
     """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view your own questions."
+        )
+    
     interview_service = InterviewService(db)
     response = interview_service.get_mcq_questions(candidate_id)
     
@@ -52,6 +65,7 @@ async def get_mcq_questions(
 async def save_mcq_answers(
     candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
     request: SaveMCQAnswerRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
     """
@@ -61,9 +75,12 @@ async def save_mcq_answers(
     in the interview_mcq table. The answers will be stored in the candidate_answer field.
     Frontend sends a list of all questions and answers at once.
     
+    Only the authenticated candidate can save their own answers.
+    
     Args:
         candidate_id: UUID of the candidate
         request: SaveMCQAnswerRequest containing list of question-answer pairs
+        current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
     Returns:
@@ -72,7 +89,16 @@ async def save_mcq_answers(
     Raises:
         HTTPException: 
             - 400: If validation fails or error occurs while saving
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to save answers for another candidate
     """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only save your own answers."
+        )
+    
     interview_service = InterviewService(db)
     response = interview_service.save_mcq_answers(candidate_id, request)
     

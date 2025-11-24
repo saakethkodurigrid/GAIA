@@ -48,6 +48,7 @@ class SessionResponse(BaseModel):
 class QuestionResponse(BaseModel):
     """Response schema for a single question."""
     uuid: str
+    question_id: str
     question: str
     evaluation_criteria: str
     tags: Optional[Dict[str, Any]] = None

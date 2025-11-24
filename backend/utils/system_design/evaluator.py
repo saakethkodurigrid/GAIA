@@ -1,10 +1,10 @@
 """
 Evaluation Engine using Groq LLM API
 """
-import os
 import httpx
 from typing import Dict, Any, List, Optional
 import json
+from core.config import settings
 from utils.system_design.models import Session
 from utils.system_design.canvas_parser import CanvasParser
 from utils.system_design.guardrails import guardrails
@@ -14,7 +14,7 @@ class EvaluationEngine:
     """Evaluates system designs using Groq LLM API"""
     
     def __init__(self):
-        self.api_key = os.getenv("GROQ_API_KEY", "")
+        self.api_key = settings.GROQ_API_KEY
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
         self.model = "llama-3.1-8b-instant"  # Groq model (faster and more reliable)
         self.parser = CanvasParser()

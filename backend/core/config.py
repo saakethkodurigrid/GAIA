@@ -37,6 +37,9 @@ class Settings:
     # Company Domain
     COMPANY_DOMAIN: str = os.getenv('COMPANY_DOMAIN', '')
     
+    # Groq LLM Configuration (for MCQ RAG generation)
+    GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')
+    
     # Google OAuth Scopes
     GOOGLE_SCOPES: list = [
         'https://www.googleapis.com/auth/userinfo.email',
