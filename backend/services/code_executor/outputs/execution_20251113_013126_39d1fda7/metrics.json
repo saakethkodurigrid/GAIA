@@ -1,0 +1,78 @@
+{
+  "status": "failed",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/code/main.py\", line 22, in <module>\n    n = int(input())\n            ^^^^^^^\nEOFError: EOF when reading a line\n",
+  "compilation_output": null,
+  "error_message": null,
+  "execution_id": "39d1fda7",
+  "test_results": [
+    {
+      "test_id": 1,
+      "input": "0",
+      "expected_output": "0",
+      "actual_output": "0",
+      "passed": true,
+      "error": null,
+      "execution_time_ms": 1893.2340145111084
+    },
+    {
+      "test_id": 2,
+      "input": "1",
+      "expected_output": "1",
+      "actual_output": "1",
+      "passed": true,
+      "error": null,
+      "execution_time_ms": 1523.2760906219482
+    },
+    {
+      "test_id": 3,
+      "input": "5",
+      "expected_output": "5",
+      "actual_output": "3",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 7819.357872009277
+    },
+    {
+      "test_id": 4,
+      "input": "10",
+      "expected_output": "55",
+      "actual_output": "34",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 7802.685976028442
+    },
+    {
+      "test_id": 5,
+      "input": "15",
+      "expected_output": "610",
+      "actual_output": "377",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 3372.98321723938
+    },
+    {
+      "test_id": 6,
+      "input": "20",
+      "expected_output": "6765",
+      "actual_output": "4181",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 3407.306909561157
+    }
+  ],
+  "metrics": {
+    "total_execution_time_ms": 27403.937101364136,
+    "memory_used_mb": 0.0,
+    "cpu_time_ms": 1582.568883895874,
+    "container_startup_time_ms": 25821.36821746826,
+    "code_execution_time_ms": 1582.568883895874,
+    "timestamp": "2025-11-13T01:31:26.658069"
+  },
+  "summary": {
+    "total_tests": 6,
+    "tests_passed": 2,
+    "tests_failed": 4,
+    "all_passed": false
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "timestamp": "2025-11-13T00:50:36.692913",
+  "summary": {
+    "total_tests": 16,
+    "passed": 13,
+    "failed": 3,
+    "warnings": 3,
+    "errors": 3
+  },
+  "results": [
+    {
+      "category": "Python",
+      "test": "Version Check",
+      "passed": true,
+      "message": "Python 3.12.9",
+      "timestamp": "2025-11-13T00:48:25.645866"
+    },
+    {
+      "category": "Python",
+      "test": "Package: docker",
+      "passed": true,
+      "message": "Installed",
+      "timestamp": "2025-11-13T00:48:25.727271"
+    },
+    {
+      "category": "Docker",
+      "test": "Installation",
+      "passed": true,
+      "message": "Docker version 28.1.1, build 4eba377",
+      "timestamp": "2025-11-13T00:48:25.738362"
+    },
+    {
+      "category": "Docker",
+      "test": "Daemon Running",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:25.765638"
+    },
+    {
+      "category": "Docker",
+      "test": "Image: python:3.11-slim",
+      "passed": false,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.027085"
+    },
+    {
+      "category": "Docker",
+      "test": "Image: node:20-slim",
+      "passed": false,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.044332"
+    },
+    {
+      "category": "Docker",
+      "test": "Image: openjdk:17-slim",
+      "passed": false,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060560"
+    },
+    {
+      "category": "Files",
+      "test": "__init__.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060763"
+    },
+    {
+      "category": "Files",
+      "test": "models.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060780"
+    },
+    {
+      "category": "Files",
+      "test": "config.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060795"
+    },
+    {
+      "category": "Files",
+      "test": "executor.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060804"
+    },
+    {
+      "category": "Files",
+      "test": "test_executor.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060815"
+    },
+    {
+      "category": "Files",
+      "test": "validate_service.py",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060823"
+    },
+    {
+      "category": "Files",
+      "test": "README.md",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:48:26.060832"
+    },
+    {
+      "category": "Service",
+      "test": "Initialization",
+      "passed": true,
+      "message": "",
+      "timestamp": "2025-11-13T00:50:36.687140"
+    },
+    {
+      "category": "Service",
+      "test": "Python Execution",
+      "passed": true,
+      "message": "failed",
+      "timestamp": "2025-11-13T00:50:36.692120"
+    }
+  ],
+  "warnings": [
+    "Docker image 'python:3.11-slim' not found. It will be pulled automatically.",
+    "Docker image 'node:20-slim' not found. It will be pulled automatically.",
+    "Docker image 'openjdk:17-slim' not found. It will be pulled automatically."
+  ],
+  "errors": [
+    "Docker - Image: python:3.11-slim: ",
+    "Docker - Image: node:20-slim: ",
+    "Docker - Image: openjdk:17-slim: "
+  ]
+}

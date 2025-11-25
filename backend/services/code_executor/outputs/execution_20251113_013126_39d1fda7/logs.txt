@@ -1,0 +1,45 @@
+Execution ID: 39d1fda7
+Language: python
+Status: failed
+Timestamp: 2025-11-13T01:31:26.658069
+
+=== METRICS ===
+Total Execution Time: 27403.94ms
+Memory Used: 0.00MB
+CPU Time: 1582.57ms
+
+=== TEST RESULTS ===
+Total Tests: 6
+Passed: 2
+Failed: 4
+
+
+Test 1: PASSED
+  Input: 0
+  Expected: 0
+  Actual: 0
+
+Test 2: PASSED
+  Input: 1
+  Expected: 1
+  Actual: 1
+
+Test 3: FAILED
+  Input: 5
+  Expected: 5
+  Actual: 3
+
+Test 4: FAILED
+  Input: 10
+  Expected: 55
+  Actual: 34
+
+Test 5: FAILED
+  Input: 15
+  Expected: 610
+  Actual: 377
+
+Test 6: FAILED
+  Input: 20
+  Expected: 6765
+  Actual: 4181

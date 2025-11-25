@@ -1,0 +1,14 @@
+Problem,Two Sum
+Difficulty,Easy
+
+Solution Type,Tests Passed,Tests Failed,Total Tests,Time (ms),Memory (MB)
+Correct Solution,3,3,6,1129009.13,0.00
+Wrong Solution,0,6,6,20825.21,0.00
+
+Test ID,Input,Expected Output,Correct Output,Correct Status,Wrong Output,Wrong Status
+1,"2,7,11,15 → 9","[0, 1]",,FAIL,"[1, 0]",FAIL
+2,"3,2,4 → 6","[1, 2]",,FAIL,"[2, 1]",FAIL
+3,"3,3 → 6","[0, 1]",,FAIL,"[1, 0]",FAIL
+4,"1,5,3,7,2 → 9","[3, 4]","[3, 4]",PASS,"[4, 3]",FAIL
+5,"10,20,30,40 → 50","[1, 2]","[1, 2]",PASS,"[2, 1]",FAIL
+6,"-1,-2,-3,-4,-5 → -8","[2, 4]","[2, 4]",PASS,[],FAIL

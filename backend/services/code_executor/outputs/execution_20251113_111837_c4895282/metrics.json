@@ -1,0 +1,23 @@
+{
+  "status": "success",
+  "stdout": "Hello from real Docker execution!\n",
+  "stderr": "",
+  "compilation_output": null,
+  "error_message": null,
+  "execution_id": "c4895282",
+  "test_results": [],
+  "metrics": {
+    "total_execution_time_ms": 387.86888122558594,
+    "memory_used_mb": 0.0,
+    "cpu_time_ms": 387.07613945007324,
+    "container_startup_time_ms": 0.7927417755126953,
+    "code_execution_time_ms": 387.07613945007324,
+    "timestamp": "2025-11-13T11:18:37.326419"
+  },
+  "summary": {
+    "total_tests": 0,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "all_passed": false
+  }
+}

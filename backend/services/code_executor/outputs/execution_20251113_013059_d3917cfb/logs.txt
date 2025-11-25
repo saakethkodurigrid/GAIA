@@ -1,0 +1,45 @@
+Execution ID: d3917cfb
+Language: python
+Status: failed
+Timestamp: 2025-11-13T01:30:59.249871
+
+=== METRICS ===
+Total Execution Time: 17715.89ms
+Memory Used: 0.00MB
+CPU Time: 2038.10ms
+
+=== TEST RESULTS ===
+Total Tests: 6
+Passed: 6
+Failed: 0
+
+
+Test 1: PASSED
+  Input: 0
+  Expected: 0
+  Actual: 0
+
+Test 2: PASSED
+  Input: 1
+  Expected: 1
+  Actual: 1
+
+Test 3: PASSED
+  Input: 5
+  Expected: 5
+  Actual: 5
+
+Test 4: PASSED
+  Input: 10
+  Expected: 55
+  Actual: 55
+
+Test 5: PASSED
+  Input: 15
+  Expected: 610
+  Actual: 610
+
+Test 6: PASSED
+  Input: 20
+  Expected: 6765
+  Actual: 6765

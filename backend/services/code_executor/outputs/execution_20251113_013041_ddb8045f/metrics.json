@@ -1,0 +1,78 @@
+{
+  "status": "failed",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/code/main.py\", line 27, in <module>\n    nums = list(map(int, input().split(',')))\n                         ^^^^^^^\nEOFError: EOF when reading a line\n",
+  "compilation_output": null,
+  "error_message": null,
+  "execution_id": "ddb8045f",
+  "test_results": [
+    {
+      "test_id": 1,
+      "input": "2,7,11,15\n9",
+      "expected_output": "[0, 1]",
+      "actual_output": "[1, 0]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 2124.452829360962
+    },
+    {
+      "test_id": 2,
+      "input": "3,2,4\n6",
+      "expected_output": "[1, 2]",
+      "actual_output": "[2, 1]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 2228.3949851989746
+    },
+    {
+      "test_id": 3,
+      "input": "3,3\n6",
+      "expected_output": "[0, 1]",
+      "actual_output": "[1, 0]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 2288.1808280944824
+    },
+    {
+      "test_id": 4,
+      "input": "1,5,3,7,2\n9",
+      "expected_output": "[3, 4]",
+      "actual_output": "[4, 3]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 5729.422092437744
+    },
+    {
+      "test_id": 5,
+      "input": "10,20,30,40\n50",
+      "expected_output": "[1, 2]",
+      "actual_output": "[2, 1]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 2730.592966079712
+    },
+    {
+      "test_id": 6,
+      "input": "-1,-2,-3,-4,-5\n-8",
+      "expected_output": "[2, 4]",
+      "actual_output": "[]",
+      "passed": false,
+      "error": null,
+      "execution_time_ms": 2980.0901412963867
+    }
+  ],
+  "metrics": {
+    "total_execution_time_ms": 20825.21080970764,
+    "memory_used_mb": 0.0,
+    "cpu_time_ms": 2741.2331104278564,
+    "container_startup_time_ms": 18083.977699279785,
+    "code_execution_time_ms": 2741.2331104278564,
+    "timestamp": "2025-11-13T01:30:41.124945"
+  },
+  "summary": {
+    "total_tests": 6,
+    "tests_passed": 0,
+    "tests_failed": 6,
+    "all_passed": false
+  }
+}

@@ -1,0 +1,14 @@
+# Code Executor Service Requirements
+
+# Core dependencies
+docker>=7.0.0
+psutil>=5.9.0
+
+# Optional dependencies for enhanced functionality
+# These are installed from the main backend requirements
+# fastapi>=0.115.2
+# uvicorn>=0.24.0
+# pydantic>=2.9.0
+
+
+

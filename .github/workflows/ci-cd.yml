@@ -80,8 +80,14 @@ jobs:
           export DATABASE_URL="sqlite:///./test.db"
           python -c "from core.config import settings; print('✅ Config loads')"
           python -c "from api.v1.routes import auth_router; print('✅ Auth routes load')"
+          python -c "from api.v1.routes import admin_router; print('✅ Admin routes load')"
+          python -c "from api.v1.routes import candidate_router; print('✅ Candidate routes load')"
+          python -c "from api.v1.routes import system_design_router; print('✅ System design routes load')"
           python -c "from services.auth_service import AuthService; print('✅ Auth service loads')"
+          python -c "from services.admin_service import AdminService; print('✅ Admin service loads')"
+          python -c "from services.system_design_service import SystemDesignService; print('✅ System design service loads')"
           echo "✅ All smoke tests passed!"
+
         
       - name: Run unit tests
         run: |

@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/code/main.py", line 27, in <module>
+    nums = list(map(int, input().split(',')))
+                         ^^^^^^^
+EOFError: EOF when reading a line

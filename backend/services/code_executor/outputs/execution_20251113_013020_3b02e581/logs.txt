@@ -1,0 +1,54 @@
+Execution ID: 3b02e581
+Language: python
+Status: failed
+Timestamp: 2025-11-13T01:30:20.293892
+
+=== METRICS ===
+Total Execution Time: 1129009.13ms
+Memory Used: 0.00MB
+CPU Time: 62584.09ms
+
+=== TEST RESULTS ===
+Total Tests: 6
+Passed: 3
+Failed: 3
+
+
+Test 1: FAILED
+  Input: 2,7,11,15
+9
+  Expected: [0, 1]
+  Actual: 
+  Error: 500 Server Error for http+docker://localhost/v1.49/images/create?tag=3.11-slim&fromImage=python: Internal Server Error ("failed to resolve reference "docker.io/library/python:3.11-slim": failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/3.11-slim": context deadline exceeded")
+
+Test 2: FAILED
+  Input: 3,2,4
+6
+  Expected: [1, 2]
+  Actual: 
+  Error: 500 Server Error for http+docker://localhost/v1.49/images/create?tag=3.11-slim&fromImage=python: Internal Server Error ("failed to resolve reference "docker.io/library/python:3.11-slim": failed to authorize: failed to fetch anonymous token: Get "https://auth.docker.io/token?scope=repository%3Alibrary%2Fpython%3Apull&service=registry.docker.io": context deadline exceeded")
+
+Test 3: FAILED
+  Input: 3,3
+6
+  Expected: [0, 1]
+  Actual: 
+  Error: 500 Server Error for http+docker://localhost/v1.49/images/create?tag=3.11-slim&fromImage=python: Internal Server Error ("failed to resolve reference "docker.io/library/python:3.11-slim": failed to authorize: failed to fetch anonymous token: Get "https://auth.docker.io/token?scope=repository%3Alibrary%2Fpython%3Apull&service=registry.docker.io": context deadline exceeded")
+
+Test 4: PASSED
+  Input: 1,5,3,7,2
+9
+  Expected: [3, 4]
+  Actual: [3, 4]
+
+Test 5: PASSED
+  Input: 10,20,30,40
+50
+  Expected: [1, 2]
+  Actual: [1, 2]
+
+Test 6: PASSED
+  Input: -1,-2,-3,-4,-5
+-8
+  Expected: [2, 4]
+  Actual: [2, 4]

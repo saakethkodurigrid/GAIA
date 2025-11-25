@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Two Sum - Comparison Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .correct { border-left: 5px solid #4caf50; }
+        .wrong { border-left: 5px solid #f44336; }
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        table {
+            width: 100%;
+            background: white;
+            border-collapse: collapse;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th {
+            background: #333;
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .pass {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .fail {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-easy { background: #d4edda; color: #155724; }
+        .badge-medium { background: #fff3cd; color: #856404; }
+        .badge-hard { background: #f8d7da; color: #721c24; }
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 30px;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 Two Sum</h1>
+        <p><span class="badge badge-easy">Easy</span></p>
+        <p>Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
+
+You may assume that each input would have exactly one solution, and you may not use the same element twice.
+
+You can return the answer in any order.</p>
+        <small>Generated: 2025-11-13 01:30:41</small>
+    </div>
+    
+    <div class="summary">
+        <div class="card correct">
+            <h2>✅ Correct Solution</h2>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value pass">3/6</div>
+                    <div class="stat-label">Tests Passed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">1129009.13</div>
+                    <div class="stat-label">Time (ms)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">0.00</div>
+                    <div class="stat-label">Memory (MB)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card wrong">
+            <h2>❌ Wrong Solution</h2>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value fail">0/6</div>
+                    <div class="stat-label">Tests Passed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">20825.21</div>
+                    <div class="stat-label">Time (ms)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">0.00</div>
+                    <div class="stat-label">Memory (MB)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>📊 Test Cases Comparison</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Test #</th>
+                    <th>Input</th>
+                    <th>Expected</th>
+                    <th>Correct Output</th>
+                    <th>Wrong Output</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td><strong>1</strong></td>
+                    <td><code>2,7,11,15 → 9</code></td>
+                    <td><code>[0, 1]</code></td>
+                    <td class="fail"><code></code></td>
+                    <td class="fail"><code>[1, 0]</code></td>
+                    <td>
+                        <span class="fail">Correct: ✗</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>2</strong></td>
+                    <td><code>3,2,4 → 6</code></td>
+                    <td><code>[1, 2]</code></td>
+                    <td class="fail"><code></code></td>
+                    <td class="fail"><code>[2, 1]</code></td>
+                    <td>
+                        <span class="fail">Correct: ✗</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>3</strong></td>
+                    <td><code>3,3 → 6</code></td>
+                    <td><code>[0, 1]</code></td>
+                    <td class="fail"><code></code></td>
+                    <td class="fail"><code>[1, 0]</code></td>
+                    <td>
+                        <span class="fail">Correct: ✗</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>4</strong></td>
+                    <td><code>1,5,3,7,2 → 9</code></td>
+                    <td><code>[3, 4]</code></td>
+                    <td class="pass"><code>[3, 4]</code></td>
+                    <td class="fail"><code>[4, 3]</code></td>
+                    <td>
+                        <span class="pass">Correct: ✓</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>5</strong></td>
+                    <td><code>10,20,30,40 → 50</code></td>
+                    <td><code>[1, 2]</code></td>
+                    <td class="pass"><code>[1, 2]</code></td>
+                    <td class="fail"><code>[2, 1]</code></td>
+                    <td>
+                        <span class="pass">Correct: ✓</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>6</strong></td>
+                    <td><code>-1,-2,-3,-4,-5 → -8</code></td>
+                    <td><code>[2, 4]</code></td>
+                    <td class="pass"><code>[2, 4]</code></td>
+                    <td class="fail"><code>[]</code></td>
+                    <td>
+                        <span class="pass">Correct: ✓</span><br>
+                        <span class="fail">Wrong: ✗</span>
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="footer">
+        <p>Generated by Code Executor Service | LeetCode-Style Comparison</p>
+        <p>✅ = Test Passed | ❌ = Test Failed</p>
+    </div>
+</body>
+</html>

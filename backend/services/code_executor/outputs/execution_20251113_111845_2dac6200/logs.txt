@@ -1,0 +1,33 @@
+Execution ID: 2dac6200
+Language: python
+Status: failed
+Timestamp: 2025-11-13T11:18:45.047670
+
+=== METRICS ===
+Total Execution Time: 1066.44ms
+Memory Used: 0.00MB
+CPU Time: 200.58ms
+
+=== TEST RESULTS ===
+Total Tests: 3
+Passed: 0
+Failed: 3
+
+
+Test 0: FAILED
+  Input: 2,7,11,15
+9
+  Expected: [0, 1]
+  Actual: [1, 0]
+
+Test 1: FAILED
+  Input: 3,2,4
+6
+  Expected: [1, 2]
+  Actual: [2, 1]
+
+Test 2: FAILED
+  Input: -1,-2,-3,-4,-5
+-8
+  Expected: [2, 4]
+  Actual: []

@@ -21,11 +21,9 @@ services:
     networks:
       - gaia-network
 
-  # Backend API
+  # Backend API (from Docker Hub)
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: rabidn/gaia-backend:latest
     container_name: gaia-backend
     ports:
       - "5000:5000"
@@ -37,17 +35,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
     networks:
       - gaia-network
-    command: uvicorn app:app --host 0.0.0.0 --port 5000 --reload
+    restart: unless-stopped
 
-  # Frontend
+  # Frontend (from Docker Hub)
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: rabidn/gaia-frontend:latest
     container_name: gaia-frontend
     ports:
       - "80:80"
@@ -55,6 +49,7 @@ services:
       - backend
     networks:
       - gaia-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

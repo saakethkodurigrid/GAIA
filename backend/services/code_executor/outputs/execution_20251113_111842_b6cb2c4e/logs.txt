@@ -1,0 +1,33 @@
+Execution ID: b6cb2c4e
+Language: python
+Status: failed
+Timestamp: 2025-11-13T11:18:42.438593
+
+=== METRICS ===
+Total Execution Time: 1124.70ms
+Memory Used: 0.00MB
+CPU Time: 248.85ms
+
+=== TEST RESULTS ===
+Total Tests: 3
+Passed: 3
+Failed: 0
+
+
+Test 0: PASSED
+  Input: 2,7,11,15
+9
+  Expected: [0, 1]
+  Actual: [0, 1]
+
+Test 1: PASSED
+  Input: 3,2,4
+6
+  Expected: [1, 2]
+  Actual: [1, 2]
+
+Test 2: PASSED
+  Input: 3,3
+6
+  Expected: [0, 1]
+  Actual: [0, 1]

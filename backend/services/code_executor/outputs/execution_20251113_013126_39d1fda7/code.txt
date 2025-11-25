@@ -1,0 +1,25 @@
+"""
+INCORRECT SOLUTION - Fibonacci Number
+This solution has off-by-one error
+Should FAIL some test cases
+"""
+
+def fib(n):
+    """
+    Buggy implementation - off-by-one error in loop
+    """
+    if n <= 1:
+        return n
+    
+    a, b = 0, 1
+    # BUG: Loop runs one iteration less than needed
+    for _ in range(2, n):  # Should be range(2, n + 1)
+        a, b = b, a + b
+    
+    return b  # Returns wrong result for n > 1
+
+if __name__ == '__main__':
+    n = int(input())
+    result = fib(n)
+    print(result)
+

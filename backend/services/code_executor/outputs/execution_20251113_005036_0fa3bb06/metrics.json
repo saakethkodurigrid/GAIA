@@ -1,0 +1,23 @@
+{
+  "status": "failed",
+  "stdout": "",
+  "stderr": "run() got an unexpected keyword argument 'timeout'",
+  "compilation_output": null,
+  "error_message": null,
+  "execution_id": "0fa3bb06",
+  "test_results": [],
+  "metrics": {
+    "total_execution_time_ms": 1.8270015716552734,
+    "memory_used_mb": 0.0,
+    "cpu_time_ms": 0.17523765563964844,
+    "container_startup_time_ms": 1.651763916015625,
+    "code_execution_time_ms": 0.17523765563964844,
+    "timestamp": "2025-11-13T00:50:36.689328"
+  },
+  "summary": {
+    "total_tests": 0,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "all_passed": false
+  }
+}

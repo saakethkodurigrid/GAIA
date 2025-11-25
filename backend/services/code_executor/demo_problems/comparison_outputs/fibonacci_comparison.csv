@@ -1,0 +1,14 @@
+Problem,Fibonacci Number
+Difficulty,Easy
+
+Solution Type,Tests Passed,Tests Failed,Total Tests,Time (ms),Memory (MB)
+Correct Solution,6,0,6,17715.89,0.00
+Wrong Solution,2,4,6,27403.94,0.00
+
+Test ID,Input,Expected Output,Correct Output,Correct Status,Wrong Output,Wrong Status
+1,0,0,0,PASS,0,PASS
+2,1,1,1,PASS,1,PASS
+3,5,5,5,PASS,3,FAIL
+4,10,55,55,PASS,34,FAIL
+5,15,610,610,PASS,377,FAIL
+6,20,6765,6765,PASS,4181,FAIL

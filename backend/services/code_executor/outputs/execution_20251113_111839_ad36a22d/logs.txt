@@ -1,0 +1,33 @@
+Execution ID: ad36a22d
+Language: python
+Status: failed
+Timestamp: 2025-11-13T11:18:39.750465
+
+=== METRICS ===
+Total Execution Time: 1076.42ms
+Memory Used: 0.00MB
+CPU Time: 187.64ms
+
+=== TEST RESULTS ===
+Total Tests: 3
+Passed: 3
+Failed: 0
+
+
+Test 0: PASSED
+  Input: 5
+3
+  Expected: 8
+  Actual: 8
+
+Test 1: PASSED
+  Input: 10
+20
+  Expected: 30
+  Actual: 30
+
+Test 2: PASSED
+  Input: -5
+5
+  Expected: 0
+  Actual: 0
