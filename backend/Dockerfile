@@ -23,9 +23,24 @@ COPY requirements.txt .
 # Install dependencies with optimizations for faster builds
 # Use binary wheels when possible, increase timeout, and enable parallel builds
 ENV MAX_JOBS=4
+
+# Install CPU-only torch first to avoid downloading huge CUDA deps
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 RUN pip install --no-cache-dir --user --timeout=1000 \
     --prefer-binary \
-    -r requirements.txt
+    -r requirements.txt && \
+    # Aggressive cleanup
+    find /root/.local -type d -name "__pycache__" -exec rm -rf {} + && \
+    find /root/.local -type d -name "tests" -exec rm -rf {} + && \
+    find /root/.local -type d -name "test" -exec rm -rf {} + && \
+    find /root/.local -name "*.pyc" -delete && \
+    find /root/.local -name "*.pyo" -delete && \
+    # Strip shared libraries to reduce size
+    find /root/.local -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
+    # Remove pip and setuptools (not needed at runtime)
+    pip uninstall -y pip setuptools wheel
 
 # Production stage
 FROM python:3.11-slim
