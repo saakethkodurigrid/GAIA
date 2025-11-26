@@ -5,7 +5,7 @@ export interface TourStep {
   target: string;
   content: string;
   title?: string;
-  placement?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+  placement?: 'top' | 'bottom' | 'left' | 'right' | 'center' | 'left-side';
   disableBeacon?: boolean;
 }
 

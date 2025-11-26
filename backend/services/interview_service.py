@@ -456,7 +456,26 @@ class InterviewService:
             assignment = self.db.query(RecruiterAdminCandidate).filter(
                 RecruiterAdminCandidate.candidate_id == candidate_id
             ).first()
-            
+            print("--------------------------------")
+            if assignment:
+                print(f"Assignment - recruiter_admin_email: {assignment.recruiter_admin_email}")
+                print(f"Assignment - candidate_id: {assignment.candidate_id}")
+                print(f"Assignment - job_id: {assignment.job_id}")
+                print(f"Assignment - assigned_at: {assignment.assigned_at}")
+                print(f"Assignment - job: {assignment.job}")
+                print(f"Assignment - job_description: {assignment.job.job_description}")
+                print(f"Assignment - job_role: {assignment.job.job_role}")
+
+            else:
+                print("Assignment: None")
+                
+            print(f"Candidate - candidate_id: {candidate.candidate_id}")
+            print(f"Candidate - name: {candidate.name}")
+            print(f"Candidate - email_id: {candidate.email_id}")
+            print(f"Candidate - status: {candidate.status}")
+            print(f"Candidate - scheduled_date: {candidate.scheduled_date}")
+            print(f"Candidate - resume: {candidate.resume}")
+            print("--------------------------------")
             # Parallel tasks: System Design Question Assignment and MCQ Generation
             system_design_result = None
             mcq_result = None
@@ -477,17 +496,38 @@ class InterviewService:
             
             # Task 2: Generate and save MCQ questions (if resume and job description are available)
             if candidate.resume and assignment and assignment.job:
+                print("Inside if condition..............")
                 try:
-                    from services.mcq_generation_service import MCQGenerationService
-                    mcq_service = MCQGenerationService(self.db)
-                    
-                    # Create request for MCQ generation
+                    print("Inside try block..............")
+                    try:
+                        from services.mcq_generation_service import MCQGenerationService
+                        try:
+                            mcq_service = MCQGenerationService(self.db)
+                        except Exception as e:
+                            print(f"MCQ service initialization error: {str(e)}")
+                        print("MCQ service initialized..............")
+                    except Exception as e:
+                        print(f"MCQ service initialization error: {str(e)}")
+                    # if candidate.resume is None and assignment.job is None:
+                    #     from services.sample_data_for_mcq import job_description, resume
+                    #     mcq_request = GenerateMCQRequest(
+                    #         resume=resume,
+                    #         job_description=job_description,
+                    #         grade="T2"  # Default to T2, can be made configurable later
+                    #     )
+                    # else:
+                        # Create request for MCQ generation
+                    print("Generating MCQ questions..............")
+                    print(f"Candidate - resume: {candidate.resume}")
+                    print(f"Assignment - job_description: {assignment.job.job_description}")
+                    print(f"Assignment - job_role: {assignment.job.job_role}")
+                    print("--------------------------------")
                     mcq_request = GenerateMCQRequest(
                         resume=candidate.resume,
                         job_description=assignment.job.job_description,
                         grade="T2"  # Default to T2, can be made configurable later
                     )
-                    
+                    print(f"MCQ request: {mcq_request}")
                     # Generate questions
                     generation_result = mcq_service.generate_questions(mcq_request)
                     questions = generation_result.get("questions", [])

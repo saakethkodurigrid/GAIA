@@ -164,7 +164,7 @@ Remember: You are helping them discover answers through questions, not providing
                 {"role": "user", "content": sanitized_user}
             ],
             "temperature": 0.7,
-            "max_tokens": 150  # Reduced to work within credit limits
+            "max_tokens": 200  # Reduced to work within credit limits
         }
         
         try:

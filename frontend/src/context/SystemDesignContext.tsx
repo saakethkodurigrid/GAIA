@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { fetchSystemDesignProblem, askClarifyingQuestion } from '../api/systemDesign.api';
+import { useAuth } from './AuthContext';
+import { createSession, getQuestionByUuid, sendChatMessage, updateCanvas } from '../api/systemDesign.api';
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
 
 const TIMER_DURATION = 60 * 60; // 60 minutes
@@ -12,27 +13,92 @@ interface SystemDesignProviderProps {
 }
 
 export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) => {
+  const { user } = useAuth();
   const [problem, setProblem] = useState<SystemDesignProblem | null>(null);
   const [excalidrawData, setExcalidrawData] = useState<any>(null);
   const [notes, setNotes] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionCreatedRef = useRef(false);
 
-  // Load problem on mount
+  // Create session and load question on mount
   useEffect(() => {
-    const loadProblem = async () => {
+    const initializeSession = async () => {
+      // Prevent multiple session creations
+      if (sessionCreatedRef.current) return;
+      
+      // Wait for user data to be available
+      if (!user?.candidateId) {
+        console.log('Waiting for user authentication...');
+        return;
+      }
+
+      sessionCreatedRef.current = true;
+      setIsLoading(true);
+
       try {
-        const data = await fetchSystemDesignProblem();
-        setProblem(data);
+        // Step 1: Create session
+        console.log('Creating session...');
+        const sessionResponse = await createSession({
+          candidate_id: user.candidateId,
+        });
+
+        console.log('Session created:', sessionResponse);
+        setSessionId(sessionResponse.session_id);
+
+        // Step 2: Fetch question if UUID is available
+        if (sessionResponse.question_uuid) {
+          console.log('Fetching question with UUID:', sessionResponse.question_uuid);
+          const questionResponse = await getQuestionByUuid(sessionResponse.question_uuid);
+          
+          // Map question response to SystemDesignProblem
+          const problemData: SystemDesignProblem = {
+            id: 1, // Using 1 as default since backend doesn't provide numeric ID
+            title: questionResponse.question_id || 'System Design Problem',
+            description: questionResponse.question,
+            requirements: questionResponse.evaluation_criteria
+              ? questionResponse.evaluation_criteria.split('\n').filter(line => line.trim())
+              : [],
+          };
+
+          setProblem(problemData);
+          console.log('Question loaded:', problemData);
+        } else {
+          // Fallback: Use question_text from session if no UUID
+          console.log('No question UUID, using question_text from session');
+          const problemData: SystemDesignProblem = {
+            id: 1,
+            title: 'System Design Problem',
+            description: sessionResponse.question_text,
+            requirements: [],
+          };
+          setProblem(problemData);
+        }
+
         setIsLoading(false);
       } catch (error) {
-        console.error('Error loading problem:', error);
+        console.error('Error initializing session:', error);
+        // Fallback to mock data on error
+        try {
+          const mockData = await import('../api/systemDesign.api').then(m => m.MOCK_SYSTEM_DESIGN_PROBLEM);
+          setProblem(mockData);
+        } catch {
+          // If even mock fails, set a basic problem
+          setProblem({
+            id: 1,
+            title: 'System Design Problem',
+            description: 'An error occurred loading the problem. Please refresh the page.',
+            requirements: [],
+          });
+        }
         setIsLoading(false);
       }
     };
-    loadProblem();
-  }, []);
+
+    initializeSession();
+  }, [user?.candidateId]);
 
   // Timer countdown
   useEffect(() => {
@@ -60,13 +126,44 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     setExcalidrawData(data);
   }, []);
 
+  // Auto-update canvas to backend (debounced)
+  useEffect(() => {
+    if (!sessionId || !excalidrawData) return;
+
+    // Clear existing timeout
+    const canvasUpdateTimeout = setTimeout(async () => {
+      try {
+        await updateCanvas({
+          session_id: sessionId,
+          canvas_data: {
+            elements: excalidrawData.elements || [],
+            appState: excalidrawData.appState,
+            files: excalidrawData.files,
+          },
+          action: 'update', // Lightweight sync
+        });
+        console.log('Canvas updated to backend');
+      } catch (error) {
+        console.error('Failed to update canvas:', error);
+      }
+    }, 2000); // Update backend 2 seconds after user stops drawing
+
+    return () => {
+      clearTimeout(canvasUpdateTimeout);
+    };
+  }, [excalidrawData, sessionId]);
+
   const handleUpdateNotes = useCallback((newNotes: string) => {
     setNotes(newNotes);
   }, []);
 
   const handleSendMessage = useCallback(async (message: string) => {
-    if (!message.trim() || !problem) return;
+    if (!message.trim() || !sessionId) {
+      console.error('Cannot send message: missing session ID');
+      return;
+    }
 
+    // Create user message for immediate display
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -77,14 +174,36 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     setChatMessages((prev) => [...prev, userMessage]);
 
     try {
-      const response = await askClarifyingQuestion(message, problem.id);
-      const assistantMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date()
-      };
-      setChatMessages((prev) => [...prev, assistantMessage]);
+      // Prepare canvas data if available
+      const canvasData = excalidrawData ? {
+        elements: excalidrawData.elements || [],
+        appState: excalidrawData.appState,
+        files: excalidrawData.files,
+      } : undefined;
+
+      // Send message to backend with canvas data
+      const response = await sendChatMessage({
+        message: message.trim(),
+        session_id: sessionId,
+        canvas_data: canvasData,
+      });
+
+      // Add AI response if available
+      if (response.ai_response) {
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: response.ai_response,
+          timestamp: new Date()
+        };
+        setChatMessages((prev) => [...prev, assistantMessage]);
+      }
+
+      // Note: Evaluation data is included in the response but not displayed in chat
+      // It could be used for showing evaluation scores in a separate UI component
+      if (response.evaluation) {
+        console.log('Evaluation received:', response.evaluation);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: ChatMessage = {
@@ -95,7 +214,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       };
       setChatMessages((prev) => [...prev, errorMessage]);
     }
-  }, [problem]);
+  }, [sessionId, excalidrawData]);
 
   const handleClearCanvas = useCallback((excalidrawAPI: any) => {
     if (excalidrawAPI) {

@@ -7,6 +7,7 @@ interface HeaderProps {
   showTechInterviewLogo?: boolean;
   showTimer?: boolean;
   timerValue?: string;
+  transparent?: boolean;
   user?: {
     name?: string;
     email?: string;
@@ -14,7 +15,7 @@ interface HeaderProps {
   onLogout?: () => void;
 }
 
-const Header = ({ showUserInfo = false, showLogout = false, showTechInterviewLogo = false, showTimer = false, timerValue = '60:00', user, onLogout }: HeaderProps) => {
+const Header = ({ showUserInfo = false, showLogout = false, showTechInterviewLogo = false, showTimer = false, timerValue = '60:00', transparent = false, user, onLogout }: HeaderProps) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -43,7 +44,7 @@ const Header = ({ showUserInfo = false, showLogout = false, showTechInterviewLog
   };
 
   return (
-    <header className="bg-white shadow-md">
+    <header className={transparent ? "bg-transparent" : "bg-white shadow-md"}>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">

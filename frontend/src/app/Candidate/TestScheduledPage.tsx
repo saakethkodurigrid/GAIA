@@ -1,148 +1,169 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 
 const TestScheduledPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [timeRemaining, setTimeRemaining] = useState({
-    hours: 1,
-    minutes: 58,
-    seconds: 23,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
   });
+  const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
+  const [formattedDate, setFormattedDate] = useState<string>('');
+
+  // Initialize scheduled date from location state or fetch from user data
+  useEffect(() => {
+    const scheduledDateFromState = location.state?.scheduledDate;
+    
+    if (scheduledDateFromState) {
+      const date = new Date(scheduledDateFromState);
+      setScheduledDate(date);
+      
+      // Format the date for display
+      const formatted = date.toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+      const time = date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+      setFormattedDate(`${formatted} at ${time}`);
+    } else {
+      // Fallback: try to get from user data or use default
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 1);
+      defaultDate.setHours(14, 0, 0, 0);
+      setScheduledDate(defaultDate);
+      
+      const formatted = defaultDate.toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+      const time = defaultDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+      setFormattedDate(`${formatted} at ${time}`);
+    }
+  }, [location.state]);
 
   // Countdown timer logic
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        let { hours, minutes, seconds } = prev;
-        
-        if (seconds > 0) {
-          seconds--;
-        } else if (minutes > 0) {
-          minutes--;
-          seconds = 59;
-        } else if (hours > 0) {
-          hours--;
-          minutes = 59;
-          seconds = 59;
-        }
-        
-        return { hours, minutes, seconds };
-      });
-    }, 1000);
+    if (!scheduledDate) return;
+
+    const updateTimer = () => {
+      const now = new Date();
+      const diff = scheduledDate.getTime() - now.getTime();
+
+      if (diff <= 0) {
+        setTimeRemaining({ hours: 0, minutes: 0, seconds: 0 });
+        return;
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setTimeRemaining({ hours, minutes, seconds });
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Update every second
+    const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [scheduledDate]);
 
   const handleLogout = () => {
     logout();
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
       {/* Header */}
       <Header showUserInfo={true} showLogout={true} showTechInterviewLogo={true} user={user} onLogout={handleLogout} />
 
       {/* Main Content */}
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem-5rem)] py-4 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center py-4 pb-8">
         {/* Inner Container - Main Card */}
         <div 
-          className="rounded-2xl shadow-lg relative border-2"
+          className="rounded-lg shadow-lg relative border-2"
           style={{
-            width: '550px',
-            height: '480px',
-            padding: '18px',
+            width: '500px',
+            padding: '24px',
             backgroundColor: '#FFFFFF',
             borderColor: '#FCD34D',
           }}
         >
-          <div className="flex flex-col items-center justify-between h-full">
-            {/* Clock Icon */}
-            <div className="mt-6 mb-6">
-              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center shadow-lg relative">
-                <div className="absolute inset-0 bg-green-400 rounded-full blur-xl opacity-50"></div>
-                <svg 
-                  className="w-8 h-8 text-white relative z-10" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    strokeWidth={2} 
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" 
-                  />
-                </svg>
-              </div>
-            </div>
-
+          <div className="flex flex-col items-center">
             {/* Title */}
-            <div className="text-center">
+            <div className="text-center mb-5">
               <h1 className="text-2xl font-bold text-gray-900 mb-1">Test Not Started Yet!</h1>
               <p className="text-sm text-gray-600">Please wait until the scheduled time to begin your test.</p>
             </div>
 
             {/* Countdown Timer */}
-            <div className="flex-1 flex flex-col justify-center">
+            <div className="w-full mb-4">
               <p className="text-xs text-gray-600 text-center mb-3">Test starts in</p>
-              <div className="flex items-center justify-center gap-1.5">
-                {/* Hours */}
-                <div className="flex flex-col items-center">
-                  <div 
-                    className="rounded-lg flex items-center justify-center shadow-sm px-2.5 py-1.5"
-                    style={{ backgroundColor: '#FFF7E5' }}
-                  >
-                    <span className="text-xl font-bold text-gray-900">
-                      {String(timeRemaining.hours).padStart(2, '0')}
-                    </span>
+              {/* Golden Box for Timer - Narrower */}
+              <div className="flex justify-center mb-4">
+                <div 
+                  className="rounded-lg border-2 p-3 inline-block"
+                  style={{ 
+                    backgroundColor: '#FFF7E5',
+                    borderColor: '#FCD34D'
+                  }}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    {/* Hours */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-xl font-bold text-gray-900">
+                        {String(timeRemaining.hours).padStart(2, '0')}
+                      </span>
+                      <span className="text-xs text-gray-600 mt-0.5">Hours</span>
+                    </div>
+
+                    <span className="text-lg font-bold text-gray-900 mb-5">:</span>
+
+                    {/* Minutes */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-xl font-bold text-gray-900">
+                        {String(timeRemaining.minutes).padStart(2, '0')}
+                      </span>
+                      <span className="text-xs text-gray-600 mt-0.5">Minutes</span>
+                    </div>
+
+                    <span className="text-lg font-bold text-gray-900 mb-5">:</span>
+
+                    {/* Seconds */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-xl font-bold text-gray-900">
+                        {String(timeRemaining.seconds).padStart(2, '0')}
+                      </span>
+                      <span className="text-xs text-gray-600 mt-0.5">Seconds</span>
+                    </div>
                   </div>
-                  <span className="text-xs text-gray-600 mt-0.5">Hours</span>
-                </div>
-
-                <span className="text-lg font-bold text-gray-900 mb-5">:</span>
-
-                {/* Minutes */}
-                <div className="flex flex-col items-center">
-                  <div 
-                    className="rounded-lg flex items-center justify-center shadow-sm px-2.5 py-1.5"
-                    style={{ backgroundColor: '#FFF7E5' }}
-                  >
-                    <span className="text-xl font-bold text-gray-900">
-                      {String(timeRemaining.minutes).padStart(2, '0')}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-600 mt-0.5">Minutes</span>
-                </div>
-
-                <span className="text-lg font-bold text-gray-900 mb-5">:</span>
-
-                {/* Seconds */}
-                <div className="flex flex-col items-center">
-                  <div 
-                    className="rounded-lg flex items-center justify-center shadow-sm px-2.5 py-1.5"
-                    style={{ backgroundColor: '#FFF7E5' }}
-                  >
-                    <span className="text-xl font-bold text-gray-900">
-                      {String(timeRemaining.seconds).padStart(2, '0')}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-600 mt-0.5">Seconds</span>
                 </div>
               </div>
-            </div>
 
-            {/* Test Details */}
-            <div className="flex gap-6 mb-6 w-full items-start justify-center">
+              {/* Scheduled Time */}
               <div className="text-center">
-                <p className="text-xs text-gray-600 mb-0.5">Test duration</p>
-                <p className="text-sm font-semibold text-gray-900">180 mins</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-600 mb-0.5">Position</p>
-                <p className="text-sm font-semibold text-gray-900">Gen AI Engineer</p>
+                <p className="text-xs text-gray-500 mb-1">Scheduled Time</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {formattedDate || 'Loading...'}
+                </p>
               </div>
             </div>
           </div>
@@ -152,9 +173,9 @@ const TestScheduledPage = () => {
         <div 
           className="rounded-lg bg-yellow-50 border border-orange-300 p-3"
           style={{
-            width: '550px',
+            width: '500px',
             marginTop: '12px',
-            marginBottom: '24px',
+            marginBottom: '16px',
           }}
         >
           <div className="flex items-start gap-2">
@@ -170,45 +191,36 @@ const TestScheduledPage = () => {
               />
             </svg>
             <div className="flex-1">
-              <h3 className="text-sm font-semibold text-gray-900 mb-1.5">Important Instructions</h3>
-              <ul className="space-y-0.5 text-xs text-gray-700">
+              <h3 className="text-sm font-semibold mb-1.5" style={{ color: '#973C00' }}>Important Instructions</h3>
+              <ul className="space-y-0.5 text-xs" style={{ color: '#973C00' }}>
                 <li className="flex items-start gap-1.5">
-                  <span className="text-orange-500 mt-0.5">•</span>
+                  <span className="mt-0.5" style={{ color: '#973C00' }}>•</span>
                   <span>Please be ready 5 minutes before the scheduled time</span>
                 </li>
                 <li className="flex items-start gap-1.5">
-                  <span className="text-orange-500 mt-0.5">•</span>
+                  <span className="mt-0.5" style={{ color: '#973C00' }}>•</span>
                   <span>Ensure you have a stable internet connection</span>
                 </li>
                 <li className="flex items-start gap-1.5">
-                  <span className="text-orange-500 mt-0.5">•</span>
+                  <span className="mt-0.5" style={{ color: '#973C00' }}>•</span>
                   <span>The test will automatically get started at the scheduled time</span>
                 </li>
               </ul>
             </div>
           </div>
         </div>
+
+        {/* Start Assessment Button */}
+        <button
+          onClick={() => navigate('/test/ready')}
+          className="bg-yellow-400 text-gray-900 py-3 px-8 rounded-lg font-semibold text-base hover:bg-yellow-500 transition-colors shadow-md"
+        >
+          Start Assessment
+        </button>
       </div>
 
-      {/* Start Test Button - Bottom Right */}
-      <button
-        onClick={() => navigate('/test/permissions')}
-        className="absolute bottom-20 right-8 bg-green-600 text-white py-2 px-6 rounded-lg font-semibold text-sm hover:bg-green-700 transition-colors shadow-md"
-      >
-        Start Test
-      </button>
-
       {/* Footer */}
-      <footer className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-4">
-        <div className="max-w-7xl mx-auto px-6">
-          <a 
-            href="#" 
-            className="text-blue-600 hover:text-blue-800 underline text-sm"
-          >
-            Contact Support
-          </a>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 };

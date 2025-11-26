@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { VideoProvider } from './context/VideoContext';
 import HomePage from './app/HomePage';
 import MCQPage from './app/Candidate/MCQPage';
 import CodingTestPage from './app/Candidate/CodingTestPage';
@@ -11,10 +12,15 @@ import LoginPage from './app/Auth/LoginPage';
 import CallbackPage from './app/Auth/CallbackPage';
 import Admin from './pages/Admin';
 import Recruiter from './pages/Recruiter';
+import JobDetailsPage from './pages/JobDetailsPage';
 import TestScheduledPage from './app/Candidate/TestScheduledPage';
+import TestInstructionsPage from './app/Candidate/TestInstructionsPage';
+import ScheduleInterviewPage from './app/Candidate/ScheduleInterviewPage';
+
 import TestPermissionsPage from './app/Candidate/TestPermissionsPage';
 import TestOverviewPage from './app/Candidate/TestOverviewPage';
 import TestCompletedPage from './app/Candidate/TestCompletedPage';
+import TestReadyPage from './app/Candidate/TestReadyPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
@@ -38,14 +44,18 @@ const RootRoute = () => {
   const isAuth = isAuthenticated || (userData !== null);
 
   if (isAuth) {
-    // Get user type from context or localStorage
+    // Get user type and status from context or localStorage
     let userType: string | undefined;
+    let status: string | undefined;
+    
     if (user?.userType) {
       userType = user.userType;
+      status = user.status;
     } else if (userData) {
       try {
         const parsed = JSON.parse(userData);
         userType = parsed.userType;
+        status = parsed.status;
       } catch {
         // Fallback to home if parsing fails
       }
@@ -58,8 +68,17 @@ const RootRoute = () => {
     if (userType === 'recruiter') {
       return <Navigate to="/recruiter" replace />;
     }
-    // Default to test/scheduled for candidates or unknown types
-    return <Navigate to="/test/scheduled" replace />;
+    
+    // For candidates, check if already scheduled
+    if (userType === 'candidate') {
+      if (status === 'scheduled') {
+        return <Navigate to="/test/scheduled" replace />;
+      }
+      return <Navigate to="/schedule" replace />;
+    }
+    
+    // Default fallback - redirect to schedule
+    return <Navigate to="/schedule" replace />;
   }
 
   return <Navigate to="/auth/login" replace />;
@@ -79,7 +98,11 @@ function AppRoutes() {
       <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/recruiter" element={<ProtectedRoute><Recruiter /></ProtectedRoute>} />
+      <Route path="/recruiter/job-details" element={<ProtectedRoute><JobDetailsPage /></ProtectedRoute>} />
+      <Route path="/schedule" element={<ProtectedRoute><ScheduleInterviewPage /></ProtectedRoute>} />
       <Route path="/test/scheduled" element={<ProtectedRoute><TestScheduledPage /></ProtectedRoute>} />
+      <Route path="/test/instructions" element={<ProtectedRoute><TestInstructionsPage /></ProtectedRoute>} />
+      <Route path="/test/ready" element={<ProtectedRoute><TestReadyPage /></ProtectedRoute>} />
       <Route path="/test/permissions" element={<ProtectedRoute><TestPermissionsPage /></ProtectedRoute>} />
       <Route path="/test-overview" element={<ProtectedRoute><TestOverviewPage /></ProtectedRoute>} />
       <Route path="/test/completed" element={<ProtectedRoute><TestCompletedPage /></ProtectedRoute>} />
@@ -102,9 +125,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <VideoProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </VideoProvider>
     </AuthProvider>
   );
 }

@@ -1,23 +1,24 @@
 // import { useEffect } from 'react';
 // import { useNavigate } from 'react-router-dom';
 import { SystemDesignProvider, useSystemDesign } from '../../context/SystemDesignContext';
+import { useVideo } from '../../context/VideoContext';
 import DesignHeader from '../../components/SystemDesign/DesignHeader';
 import ExcalidrawCanvas from '../../components/SystemDesign/ExcalidrawCanvas';
 import ClarifyingChat from '../../components/SystemDesign/ClarifyingChat';
-import SubmitBar from '../../components/SystemDesign/SubmitBar';
+import Footer from '../../components/Footer';
+import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
-import FullscreenWarningModal from '../../components/FullscreenWarningModal';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const SystemDesignPageContent = () => {
   const { problem, isLoading } = useSystemDesign();
+  const { videoStream, requestVideoStream } = useVideo();
   // const navigate = useNavigate();
 
-  // Monitor fullscreen exit with warning system
-  const { attemptsRemaining, showWarning, showViolation, closeWarning, handleRedirect } = useFullscreenWarning({
-    maxAttempts: 2,
+  // Monitor fullscreen exit with 5 second countdown
+  const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
     onFinalAttempt: () => {
-      // This will be called on the 3rd attempt (final)
+      // This will be called when time runs out
     },
   });
 
@@ -34,11 +35,6 @@ const SystemDesignPageContent = () => {
       {/* Header */}
       <DesignHeader />
 
-      {/* Progress Bar */}
-      <div className="w-full h-1 bg-yellow-100 relative flex-shrink-0 m-0 p-0">
-        <div className="h-full bg-yellow-400 transition-all duration-300 ease-out w-1/3"></div>
-      </div>
-
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
         {/* Left Panel (70%) */}
@@ -54,17 +50,11 @@ const SystemDesignPageContent = () => {
               </div>
             </div>
 
-            {/* Canvas and Actions Container */}
+            {/* Canvas Container */}
             <div className="flex-1 min-h-0 flex flex-col p-6 overflow-hidden">
-              {/* Excalidraw Canvas - Takes most space */}
-              <div className="flex-1 min-h-0 w-full mb-4">
+              {/* Excalidraw Canvas - Takes all space */}
+              <div className="flex-1 min-h-0 w-full">
                 <ExcalidrawCanvas />
-              </div>
-
-              {/* Bottom Actions - Fixed height */}
-              <div className="flex-shrink-0">
-                {/* Submit Bar */}
-                <SubmitBar />
               </div>
             </div>
           </div>
@@ -76,17 +66,22 @@ const SystemDesignPageContent = () => {
         </div>
       </div>
 
-      {/* Fullscreen Warning Modal */}
-      <FullscreenWarningModal
-        isOpen={showWarning}
-        attemptsRemaining={attemptsRemaining}
-        onClose={closeWarning}
-      />
+      {/* Footer */}
+      <div className="flex-shrink-0">
+        <Footer />
+      </div>
 
       {/* Fullscreen Violation Modal */}
       <FullscreenViolationModal
         isOpen={showViolation}
+        countdown={countdown}
         onRedirect={handleRedirect}
+      />
+
+      {/* Video Preview Component */}
+      <VideoPreview 
+        videoStream={videoStream} 
+        onStreamRequest={requestVideoStream}
       />
     </div>
   );

@@ -9,7 +9,7 @@ const ProgressSidebar = () => {
     const status = questionStatuses[questionId] || QUESTION_STATUS.NOT_ANSWERED;
     const isActive = index === currentQuestionIndex;
     
-    let className = 'aspect-square rounded-lg border-2 font-semibold text-base cursor-pointer flex items-center justify-center relative transition-all hover:scale-105';
+    let className = 'aspect-square rounded-lg border-2 font-semibold text-sm cursor-pointer flex items-center justify-center relative transition-all hover:scale-105';
     
     if (isActive) {
       // Active question gets brown border
@@ -40,22 +40,22 @@ const ProgressSidebar = () => {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-4">
-        <h3 className="text-lg font-semibold text-gray-800 mb-2">Question Overview</h3>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <h3 className="text-base font-semibold text-gray-800 mb-1">Question Overview</h3>
         <QuestionStatusCounters />
       </div>
       
-      <div className="flex flex-col gap-4">
-        <h3 className="text-lg font-semibold text-gray-800 mb-2">All Questions</h3>
-        <div className="grid grid-cols-4 gap-3">
+      <div className="flex flex-col gap-3">
+        <h3 className="text-base font-semibold text-gray-800 mb-1">All Questions</h3>
+        <div className="grid grid-cols-4 gap-2">
           {questions.map((question, index) => (
             <button
               key={question.id}
               className={getQuestionButtonClass(index, question.id)}
               onClick={() => goToQuestion(index)}
             >
-              <span>{index + 1}</span>
+              <span className="text-sm">{index + 1}</span>
             </button>
           ))}
         </div>

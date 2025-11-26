@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 // import { useNavigate } from 'react-router-dom';
 
 const TestCompletedPage = () => {
@@ -146,16 +147,7 @@ const TestCompletedPage = () => {
       </div>
 
       {/* Footer */}
-      <footer className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-4">
-        <div className="max-w-7xl mx-auto px-6">
-          <a 
-            href="#" 
-            className="text-blue-600 hover:text-blue-800 underline text-sm"
-          >
-            Contact Support
-          </a>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 };
