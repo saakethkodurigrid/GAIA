@@ -391,6 +391,12 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         # Update activity tracking
         session.last_activity_time = time.time()
         
+        # Update canvas if provided in request (use latest canvas state from frontend)
+        if request.canvas_data:
+            canvas_json = request.canvas_data.model_dump()
+            session.current_canvas = canvas_json
+            session.last_activity_time = time.time()
+        
         # Add sanitized user message to chat history
         user_msg = ChatMessage(
             role="user",
@@ -412,10 +418,13 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
                 "evaluate", "evaluation", "review", "feedback", "assess", "analyze"
             ])
             
-            # Get latest canvas
-            latest_canvas = session.current_canvas
-            if not latest_canvas and session.canvas_versions:
-                latest_canvas = session.canvas_versions[-1].data
+            # Get latest canvas - prefer canvas from request, then session, then last version
+            if request.canvas_data:
+                latest_canvas = request.canvas_data.model_dump()
+            else:
+                latest_canvas = session.current_canvas
+                if not latest_canvas and session.canvas_versions:
+                    latest_canvas = session.canvas_versions[-1].data
             
             # If user asks to evaluate and canvas exists, trigger full evaluation
             if is_evaluation_request and latest_canvas:

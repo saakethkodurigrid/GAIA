@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { TourProvider, useTour } from '../../context/TourContext';
 import TourOverlay from '../../components/Walkthrough/TourOverlay';
 import { mcqTourSteps } from '../../components/Walkthrough/tourGuideSteps';
+import Footer from '../../components/Footer';
 
 const TourMCQPageContent = () => {
   const { startTour, isRunning } = useTour();
-  const [timeRemaining] = useState(3600); // 60 minutes
+  const [timeRemaining] = useState(10800); // 3 hours (180 minutes)
 
   useEffect(() => {
     // Start tour automatically
@@ -15,16 +16,17 @@ const TourMCQPageContent = () => {
   // Note: Navigation to home page is handled by StepTooltip when "Done" is clicked
 
   const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Dummy data
   const dummyQuestion = {
     id: 1,
     topic: 'Data Structures',
-    question: 'What is the time complexity of binary search?',
+    question: 'What is the time complexity of binary search in a sorted array?',
     options: [
       'O(n)',
       'O(log n)',
@@ -34,13 +36,12 @@ const TourMCQPageContent = () => {
   };
 
   const dummyStatuses = {
-    answered: 3,
-    marked: 2,
-    notAnswered: 5
+    answered: 0,
+    marked: 0,
+    notAnswered: 25
   };
 
-  const totalQuestions = 10;
-  const progressPercentage = 30; // 3 answered out of 10
+  const totalQuestions = 25;
 
   return (
     <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0 relative">
@@ -49,42 +50,26 @@ const TourMCQPageContent = () => {
       {/* Header */}
       <header 
         data-tour="header"
-        className="w-full max-w-full flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm m-0 flex-shrink-0"
+        className="w-full max-w-full flex items-center justify-between px-8 py-3 bg-white border-b border-gray-200 m-0 flex-shrink-0"
         style={{ pointerEvents: isRunning ? 'none' : 'auto' }}
       >
-        <button className="flex items-center gap-2 px-4 py-2 bg-transparent border-none cursor-pointer text-base text-gray-800 hover:text-blue-600 transition-colors">
-          <span className="text-xl">←</span>
-          Back
-        </button>
-        <div className="flex items-center gap-3 flex-1 justify-center">
-          <span className="text-2xl text-gray-600">&lt;/&gt;</span>
-          <h1 className="text-2xl font-semibold text-gray-800">Multiple Choice Assessment</h1>
+        <div className="flex items-center gap-3">
+          <span className="text-xl text-purple-600">&lt;/&gt;</span>
+          <h1 className="text-xl font-semibold text-gray-800">Multiple Choice Assessment</h1>
           <span className="w-2 h-2 rounded-full bg-red-500"></span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-md font-semibold text-base">
-            <span className="text-base">🕐</span>
-            <span>{formatTime(timeRemaining)}</span>
-          </div>
-          <button
-            data-tour="submit-button"
-            className="px-6 py-2 bg-yellow-400 text-gray-800 rounded-md font-semibold text-base cursor-pointer hover:bg-yellow-500 transition-colors"
+          <div 
+            data-tour="timer"
+            className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border-2 border-green-500 rounded-lg font-semibold text-sm"
           >
-            Submit Solution
-          </button>
+            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-green-600">{formatTime(timeRemaining)}</span>
+          </div>
         </div>
       </header>
-
-      {/* Progress Bar */}
-      <div 
-        data-tour="progress-bar"
-        className="w-full h-1 bg-yellow-100 relative flex-shrink-0 m-0 p-0"
-      >
-        <div
-          className="h-full bg-yellow-400 transition-all duration-300 ease-out"
-          style={{ width: `${progressPercentage}%` }}
-        ></div>
-      </div>
 
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
@@ -94,46 +79,38 @@ const TourMCQPageContent = () => {
           className="flex-[0_0_25%] w-1/4 min-w-[280px] bg-white border-r border-gray-200 p-6 overflow-y-auto overflow-x-hidden m-0 h-full"
           style={{ pointerEvents: isRunning ? 'none' : 'auto' }}
         >
-          <div className="flex flex-col gap-8">
-            <div className="flex flex-col gap-4">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Question Overview</h3>
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-3">
+              <h3 className="text-base font-semibold text-gray-800 mb-1">Question Overview</h3>
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3 p-2">
-                  <div className="w-6 h-6 flex items-center justify-center rounded bg-green-100 text-green-600 text-sm">✓</div>
+                  <div className="w-6 h-6 rounded bg-green-100 border-2 border-green-500"></div>
                   <span className="flex-1 text-sm text-gray-600">Answered</span>
                   <span className="font-semibold text-gray-800 min-w-6 text-right">{dummyStatuses.answered}</span>
                 </div>
                 <div className="flex items-center gap-3 p-2">
-                  <div className="w-6 h-6 flex items-center justify-center rounded bg-purple-100 text-purple-600 text-sm">🚩</div>
+                  <div className="w-6 h-6 rounded bg-purple-600 border-2 border-purple-600"></div>
                   <span className="flex-1 text-sm text-gray-600">Marked</span>
                   <span className="font-semibold text-gray-800 min-w-6 text-right">{dummyStatuses.marked}</span>
                 </div>
                 <div className="flex items-center gap-3 p-2">
-                  <div className="w-6 h-6 flex items-center justify-center rounded bg-gray-100 text-gray-600 text-sm">⚪</div>
+                  <div className="w-6 h-6 rounded bg-yellow-100 border-2 border-yellow-400"></div>
                   <span className="flex-1 text-sm text-gray-600">Not Answered</span>
                   <span className="font-semibold text-gray-800 min-w-6 text-right">{dummyStatuses.notAnswered}</span>
                 </div>
               </div>
             </div>
             
-            <div className="flex flex-col gap-4">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">All Questions</h3>
-              <div className="grid grid-cols-4 gap-3">
+            <div className="flex flex-col gap-3">
+              <h3 className="text-base font-semibold text-gray-800 mb-1">All Questions</h3>
+              <div className="grid grid-cols-4 gap-2">
                 {Array.from({ length: totalQuestions }).map((_, index) => {
                   const isActive = index === 0;
-                  const isAnswered = index < 3;
-                  const isMarked = index >= 3 && index < 5;
                   
-                  let className = 'aspect-square rounded-lg border-2 font-semibold text-base cursor-pointer flex items-center justify-center relative transition-all hover:scale-105';
+                  let className = 'aspect-square rounded-lg border-2 font-semibold text-sm cursor-pointer flex items-center justify-center relative transition-all hover:scale-105';
                   
                   if (isActive) {
-                    className += ' border-black border-[3px] bg-yellow-100';
-                  }
-                  
-                  if (isAnswered) {
-                    className += ' bg-green-100 border-green-500 text-green-600';
-                  } else if (isMarked) {
-                    className += ' bg-purple-600 border-purple-600 text-white';
+                    className += ' border-amber-700 border-[3px] bg-yellow-100 text-gray-800';
                   } else {
                     className += ' bg-yellow-100 border-yellow-400 text-gray-800';
                   }
@@ -143,10 +120,7 @@ const TourMCQPageContent = () => {
                       key={index}
                       className={className}
                     >
-                      {isMarked && (
-                        <span className="absolute text-xs">🚩</span>
-                      )}
-                      <span>{index + 1}</span>
+                      <span className="text-sm">{index + 1}</span>
                     </button>
                   );
                 })}
@@ -158,76 +132,113 @@ const TourMCQPageContent = () => {
         {/* Right Main Area */}
         <main 
           data-tour="question-card"
-          className="flex-1 min-w-0 p-8 overflow-y-auto overflow-x-hidden bg-white m-0 h-full"
-          style={{ pointerEvents: isRunning ? 'none' : 'auto' }}
+          className="flex-1 min-w-0 p-8 overflow-y-auto overflow-x-hidden m-0 h-full"
+          style={{ backgroundColor: '#F8F4EE', pointerEvents: isRunning ? 'none' : 'auto' }}
         >
-          <div className="w-full max-w-full flex flex-col gap-6">
+          <div className="w-full max-w-full flex flex-col gap-5">
             <div className="flex justify-between items-center w-full">
-              <span className="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium">
+              <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
                 {dummyQuestion.topic}
               </span>
-              <span className="text-sm text-gray-600 font-medium">
-                Question 1 of {totalQuestions}
-              </span>
-            </div>
-            
-            <div className="text-2xl font-semibold text-gray-800 leading-relaxed my-4 w-full break-words">
-              {dummyQuestion.question}
-            </div>
-            
-            <div className="space-y-3 mb-8">
-              {dummyQuestion.options.map((option, index) => (
-                <label
-                  key={index}
-                  className="flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
-                >
-                  <input
-                    type="radio"
-                    name="answer"
-                    value={index}
-                    className="mr-3 w-5 h-5 text-blue-600"
-                    disabled={isRunning}
-                  />
-                  <span className="text-gray-800">{option}</span>
-                </label>
-              ))}
-            </div>
-            
-            <div className="flex justify-start gap-4 mt-4 w-full">
-              <div className="flex gap-4">
-                <button 
-                  className="flex items-center gap-2 px-6 py-3 bg-transparent border-2 border-gray-200 rounded-lg text-base font-medium cursor-pointer transition-all hover:border-gray-400 hover:bg-gray-50 text-gray-800"
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600 font-medium">
+                  Question 1 of {totalQuestions}
+                </span>
+                <button
+                  data-tour="submit-button"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
                   disabled={isRunning}
                 >
-                  <span className="text-base">🚩</span>
-                  Mark for Review
-                </button>
-                <button 
-                  className="flex items-center gap-2 px-6 py-3 bg-transparent border-2 border-gray-200 rounded-lg text-base font-medium cursor-pointer transition-all hover:border-gray-400 hover:bg-gray-50 text-gray-800"
-                  disabled={isRunning}
-                >
-                  <span className="text-base">💾</span>
-                  Save Answer
+                  Submit Section
                 </button>
               </div>
             </div>
             
-            <div className="flex justify-between items-center px-8 py-2 bg-white border-t border-gray-200 mt-8 shadow-[0_-2px_8px_rgba(0,0,0,0.05)] w-full">
-              <button
-                className="px-8 py-3 rounded-lg text-base font-medium bg-gray-100 border-2 border-gray-200 text-gray-400 opacity-50 cursor-not-allowed"
-                disabled={isRunning}
-              >
-                Previous
-              </button>
-              <button
-                className="px-8 py-3 bg-gray-900 text-white rounded-lg text-base font-semibold cursor-pointer transition-colors hover:bg-gray-800"
-                disabled={isRunning}
-              >
-                Save & Next
-              </button>
+            <div 
+              data-tour="question-text"
+              className="text-xl font-semibold text-gray-800 leading-relaxed my-3 w-full break-words"
+            >
+              {dummyQuestion.question}
+            </div>
+            
+            <div 
+              data-tour="options"
+              className="flex flex-col gap-3 my-3 w-full"
+            >
+              {dummyQuestion.options.map((option, index) => {
+                const isSelected = index === 1; // O(log n) is selected
+                return (
+                  <div
+                    key={index}
+                    className={`flex items-center gap-3 p-4 border-2 rounded-lg bg-white cursor-pointer transition-all w-full ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center">
+                      <div className={`w-5 h-5 border-2 rounded-full flex items-center justify-center transition-all ${
+                        isSelected ? 'border-blue-500' : 'border-gray-400'
+                      }`}>
+                        {isSelected && (
+                          <div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>
+                        )}
+                      </div>
+                    </div>
+                    <span className="flex-1 text-base text-gray-800">{option}</span>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="flex justify-between items-center gap-4 mt-5 w-full">
+              <div className="flex items-center gap-4">
+                <button 
+                  data-tour="mark-for-review"
+                  className="flex items-center gap-2 px-5 py-2 bg-transparent border-2 border-gray-200 rounded-lg text-sm font-medium cursor-pointer transition-all hover:border-gray-400 hover:bg-gray-50 text-gray-800"
+                  disabled={isRunning}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                  </svg>
+                  Mark for Review
+                </button>
+                
+                <button 
+                  className="flex items-center gap-2 px-5 py-2 bg-transparent border-2 border-gray-200 rounded-lg text-sm font-medium cursor-pointer transition-all hover:border-gray-400 hover:bg-gray-50 text-gray-800"
+                  disabled={isRunning}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Clear Selection
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <button
+                  className="px-6 py-2 rounded-lg text-sm font-medium bg-gray-100 border-2 border-gray-200 text-gray-400 opacity-50 cursor-not-allowed"
+                  disabled={true}
+                >
+                  Previous
+                </button>
+                
+                <button
+                  data-tour="save-next"
+                  className="px-6 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-yellow-500"
+                  disabled={isRunning}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </main>
+      </div>
+
+      {/* Footer */}
+      <div className="flex-shrink-0">
+        <Footer />
       </div>
     </div>
   );

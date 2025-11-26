@@ -275,7 +275,7 @@ Provide your response as JSON:
                 {"role": "user", "content": user_prompt}
             ],
             "temperature": 0.7,
-            "max_tokens": 150  # Reduced to work within credit limits (concise responses)
+            "max_tokens": 200  # Reduced to work within credit limits (concise responses)
         }
         
         try:

@@ -19,6 +19,7 @@ class Job(Base):
         ForeignKey('recruiter_admin.email_id'),
         nullable=False
     )
+    grade = Column(String(10), nullable=False)  # Grade level (e.g., T1, T2, T3, etc.)
     
     # Relationships
     recruiter = relationship('RecruiterAdmin', back_populates='jobs')

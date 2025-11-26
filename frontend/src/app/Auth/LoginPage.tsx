@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 
 const LoginPage = () => {
   const { login, isLoading, error, clearError, isAuthenticated } = useAuth();
@@ -21,18 +22,18 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
       {/* Header */}
-      <Header />
+      <Header transparent={true} />
 
       {/* Main Content - Centered */}
-      <div className="min-h-screen flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           {/* Title with </> icon */}
           <div className="text-center mb-12">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="text-5xl font-bold text-yellow-500">&lt;/&gt;</div>
-              <h1 className="text-4xl font-bold text-blue-900">TechInterview Platform</h1>
+            <div className="flex flex-col items-center justify-center mb-4">
+              <div className="text-5xl font-bold text-yellow-500 mb-3">&lt;/&gt;</div>
+              <h1 className="text-4xl font-bold" style={{ color: '#0069B4' }}>TechInterview Platform</h1>
             </div>
           </div>
 
@@ -86,6 +87,9 @@ const LoginPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 };

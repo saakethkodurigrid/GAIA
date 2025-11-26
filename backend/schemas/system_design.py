@@ -16,6 +16,7 @@ class ChatMessageRequest(BaseModel):
     """Request schema for sending a chat message."""
     message: str = Field(..., description="The chat message content", min_length=1)
     session_id: str = Field(..., description="Session ID for the interview")
+    canvas_data: Optional[CanvasData] = Field(None, description="Optional current canvas state from Excalidraw")
     
     class Config:
         extra = "forbid"

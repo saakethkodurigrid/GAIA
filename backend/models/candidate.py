@@ -1,7 +1,7 @@
 """
 Candidate model for CANDIDATE table.
 """
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, CheckConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, CheckConstraint, Numeric
 from sqlalchemy.orm import relationship
 from core.database import Base
 
@@ -11,13 +11,14 @@ class Candidate(Base):
     
     __tablename__ = 'candidate'
     __table_args__ = (
-        CheckConstraint("status IN ('registered', 'scheduled', 'ongoing', 'done')", name='check_status'),
+        CheckConstraint("status IN ('shortlisted', 'rejected', 'scheduled', 'in progress', 'completed', 'selected', 'not selected')", name='candidate_status_check'),
     )
     
     candidate_id = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
     name = Column(String(255), nullable=False)
     email_id = Column(String(255), nullable=False, index=True)
     resume = Column(Text, nullable=True)
+    resume_score = Column(Numeric, nullable=True)  # Resume score (0-100), matches DB numeric type
     role_id = Column(Integer, ForeignKey('role_table.role_id'), nullable=False)
     phone_number = Column(String(20), nullable=True)
     location = Column(String(255), nullable=True)

@@ -1,34 +1,54 @@
-import { useEffect, useState } from 'react';
-
 interface FullscreenViolationModalProps {
   isOpen: boolean;
+  countdown: number;
   onRedirect: () => void;
 }
 
-const FullscreenViolationModal = ({ isOpen, onRedirect }: FullscreenViolationModalProps) => {
-  const [countdown, setCountdown] = useState(2);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    // Reset countdown when modal opens
-    setCountdown(2);
-
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onRedirect();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isOpen, onRedirect]);
+const FullscreenViolationModal = ({ isOpen, countdown }: FullscreenViolationModalProps) => {
 
   if (!isOpen) return null;
+
+  const requestFullscreen = () => {
+    const element = document.documentElement;
+    
+    // Try standard fullscreen API
+    if (element.requestFullscreen) {
+      element.requestFullscreen().catch((err: Error) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+      return;
+    }
+    
+    // Try webkit (Chrome/Safari)
+    const webkitRequestFullscreen = (element as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen;
+    if (webkitRequestFullscreen) {
+      webkitRequestFullscreen.call(element).catch((err: Error) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+      return;
+    }
+    
+    // Try moz (Firefox)
+    const mozRequestFullScreen = (element as HTMLElement & { mozRequestFullScreen?: () => Promise<void> }).mozRequestFullScreen;
+    if (mozRequestFullScreen) {
+      mozRequestFullScreen.call(element).catch((err: Error) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+      return;
+    }
+    
+    // Try ms (IE/Edge)
+    const msRequestFullscreen = (element as HTMLElement & { msRequestFullscreen?: () => Promise<void> }).msRequestFullscreen;
+    if (msRequestFullscreen) {
+      msRequestFullscreen.call(element).catch((err: Error) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+    }
+  };
+
+  const handleReturnToFullscreen = () => {
+    requestFullscreen();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
@@ -52,16 +72,16 @@ const FullscreenViolationModal = ({ isOpen, onRedirect }: FullscreenViolationMod
         </div>
 
         <h2 className="text-3xl font-bold text-red-600 text-center mb-4">
-          Rule Violation
+          Fullscreen Required
         </h2>
 
         <p className="text-gray-700 text-center mb-6 text-lg">
-          You have violated the fullscreen requirement by exiting fullscreen mode multiple times.
+          You must return to fullscreen mode immediately. The interview will end if you don't return within:
         </p>
 
         <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-6">
           <p className="text-center text-red-800 font-semibold text-base mb-2">
-            You will be redirected to the exit screen in:
+            Time remaining:
           </p>
           <div className="flex items-center justify-center">
             <div className="text-5xl font-bold text-red-600">
@@ -73,9 +93,16 @@ const FullscreenViolationModal = ({ isOpen, onRedirect }: FullscreenViolationMod
           </div>
         </div>
 
+        <button
+          onClick={handleReturnToFullscreen}
+          className="w-full bg-yellow-500 text-white py-3 px-6 rounded-lg font-semibold text-base hover:bg-yellow-600 transition-colors shadow-md mb-4"
+        >
+          Return to Fullscreen
+        </button>
+
         <div className="text-center">
           <p className="text-sm text-gray-600">
-            Your test session will be automatically submitted.
+            If you don't return to fullscreen, the interview will be automatically ended.
           </p>
         </div>
       </div>
@@ -84,4 +111,3 @@ const FullscreenViolationModal = ({ isOpen, onRedirect }: FullscreenViolationMod
 };
 
 export default FullscreenViolationModal;
-

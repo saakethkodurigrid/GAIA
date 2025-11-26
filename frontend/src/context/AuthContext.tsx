@@ -14,6 +14,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const userData = localStorage.getItem('user_data');
     return userData !== null;
   });
+
+  
   const [user, setUser] = useState<AuthContextType['user']>(() => {
     const userData = localStorage.getItem('user_data');
     if (userData) {
@@ -25,6 +27,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     return null;
   });
+
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +69,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Function to set auth state after successful login (called from callback page)
   const setAuthState = useCallback((authResponse: AuthResponse) => {
+    console.log('Login data from backend:', authResponse);
     setIsAuthenticated(authResponse.success);
     if (authResponse.success) {
       setUser({
@@ -82,6 +87,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         status: authResponse.status,
         candidateId: authResponse.candidate_id,
       }));
+      
+      // Store Google ID token for API authentication
+      if (authResponse.id_token) {
+        localStorage.setItem('auth_token', authResponse.id_token);
+        localStorage.setItem('google_id_token', authResponse.id_token);
+      }
     }
     setIsLoading(false);
   }, []);

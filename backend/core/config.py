@@ -40,6 +40,11 @@ class Settings:
     # Groq LLM Configuration (for MCQ RAG generation)
     GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')
     
+    # Azure Blob Storage Configuration
+    AZURE_STORAGE_CONNECTION_STRING: str = os.getenv('AZURE_STORAGE_CONNECTION_STRING', '')
+    IMAGE_CONTAINER_NAME: str = os.getenv('IMAGE_CONTAINER_NAME', 'user-images')
+    VIDEO_CONTAINER_NAME: str = os.getenv('VIDEO_CONTAINER_NAME', 'user-videos')
+    
     # Google OAuth Scopes
     GOOGLE_SCOPES: list = [
         'https://www.googleapis.com/auth/userinfo.email',

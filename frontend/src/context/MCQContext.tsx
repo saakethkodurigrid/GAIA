@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { fetchQuestions } from '../api/questions.api';
 import { QUESTION_STATUS, TIMER_DURATION } from '../utils/constants';
 import type { MCQContextType, Question } from '../types';
+import { useAuth } from './AuthContext';
 
 const MCQContext = createContext<MCQContextType | undefined>(undefined);
 
@@ -10,7 +11,38 @@ interface MCQProviderProps {
   children: ReactNode;
 }
 
+const STORAGE_KEY = 'mcq_answers';
+
+// Helper functions for localStorage
+const loadAnswersFromStorage = (): Record<number, number | null> => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Convert string keys to numbers and handle null values
+      const result: Record<number, number | null> = {};
+      Object.keys(parsed).forEach((key) => {
+        const questionId = parseInt(key, 10);
+        result[questionId] = parsed[key] === null ? null : parsed[key];
+      });
+      return result;
+    }
+  } catch (error) {
+    console.error('Error loading answers from localStorage:', error);
+  }
+  return {};
+};
+
+const saveAnswersToStorage = (answers: Record<number, number | null>) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
+  } catch (error) {
+    console.error('Error saving answers to localStorage:', error);
+  }
+};
+
 export const MCQProvider = ({ children }: MCQProviderProps) => {
+  const { user } = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -19,17 +51,31 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load questions on mount
+  // Load questions on mount and initialize from localStorage
   useEffect(() => {
     const loadQuestions = async () => {
       try {
-        const data = await fetchQuestions();
+        // Fetch questions from backend using candidate_id
+        const candidateId = user?.candidateId;
+        const data = await fetchQuestions(candidateId);
         setQuestions(data);
-        // Initialize statuses
+        
+        // Load saved answers from localStorage
+        const storedAnswers = loadAnswersFromStorage();
+        const loadedSavedAnswers: Record<number, number> = {};
         const initialStatuses: Record<number, string> = {};
+        
         data.forEach((q) => {
-          initialStatuses[q.id] = QUESTION_STATUS.NOT_ANSWERED;
+          const storedAnswer = storedAnswers[q.id];
+          if (storedAnswer !== null && storedAnswer !== undefined) {
+            loadedSavedAnswers[q.id] = storedAnswer;
+            initialStatuses[q.id] = QUESTION_STATUS.ANSWERED;
+          } else {
+            initialStatuses[q.id] = QUESTION_STATUS.NOT_ANSWERED;
+          }
         });
+        
+        setSavedAnswers(loadedSavedAnswers);
         setQuestionStatuses(initialStatuses);
         setIsLoading(false);
       } catch (error) {
@@ -38,7 +84,7 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
       }
     };
     loadQuestions();
-  }, []);
+  }, [user?.candidateId]);
 
   // Initialize current question's answer from savedAnswers when questions load
   useEffect(() => {
@@ -77,6 +123,36 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
     }));
   }, []);
 
+  const clearSelection = useCallback((questionId: number) => {
+    // Clear the selected answer for the current question
+    setAnswers((prev) => {
+      const newAnswers = { ...prev };
+      delete newAnswers[questionId];
+      return newAnswers;
+    });
+    
+    // Also remove from savedAnswers and update localStorage
+    setSavedAnswers((prev) => {
+      const newSavedAnswers = { ...prev };
+      delete newSavedAnswers[questionId];
+      
+      // Update localStorage
+      const allAnswers: Record<number, number | null> = {};
+      questions.forEach((q) => {
+        allAnswers[q.id] = newSavedAnswers[q.id] !== undefined ? newSavedAnswers[q.id] : null;
+      });
+      saveAnswersToStorage(allAnswers);
+      
+      return newSavedAnswers;
+    });
+    
+    // Update status
+    setQuestionStatuses((prev) => ({
+      ...prev,
+      [questionId]: QUESTION_STATUS.NOT_ANSWERED
+    }));
+  }, [questions]);
+
   const markForReview = useCallback((questionId: number) => {
     setQuestionStatuses((prev) => ({
       ...prev,
@@ -87,16 +163,24 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
   const saveAnswer = useCallback((questionId: number) => {
     if (answers[questionId] !== undefined) {
       // Save the answer
-      setSavedAnswers((prev) => ({
-        ...prev,
+      const newSavedAnswers = {
+        ...savedAnswers,
         [questionId]: answers[questionId]
-      }));
+      };
+      setSavedAnswers(newSavedAnswers);
       setQuestionStatuses((prev) => ({
         ...prev,
         [questionId]: QUESTION_STATUS.ANSWERED
       }));
+      
+      // Save to localStorage
+      const allAnswers: Record<number, number | null> = {};
+      questions.forEach((q) => {
+        allAnswers[q.id] = newSavedAnswers[q.id] !== undefined ? newSavedAnswers[q.id] : null;
+      });
+      saveAnswersToStorage(allAnswers);
     }
-  }, [answers]);
+  }, [answers, savedAnswers, questions]);
 
   const goToQuestion = useCallback((index: number) => {
     if (index >= 0 && index < questions.length) {
@@ -200,6 +284,7 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
     timeRemaining,
     isLoading,
     selectAnswer,
+    clearSelection,
     markForReview,
     saveAnswer,
     goToQuestion,

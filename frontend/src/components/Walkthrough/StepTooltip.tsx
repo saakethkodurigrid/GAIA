@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTour } from '../../context/TourContext';
 import type { TourStep } from '../../context/TourContext';
 
@@ -15,6 +15,7 @@ interface StepTooltipProps {
 const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevious, onClose }: StepTooltipProps) => {
   const { nextStep, previousStep } = useTour();
   const navigate = useNavigate();
+  const location = useLocation();
   const isLastStep = stepIndex === totalSteps - 1;
 
   // For the last step, always center it
@@ -98,14 +99,37 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
         maxWidth: '90vw'
       };
       break;
+    case 'left-side':
+      // Position on the left side of the screen, below the target element (options)
+      const leftSidePadding = 40; // More padding to overlap sidebar nicely
+      const topPosition = targetRect.bottom + padding; // Position below the options
+      tooltipStyle = {
+        top: Math.min(topPosition, window.innerHeight - tooltipHeight - padding),
+        left: leftSidePadding,
+        maxWidth: '400px',
+        width: 'auto'
+      };
+      break;
   }
 
   const handleNext = () => {
     if (isLastStep) {
       onClose();
-      // Navigate to home page when Done is clicked
+      // Navigate based on which tour is completed
       setTimeout(() => {
-        navigate('/');
+        if (location.pathname === '/tutorial/system-design') {
+          // System design tour is the last one, navigate to test ready page
+          navigate('/test/ready');
+        } else if (location.pathname === '/tutorial/mcq') {
+          // MCQ tour completed, navigate to coding tour
+          navigate('/tutorial/coding');
+        } else if (location.pathname === '/tutorial/coding') {
+          // Coding tour completed, navigate to system design tour
+          navigate('/tutorial/system-design');
+        } else {
+          // Default fallback
+          navigate('/');
+        }
       }, 300);
     } else {
       nextStep();
@@ -144,7 +168,7 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
             </button>
             <button
               onClick={handleNext}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
             >
               Next
             </button>
@@ -153,7 +177,7 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
         {isLastStep && (
           <button
             onClick={handleNext}
-            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+            className="px-6 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
           >
             Done
           </button>
@@ -175,8 +199,8 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
         {Array.from({ length: totalSteps }).map((_, index) => (
           <div
             key={index}
-            className={`h-1.5 rounded-full transition-all ${
-              index === stepIndex ? 'bg-blue-600 w-6' : 'bg-gray-300 w-1.5'
+            className={`h-2 w-2 rounded-full transition-all ${
+              index === stepIndex ? 'bg-yellow-400' : 'bg-gray-300'
             }`}
           />
         ))}

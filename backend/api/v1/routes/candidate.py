@@ -9,6 +9,8 @@ from models.candidate import Candidate
 from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
+from schemas.admin import AssignedQuestionResponse
+from services.question_assignment_service import QuestionAssignmentService
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -150,4 +152,74 @@ async def schedule_test(
         )
     
     return response
+
+
+@router.get("/{candidate_id}/assigned-question", response_model=AssignedQuestionResponse)
+async def get_assigned_question(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the assigned system design question for a candidate.
+    
+    Only accessible when the test is in progress (status = 'in progress').
+    This endpoint can only be accessed during an active test session.
+    
+    Args:
+        candidate_id: Candidate UUID
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        AssignedQuestionResponse with question details
+        
+    Raises:
+        HTTPException: 
+            - 403: If user is not a candidate, tries to access another candidate's question, or test is not in progress
+            - 404: If candidate not found or no question assigned
+            - 401: If authentication fails
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view your own assigned question."
+        )
+    
+    # Check if test is in progress (status must be 'in progress')
+    candidate_status = current_candidate.status.lower() if current_candidate.status else None
+    
+    if candidate_status != 'in progress':
+        if candidate_status in ['shortlisted', 'rejected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned question is only available during the test."
+            )
+        elif candidate_status == 'scheduled':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned question is only available during the test."
+            )
+        elif candidate_status in ['completed', 'selected', 'not selected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has been completed. The assigned question is no longer available."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test is not in progress. The assigned question is only available during an active test session."
+            )
+    
+    assignment_service = QuestionAssignmentService(db)
+    question_details = assignment_service.get_assigned_question_details(candidate_id)
+    
+    if not question_details:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No question assigned to this candidate or candidate not found"
+        )
+    
+    return AssignedQuestionResponse(**question_details)
 

@@ -3,32 +3,50 @@ import type { TourStep } from '../../context/TourContext';
 export const mcqTourSteps: TourStep[] = [
   {
     target: '[data-tour="header"]',
-    title: 'Welcome to MCQ Assessment',
-    content: 'This is the header section. You can see the timer and submit button here.',
-    placement: 'bottom'
-  },
-  {
-    target: '[data-tour="progress-bar"]',
-    title: 'Progress Indicator',
-    content: 'This yellow bar shows your progress based on answered questions.',
-    placement: 'bottom'
+    title: 'Welcome to multiple choice questions assessment!',
+    content: 'This short tour will help you understand how to navigate and answer the MCQ questions. Click Next to begin the quick tour.',
+    placement: 'center'
   },
   {
     target: '[data-tour="sidebar"]',
-    title: 'Question Navigation',
-    content: 'Use this sidebar to navigate between questions. Green = answered, Purple = marked for review, Yellow = not answered.',
+    title: 'Question Panel',
+    content: 'This is your question navigator. You can jump to any question from here.',
     placement: 'right'
   },
   {
-    target: '[data-tour="question-card"]',
-    title: 'Question Area',
-    content: 'Read the question here and select your answer from the options below.',
-    placement: 'left'
+    target: '[data-tour="question-text"]',
+    title: 'Question Text',
+    content: 'The question appears here. Read carefully before choosing an option.',
+    placement: 'center'
+  },
+  {
+    target: '[data-tour="options"]',
+    title: 'Options',
+    content: 'Select one of the choices below. You can change your option at any time.',
+    placement: 'left-side'
+  },
+  {
+    target: '[data-tour="mark-for-review"]',
+    title: 'Mark for Review',
+    content: 'Use this to revisit questions later. Marked questions will appear with a flag.',
+    placement: 'center'
+  },
+  {
+    target: '[data-tour="save-next"]',
+    title: 'Save & Next Button',
+    content: 'Click Save after selecting your answer. Unsaved answers won\'t be counted.',
+    placement: 'center'
+  },
+  {
+    target: '[data-tour="timer"]',
+    title: 'Timer',
+    content: 'This timer shows the total time remaining. Your test auto-submits when time ends.',
+    placement: 'center'
   },
   {
     target: '[data-tour="submit-button"]',
-    title: 'MCQ Tutorial Complete!',
-    content: 'You have finished the MCQ tutorial.',
+    title: 'Submit Section',
+    content: 'Once you have submitted answers for all the questions, click Submit Section. Your answers will be evaluated and locked for this section.',
     placement: 'center'
   }
 ];
@@ -36,44 +54,50 @@ export const mcqTourSteps: TourStep[] = [
 export const codingTourSteps: TourStep[] = [
   {
     target: '[data-tour="header"]',
-    title: 'Welcome to Coding Assessment',
-    content: 'This is the header section. You can see the timer and submit button here.',
-    placement: 'bottom'
-  },
-  {
-    target: '[data-tour="progress-bar"]',
-    title: 'Progress Indicator',
-    content: 'This yellow bar shows your progress through the coding problems.',
-    placement: 'bottom'
+    title: 'Welcome to your coding assessment!',
+    content: 'You\'ll solve a set of programming questions here. Each question includes a description, examples, and test cases to help you verify your solution. Click Next to begin the quick tour.',
+    placement: 'center'
   },
   {
     target: '[data-tour="question-nav"]',
-    title: 'Question Navigation',
-    content: 'Use these buttons to switch between different coding problems.',
-    placement: 'bottom'
+    title: 'Your Question Navigator',
+    content: 'Use this panel to switch between questions anytime. Finished questions will show a progress indicator so you know what\'s done.',
+    placement: 'right'
   },
   {
     target: '[data-tour="problem-description"]',
-    title: 'Problem Description',
-    content: 'Read the problem statement, examples, and constraints here.',
-    placement: 'right'
+    title: 'Problem Title and Description',
+    content: 'Each problem starts with its title. And you will find the full description of the task. Read this part carefully — most important details and constraints are explained here.',
+    placement: 'center'
+  },
+  {
+    target: '[data-tour="problem-description"]',
+    title: 'Examples',
+    content: 'These examples show valid inputs and expected outputs. They\'re designed to help you understand sample test cases and the expected logic.',
+    placement: 'center'
+  },
+  {
+    target: '[data-tour="language-selector"]',
+    title: 'Choose Your Language',
+    content: 'You can write your solution in the language you are most comfortable with. Choose from Python, JavaScript, or Java.',
+    placement: 'center'
   },
   {
     target: '[data-tour="code-editor"]',
     title: 'Code Editor',
-    content: 'Write your solution here. You can select different programming languages.',
-    placement: 'left'
+    content: 'Write your solution here. The editor supports indentation, syntax highlighting, and resets if you want to start over.',
+    placement: 'center'
   },
   {
     target: '[data-tour="test-cases"]',
-    title: 'Test Cases',
-    content: 'View test cases and run your code to see the results here.',
-    placement: 'top'
+    title: 'Run & Test Your Code',
+    content: 'Use Run Code to test with selected inputs. Use Run All Test cases to verify your solution against all provided cases before submitting. Once you\'re confident your code works, click Submit Solution.',
+    placement: 'center'
   },
   {
-    target: '[data-tour="submit-button"]',
-    title: 'Coding Tutorial Complete!',
-    content: 'You have finished the Coding tutorial.',
+    target: '[data-tour="submit-solution"]',
+    title: 'Submit Section',
+    content: 'Once you have submitted answers for all the questions, click Submit Section. Your answers will be evaluated and locked for this section.',
     placement: 'center'
   }
 ];

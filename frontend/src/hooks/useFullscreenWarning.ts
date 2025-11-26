@@ -1,19 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface UseFullscreenWarningOptions {
-  maxAttempts?: number;
   onFinalAttempt?: () => void;
 }
 
 export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) => {
-  const { maxAttempts = 2, onFinalAttempt } = options;
+  const { onFinalAttempt } = options;
   const navigate = useNavigate();
-  const [attempts, setAttempts] = useState(0);
-  const [showWarning, setShowWarning] = useState(false);
   const [showViolation, setShowViolation] = useState(false);
-  const [attemptsRemaining, setAttemptsRemaining] = useState(maxAttempts);
+  const [countdown, setCountdown] = useState(5);
   const wasFullscreenRef = useRef(false);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const navigateRef = useRef(navigate);
+  const onFinalAttemptRef = useRef(onFinalAttempt);
+
+  // Keep refs updated
+  useEffect(() => {
+    navigateRef.current = navigate;
+    onFinalAttemptRef.current = onFinalAttempt;
+  }, [navigate, onFinalAttempt]);
 
   useEffect(() => {
     // Track initial fullscreen state
@@ -39,25 +45,43 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
 
       // Only trigger if we were in fullscreen and now we're not
       if (wasFullscreenRef.current && !isFullscreen) {
-        const remaining = maxAttempts - attempts;
-        
-        if (remaining > 0) {
-          // Show warning and increment attempts
-          setAttempts(prev => {
-            const newAttempts = prev + 1;
-            setAttemptsRemaining(maxAttempts - newAttempts);
-            setShowWarning(true);
-            return newAttempts;
+        // Show violation modal with 5 second countdown
+        setShowViolation(true);
+        setCountdown(5);
+
+        // Clear any existing interval
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+
+        // Start countdown
+        countdownIntervalRef.current = setInterval(() => {
+          setCountdown((prev) => {
+            const newCount = prev - 1;
+            if (newCount <= 0) {
+              // Time's up - redirect to completed page
+              if (countdownIntervalRef.current) {
+                clearInterval(countdownIntervalRef.current);
+                countdownIntervalRef.current = null;
+              }
+              setShowViolation(false);
+              if (onFinalAttemptRef.current) {
+                onFinalAttemptRef.current();
+              }
+              navigateRef.current('/test/completed', { replace: true });
+              return 0;
+            }
+            return newCount;
           });
-          
-          // Request fullscreen again after a short delay (but don't force it - let user click button)
-          // The modal button will handle the fullscreen request
-        } else {
-          // Final attempt (3rd time) - show violation modal first
-          if (onFinalAttempt) {
-            onFinalAttempt();
-          }
-          setShowViolation(true);
+        }, 1000);
+      } else if (!wasFullscreenRef.current && isFullscreen) {
+        // User returned to fullscreen - close violation modal and reset
+        setShowViolation(false);
+        setCountdown(5);
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
         }
       }
 
@@ -74,24 +98,28 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
     };
-  }, [attempts, maxAttempts, navigate, onFinalAttempt]);
+  }, []); // Empty dependency array - only run once
 
-  const closeWarning = useCallback(() => {
-    setShowWarning(false);
-  }, []);
-
-  const handleRedirect = useCallback(() => {
-    navigate('/test/completed', { replace: true });
-  }, [navigate]);
+  const handleRedirect = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setShowViolation(false);
+    if (onFinalAttemptRef.current) {
+      onFinalAttemptRef.current();
+    }
+    navigateRef.current('/test/completed', { replace: true });
+  };
 
   return {
-    attempts,
-    attemptsRemaining,
-    showWarning,
     showViolation,
-    closeWarning,
+    countdown,
     handleRedirect,
   };
 };
-

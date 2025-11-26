@@ -16,6 +16,7 @@ export interface MCQContextType {
   timeRemaining: number;
   isLoading: boolean;
   selectAnswer: (questionId: number, answerIndex: number) => void;
+  clearSelection: (questionId: number) => void;
   markForReview: (questionId: number) => void;
   saveAnswer: (questionId: number) => void;
   goToQuestion: (index: number) => void;
@@ -132,6 +133,7 @@ export interface AuthResponse {
   status?: CandidateStatus;
   candidate_id?: string;
   redirect_url?: string;
+  id_token?: string;  // Google ID token for API authentication
 }
 
 export interface GoogleAuthURLResponse {

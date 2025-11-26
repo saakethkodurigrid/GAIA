@@ -3,7 +3,8 @@ Admin API routes for managing recruiters and admins.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile
+from typing import List
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_admin
@@ -16,11 +17,19 @@ from schemas.admin import (
     AddJobResponse,
     ListJobsResponse,
     ListInterviewsResponse,
-    AssignedQuestionResponse
+    AddCandidatesBatchResponse,
+    CandidateBatchItemResponse,
+    FailedFileResponse,
+    ResumesListResponse,
+    ResumeCandidateResponse,
+    ScheduledInterviewsListResponse,
+    ScheduledInterviewCandidateResponse,
+    CompletedInterviewsListResponse,
+    CompletedInterviewCandidateResponse
 )
 from services.job_service import JobService
 from services.interview_service import InterviewService
-from services.question_assignment_service import QuestionAssignmentService
+from services.candidate_batch_service import CandidateBatchService
 from core.dependencies import get_current_recruiter_admin
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -272,40 +281,269 @@ async def list_today_interviews(
     return response
 
 
-@router.get("/candidates/{candidate_id}/assigned-question", response_model=AssignedQuestionResponse)
-async def get_assigned_question(
-    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+@router.post("/jobs/{job_id}/candidates/batch", response_model=AddCandidatesBatchResponse)
+async def add_candidates_batch(
+    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    files: List[UploadFile] = File(..., description="Resume files (PDF or DOCX, max 10 files)"),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Get the assigned system design question for a candidate.
+    Add candidates in batch (up to 10) to a job from resume files.
     
-    Only recruiters and admins can view assigned questions.
+    This endpoint processes PDF/DOCX resume files:
+    1. Extracts text from files
+    2. Extracts PII (name, email, phone, location) for candidate record fields only
+    3. Scrubs PII from resume text (for storage and scoring)
+    4. Calculates resume score using scrubbed resume (NO PII)
+    5. Creates candidate records with scrubbed resume
+    6. Assigns candidates to the specified job
+    
+    PII Details:
+    - PII is extracted ONLY for candidate record fields (name, email, phone, location)
+    - PII is NOT used in resume scoring
+    - PII is NOT stored in candidate.resume column (only scrubbed text is stored)
     
     Args:
-        candidate_id: Candidate UUID
+        job_id: UUID of the job to assign candidates to
+        files: List of resume files (PDF or DOCX, maximum 10 files)
         current_user: Current recruiter/admin user (verified by dependency)
         db: Database session
         
     Returns:
-        AssignedQuestionResponse with question details
+        AddCandidatesBatchResponse with processing results
         
     Raises:
         HTTPException: 
-            - 404: If candidate not found or no question assigned
+            - 400: If validation fails, too many files, or processing errors
             - 401: If authentication fails
             - 403: If user is not a recruiter or admin
+            - 404: If job not found
     """
-    assignment_service = QuestionAssignmentService(db)
-    question_details = assignment_service.get_assigned_question_details(candidate_id)
-    
-    if not question_details:
+    # Validate file count
+    if len(files) > 10:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No question assigned to this candidate or candidate not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum 10 files allowed. Received {len(files)} files."
         )
     
-    return AssignedQuestionResponse(**question_details)
+    if len(files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file is required"
+        )
+    
+    # Validate file types
+    allowed_extensions = {'pdf', 'docx', 'doc'}
+    invalid_files = []
+    for file in files:
+        if not file.filename:
+            invalid_files.append("Unknown filename")
+            continue
+        extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ""
+        if extension not in allowed_extensions:
+            invalid_files.append(file.filename)
+    
+    if invalid_files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file types. Only PDF and DOCX are allowed. Invalid files: {', '.join(invalid_files)}"
+        )
+    
+    # Process batch
+    batch_service = CandidateBatchService(db)
+    result = batch_service.process_batch_candidates(
+        job_id=job_id,
+        files=files,
+        recruiter_email=current_user.email_id
+    )
+    
+    # Convert to response schema
+    candidate_responses = [
+        CandidateBatchItemResponse(**candidate) for candidate in result.get("candidates", [])
+    ]
+    
+    failed_file_responses = [
+        FailedFileResponse(**failed) for failed in result.get("failed_files", [])
+    ]
+    
+    response = AddCandidatesBatchResponse(
+        success=result.get("success", False),
+        message=result.get("message", ""),
+        total_files=result.get("total_files", 0),
+        successful=result.get("successful", 0),
+        failed=result.get("failed", 0),
+        candidates=candidate_responses,
+        failed_files=failed_file_responses
+    )
+    
+    # If all failed, return 400
+    if result.get("successful", 0) == 0 and result.get("failed", 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
 
+
+@router.get("/jobs/{job_id}/candidates/resumes", response_model=ResumesListResponse)
+async def get_resumes_list(
+    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of all candidates for resumes view.
+    
+    Returns all candidates for the specified job regardless of status.
+    """
+    from models.candidate import Candidate
+    from models.recruiter_admin_candidate import RecruiterAdminCandidate
+    from models.job import Job
+    
+    # Verify job exists
+    job = db.query(Job).filter(Job.job_id == job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with ID {job_id} not found"
+        )
+    
+    # Get all candidates assigned to this job (no status filter)
+    candidates = db.query(Candidate).join(
+        RecruiterAdminCandidate,
+        Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
+    ).filter(
+        RecruiterAdminCandidate.job_id == job_id
+    ).order_by(Candidate.resume_score.desc()).all()
+    
+    candidate_list = [
+        ResumeCandidateResponse(
+            candidate_id=c.candidate_id,
+            name=c.name,
+            email_id=c.email_id,
+            resume_score=float(c.resume_score) if c.resume_score else 0.0,
+            status=c.status
+        )
+        for c in candidates
+    ]
+    
+    return ResumesListResponse(
+        success=True,
+        message=f"Found {len(candidate_list)} candidates",
+        count=len(candidate_list),
+        candidates=candidate_list
+    )
+
+
+@router.get("/jobs/{job_id}/candidates/scheduled-interviews", response_model=ScheduledInterviewsListResponse)
+async def get_scheduled_interviews(
+    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of candidates for scheduled interviews view.
+    
+    Returns candidates that are shortlisted (status: shortlisted, scheduled, in progress, 
+    completed, selected, not selected). Does not include rejected candidates.
+    These are candidates in the interview pipeline.
+    """
+    from models.candidate import Candidate
+    from models.recruiter_admin_candidate import RecruiterAdminCandidate
+    from models.job import Job
+    
+    # Verify job exists
+    job = db.query(Job).filter(Job.job_id == job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with ID {job_id} not found"
+        )
+    
+    # Get candidates assigned to this job with shortlisted statuses (excluding rejected)
+    candidates = db.query(Candidate).join(
+        RecruiterAdminCandidate,
+        Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
+    ).filter(
+        RecruiterAdminCandidate.job_id == job_id,
+        Candidate.status.in_(['shortlisted', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'])
+    ).order_by(
+        Candidate.scheduled_date.asc().nullslast(),
+        Candidate.status
+    ).all()
+    
+    candidate_list = [
+        ScheduledInterviewCandidateResponse(
+            candidate_id=c.candidate_id,
+            name=c.name,
+            email_id=c.email_id,
+            interview_status=c.status,
+            interview_date=c.scheduled_date.isoformat() if c.scheduled_date else None
+        )
+        for c in candidates
+    ]
+    
+    return ScheduledInterviewsListResponse(
+        success=True,
+        message=f"Found {len(candidate_list)} candidates in interview pipeline",
+        count=len(candidate_list),
+        candidates=candidate_list
+    )
+
+
+@router.get("/jobs/{job_id}/candidates/completed-interviews", response_model=CompletedInterviewsListResponse)
+async def get_completed_interviews(
+    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of candidates for completed interviews view.
+    
+    Returns candidates with status 'selected' or 'not selected' for the specified job.
+    These are candidates who have completed interviews and received final decisions.
+    """
+    from models.candidate import Candidate
+    from models.recruiter_admin_candidate import RecruiterAdminCandidate
+    from models.job import Job
+    
+    # Verify job exists
+    job = db.query(Job).filter(Job.job_id == job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with ID {job_id} not found"
+        )
+    
+    # Get candidates assigned to this job with final statuses
+    candidates = db.query(Candidate).join(
+        RecruiterAdminCandidate,
+        Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
+    ).filter(
+        RecruiterAdminCandidate.job_id == job_id,
+        Candidate.status.in_(['selected', 'not selected'])
+    ).order_by(Candidate.resume_score.desc()).all()
+    
+    # TODO: Get interview scores from interview_analysis_table if available
+    # For now, using resume_score as placeholder
+    candidate_list = [
+        CompletedInterviewCandidateResponse(
+            candidate_id=c.candidate_id,
+            name=c.name,
+            email_id=c.email_id,
+            interview_score=float(c.resume_score) if c.resume_score else None,  # Placeholder - should come from interview analysis
+            status=c.status,
+            report_link=None  # TODO: Generate report link if available
+        )
+        for c in candidates
+    ]
+    
+    return CompletedInterviewsListResponse(
+        success=True,
+        message=f"Found {len(candidate_list)} candidates with completed interviews",
+        count=len(candidate_list),
+        candidates=candidate_list
+    )
 

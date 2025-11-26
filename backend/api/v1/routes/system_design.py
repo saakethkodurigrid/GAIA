@@ -12,103 +12,12 @@ from core.dependencies import get_current_candidate
 from models.candidate import Candidate
 from services.system_design_service import SystemDesignService
 from schemas.system_design import (
-    SessionCreateRequest, SessionResponse, QuestionResponse, QuestionsResponse,
+    SessionCreateRequest, SessionResponse,
     ChatMessageRequest, ChatMessageResponse, CanvasUpdateRequest, CanvasUpdateResponse,
     ProactivePromptResponse, ChatHistoryResponse, FinalReportResponse
 )
 
 router = APIRouter(prefix="/system-design", tags=["System Design"])
-
-
-@router.get("/questions", response_model=QuestionsResponse)
-async def get_questions(
-    tag: str = Query(None, description="Filter questions by tag"),
-    current_candidate: Candidate = Depends(get_current_candidate),
-    db: Session = Depends(get_db)
-):
-    """
-    Get all questions, optionally filtered by tag.
-    
-    Args:
-        tag: Optional tag to filter questions (e.g., 'normal_hld', 'agentic_ai_hld')
-        current_candidate: Authenticated candidate (from dependency)
-        db: Database session
-        
-    Returns:
-        QuestionsResponse with list of questions
-    """
-    try:
-        service = SystemDesignService(db)
-        return service.get_questions(tag=tag)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching questions: {str(e)}"
-        )
-
-
-@router.get("/questions/{uuid}", response_model=QuestionResponse)
-async def get_question(
-    uuid: str = Path(..., description="Question UUID"),
-    current_candidate: Candidate = Depends(get_current_candidate),
-    db: Session = Depends(get_db)
-):
-    """
-    Get a specific question by UUID.
-    
-    Args:
-        uuid: UUID of the question
-        current_candidate: Authenticated candidate (from dependency)
-        db: Database session
-        
-    Returns:
-        QuestionResponse with question details
-    """
-    try:
-        service = SystemDesignService(db)
-        return service.get_question(uuid)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching question: {str(e)}"
-        )
-
-
-@router.get("/questions/random", response_model=QuestionResponse)
-async def get_random_question(
-    tag: str = Query(None, description="Filter questions by tag"),
-    current_candidate: Candidate = Depends(get_current_candidate),
-    db: Session = Depends(get_db)
-):
-    """
-    Get a random question, optionally filtered by tag.
-    
-    Args:
-        tag: Optional tag to filter questions
-        current_candidate: Authenticated candidate (from dependency)
-        db: Database session
-        
-    Returns:
-        QuestionResponse with random question
-    """
-    try:
-        service = SystemDesignService(db)
-        return service.get_random_question(tag=tag)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching random question: {str(e)}"
-        )
 
 
 @router.post("/sessions", response_model=SessionResponse)

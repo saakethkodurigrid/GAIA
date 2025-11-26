@@ -25,16 +25,21 @@ const getRedirectPath = (userType?: UserType, status?: CandidateStatus): string 
     return '/recruiter';
   }
   
-  // For now, redirect all candidates to /test/scheduled
-  // Candidate users -> /test/scheduled
+  // Candidate users -> check status
   if (userType === 'candidate') {
-    console.log('Redirecting candidate to /test/scheduled');
-    return '/test/scheduled';
+    // If already scheduled, redirect to scheduled page
+    // if (status === 'scheduled') {
+    //   console.log('Redirecting candidate to /test/scheduled (already scheduled)');
+    //   return '/test/scheduled';
+    // }
+    // Otherwise, redirect to schedule page
+    // console.log('Redirecting candidate to /schedule (not scheduled yet)');
+    return '/schedule';
   }
   
-  // Default fallback - redirect to /test/scheduled
-  console.log('No matching user type, defaulting to /test/scheduled. userType was:', userType);
-  return '/test/scheduled';
+  // Default fallback - redirect to /schedule
+  console.log('No matching user type, defaulting to /schedule. userType was:', userType);
+  return '/schedule';
 };
 
 const CallbackPage = () => {
