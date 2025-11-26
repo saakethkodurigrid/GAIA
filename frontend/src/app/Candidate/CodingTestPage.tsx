@@ -1,23 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CodingProvider, useCoding } from '../../context/CodingContext';
-import { useVideo } from '../../context/VideoContext';
 import LanguageTabs from '../../components/CodeEditor/LanguageTabs';
 import CodeEditor from '../../components/CodeEditor/CodeEditor';
 import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
-import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, isRunning, problems, code } = useCoding();
-  const { videoStream, requestVideoStream } = useVideo();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
   const navigate = useNavigate();
-  
+
   // Calculate attempted questions count
   const getAttemptedCount = () => {
     let attempted = 0;
@@ -35,7 +32,7 @@ const CodingTestPageContent = () => {
     });
     return attempted;
   };
-  
+
   const [activeTab, setActiveTab] = useState<'testcases' | 'output'>('testcases');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showSubmitSectionModal, setShowSubmitSectionModal] = useState(false);
@@ -54,10 +51,10 @@ const CodingTestPageContent = () => {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !containerRef.current) return;
-      
+
       const containerRect = containerRef.current.getBoundingClientRect();
       const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-      
+
       // Constrain between 20% and 80%
       const constrainedWidth = Math.max(20, Math.min(80, newWidth));
       setLeftPanelWidth(constrainedWidth);
@@ -113,25 +110,24 @@ const CodingTestPageContent = () => {
       {/* Main Content */}
       <div ref={containerRef} className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
         {/* Left Column - Problem Description */}
-        <aside 
+        <aside
           className="flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto overflow-x-hidden h-full"
           style={{ width: `${leftPanelWidth}%` }}
         >
           <div className="p-6">
             {/* All Questions Heading */}
             <h3 className="text-base font-semibold text-gray-900 mb-4">All Questions</h3>
-            
+
             {/* Question Navigation Bar */}
             <div className="mb-6 flex gap-2">
               {Array.from({ length: totalProblems }).map((_, index) => (
                 <button
                   key={index}
                   onClick={() => goToProblem(index)}
-                  className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${
-                    currentProblemIndex === index
+                  className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${currentProblemIndex === index
                       ? 'bg-amber-50 border-2 border-yellow-500 text-gray-900 shadow-md'
                       : 'bg-amber-50 border-2 border-yellow-500 text-gray-900'
-                  }`}
+                    }`}
                 >
                   {index + 1}
                 </button>
@@ -206,7 +202,7 @@ const CodingTestPageContent = () => {
         </div>
 
         {/* Right Column - Code Editor */}
-        <main 
+        <main
           className="flex-shrink-0 flex flex-col bg-white h-full overflow-hidden"
           style={{ width: `${100 - leftPanelWidth}%` }}
         >
@@ -226,26 +222,24 @@ const CodingTestPageContent = () => {
               <div className="flex">
                 <button
                   onClick={() => setActiveTab('testcases')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'testcases'
+                  className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === 'testcases'
                       ? 'bg-white text-gray-900 border-b-2 border-gray-900'
                       : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
+                    }`}
                 >
                   Testcases
                 </button>
                 <button
                   onClick={() => setActiveTab('output')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'output'
+                  className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === 'output'
                       ? 'bg-white text-gray-900 border-b-2 border-gray-900'
                       : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
+                    }`}
                 >
                   Output
                 </button>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="flex items-center gap-3 px-4">
                 <button
