@@ -14,11 +14,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip and install build tools first
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies with increased timeout for large packages
-RUN pip install --no-cache-dir --user --timeout=1000 -r requirements.txt
+# Install dependencies with optimizations for faster builds
+# Use binary wheels when possible, increase timeout, and enable parallel builds
+ENV MAX_JOBS=4
+RUN pip install --no-cache-dir --user --timeout=1000 \
+    --prefer-binary \
+    -r requirements.txt
 
 # Production stage
 FROM python:3.11-slim
@@ -36,7 +43,7 @@ COPY --from=builder /root/.local /root/.local
 # Copy application code
 COPY . .
 
-# Make sure scripts are executable
+# Make sure scripts are executable and add to PATH
 ENV PATH=/root/.local/bin:$PATH
 
 # Expose port
@@ -48,6 +55,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run the application
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000"]
+
 
 
 
