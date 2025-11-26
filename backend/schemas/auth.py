@@ -15,10 +15,13 @@ class UserType(str, Enum):
 
 class CandidateStatus(str, Enum):
     """Candidate status enumeration."""
-    REGISTERED = "registered"
+    SHORTLISTED = "shortlisted"
+    REJECTED = "rejected"
     SCHEDULED = "scheduled"
-    ONGOING = "ongoing"
-    DONE = "done"
+    IN_PROGRESS = "in progress"
+    COMPLETED = "completed"
+    SELECTED = "selected"
+    NOT_SELECTED = "not selected"
 
 
 class GoogleTokenRequest(BaseModel):

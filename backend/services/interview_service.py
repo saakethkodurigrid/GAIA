@@ -437,11 +437,11 @@ class InterviewService:
                     scheduled_date=None
                 )
             
-            # Validate that candidate is in 'registered' status
-            if candidate.status not in ['registered', 'scheduled']:
+            # Validate that candidate is in 'shortlisted' status
+            if candidate.status not in ['shortlisted', 'scheduled']:
                 return ScheduleTestResponse(
                     success=False,
-                    message=f"Cannot schedule test. Candidate status is '{candidate.status}'. Only 'registered' or 'scheduled' candidates can schedule tests.",
+                    message=f"Cannot schedule test. Candidate status is '{candidate.status}'. Only 'shortlisted' or 'scheduled' candidates can schedule tests.",
                     scheduled_date=None
                 )
             
@@ -521,11 +521,14 @@ class InterviewService:
                     print(f"Candidate - resume: {candidate.resume}")
                     print(f"Assignment - job_description: {assignment.job.job_description}")
                     print(f"Assignment - job_role: {assignment.job.job_role}")
+                    print(f"Assignment - job_grade: {assignment.job.grade}")
                     print("--------------------------------")
+                    # Get grade from job, validate it's T2 or T3 for MCQ generation, default to T2 if invalid
+                    job_grade = assignment.job.grade if assignment.job.grade in ["T2", "T3"] else "T2"
                     mcq_request = GenerateMCQRequest(
                         resume=candidate.resume,
                         job_description=assignment.job.job_description,
-                        grade="T2"  # Default to T2, can be made configurable later
+                        grade=job_grade
                     )
                     print(f"MCQ request: {mcq_request}")
                     # Generate questions

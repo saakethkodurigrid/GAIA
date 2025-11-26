@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import uvicorn
 from core.config import settings
-from api.v1.routes import auth_router, admin_router, candidate_router, system_design_router
+from api.v1.routes import auth_router, admin_router, candidate_router, system_design_router, blob_storage_router
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +38,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(candidate_router, prefix="/api/v1")
 app.include_router(system_design_router, prefix="/api/v1")
+app.include_router(blob_storage_router, prefix="/api/v1")
 
 # Auth callback endpoint (handles redirects from OAuth flow)
 @app.get("/auth/callback")

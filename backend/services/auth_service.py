@@ -239,22 +239,30 @@ class AuthService:
                 # Don't fail authentication if assignment fails
                 logger.error(f"Error auto-assigning question to candidate {candidate_id}: {str(e)}")
         
-        # Check for 'ongoing' status - multiple login error
-        if status == 'ongoing':
+        # Check for 'in progress' status - multiple login error
+        if status == 'in progress':
             return AuthResponse(
                 success=False,
                 message="Multiple login detected. Test is already in progress.",
-                status=CandidateStatus.ONGOING
+                status=CandidateStatus.IN_PROGRESS
             )
         
         # Map status to enum
         status_enum = None
-        if status == 'registered':
-            status_enum = CandidateStatus.REGISTERED
+        if status == 'shortlisted':
+            status_enum = CandidateStatus.SHORTLISTED
+        elif status == 'rejected':
+            status_enum = CandidateStatus.REJECTED
         elif status == 'scheduled':
             status_enum = CandidateStatus.SCHEDULED
-        elif status == 'done':
-            status_enum = CandidateStatus.DONE
+        elif status == 'in progress':
+            status_enum = CandidateStatus.IN_PROGRESS
+        elif status == 'completed':
+            status_enum = CandidateStatus.COMPLETED
+        elif status == 'selected':
+            status_enum = CandidateStatus.SELECTED
+        elif status == 'not selected':
+            status_enum = CandidateStatus.NOT_SELECTED
         else:
             return AuthResponse(
                 success=False,
@@ -304,22 +312,30 @@ class AuthService:
         # Handle status-based routing
         status = candidate.status.lower()
         
-        # Check for 'ongoing' status - multiple login error
-        if status == 'ongoing':
+        # Check for 'in progress' status - multiple login error
+        if status == 'in progress':
             return AuthResponse(
                 success=False,
                 message="Multiple login detected. Test is already in progress.",
-                status=CandidateStatus.ONGOING
+                status=CandidateStatus.IN_PROGRESS
             )
         
         # Map status to enum
         status_enum = None
-        if status == 'registered':
-            status_enum = CandidateStatus.REGISTERED
+        if status == 'shortlisted':
+            status_enum = CandidateStatus.SHORTLISTED
+        elif status == 'rejected':
+            status_enum = CandidateStatus.REJECTED
         elif status == 'scheduled':
             status_enum = CandidateStatus.SCHEDULED
-        elif status == 'done':
-            status_enum = CandidateStatus.DONE
+        elif status == 'in progress':
+            status_enum = CandidateStatus.IN_PROGRESS
+        elif status == 'completed':
+            status_enum = CandidateStatus.COMPLETED
+        elif status == 'selected':
+            status_enum = CandidateStatus.SELECTED
+        elif status == 'not selected':
+            status_enum = CandidateStatus.NOT_SELECTED
         else:
             return AuthResponse(
                 success=False,
@@ -422,21 +438,29 @@ class AuthService:
                 # Candidate exists - handle status-based routing
                 status = candidate.status.lower()
                 
-                if status == 'ongoing':
+                if status == 'in progress':
                     return AuthResponse(
                         success=False,
                         message="Multiple login detected. Test is already in progress.",
-                        status=CandidateStatus.ONGOING
+                        status=CandidateStatus.IN_PROGRESS
                     )
                 
                 # Map status to enum
                 status_enum = None
-                if status == 'registered':
-                    status_enum = CandidateStatus.REGISTERED
+                if status == 'shortlisted':
+                    status_enum = CandidateStatus.SHORTLISTED
+                elif status == 'rejected':
+                    status_enum = CandidateStatus.REJECTED
                 elif status == 'scheduled':
                     status_enum = CandidateStatus.SCHEDULED
-                elif status == 'done':
-                    status_enum = CandidateStatus.DONE
+                elif status == 'in progress':
+                    status_enum = CandidateStatus.IN_PROGRESS
+                elif status == 'completed':
+                    status_enum = CandidateStatus.COMPLETED
+                elif status == 'selected':
+                    status_enum = CandidateStatus.SELECTED
+                elif status == 'not selected':
+                    status_enum = CandidateStatus.NOT_SELECTED
                 else:
                     return AuthResponse(
                         success=False,

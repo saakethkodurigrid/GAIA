@@ -144,11 +144,11 @@ async def google_callback(
         return response
     
     if not response.success:
-        # Special handling for ongoing status (multiple login)
-        if response.status == CandidateStatus.ONGOING:
+        # Special handling for in progress status (multiple login)
+        if response.status == CandidateStatus.IN_PROGRESS:
             error_params = urlencode({
                 'error': response.message,
-                'error_code': 'ONGOING',
+                'error_code': 'IN_PROGRESS',
                 'state': state or ''
             })
             return RedirectResponse(url=f"{callback_url}?{error_params}", status_code=302)
@@ -235,10 +235,10 @@ async def candidate_login(
     2. Check if candidate_id exists in CANDIDATE table
     3. Check if email matches
     4. Route based on status:
-       - 'registered' -> scheduled page
+       - 'shortlisted' -> scheduled page
        - 'scheduled' -> test landing page
-       - 'done' -> thank you page
-       - 'ongoing' -> error (multiple login)
+       - 'completed' -> thank you page
+       - 'in progress' -> error (multiple login)
     
     Args:
         request: Candidate login request with token and candidate_id
@@ -254,8 +254,8 @@ async def candidate_login(
     )
     
     if not response.success:
-        # Special handling for ongoing status (multiple login)
-        if response.status == CandidateStatus.ONGOING:
+        # Special handling for in progress status (multiple login)
+        if response.status == CandidateStatus.IN_PROGRESS:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=response.message
@@ -297,8 +297,8 @@ async def general_login(
     response = auth_service.authenticate_user(token=request.token)
     
     if not response.success:
-        # Special handling for ongoing status (multiple login)
-        if response.status == CandidateStatus.ONGOING:
+        # Special handling for in progress status (multiple login)
+        if response.status == CandidateStatus.IN_PROGRESS:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=response.message

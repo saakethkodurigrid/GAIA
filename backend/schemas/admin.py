@@ -35,6 +35,7 @@ class AddJobRequest(BaseModel):
     """Request schema for adding a job."""
     job_role: str = Field(..., min_length=1, description="Job role/title")
     job_description: str = Field(..., min_length=1, description="Job description")
+    grade: str = Field(..., min_length=1, description="Grade level (e.g., T1, T2, T3, etc.)")
 
 
 class JobResponse(BaseModel):
@@ -43,6 +44,7 @@ class JobResponse(BaseModel):
     job_role: str
     job_description: str
     recruiter_email_id: str
+    grade: str
 
 
 class AddJobResponse(BaseModel):
@@ -69,7 +71,7 @@ class InterviewResponse(BaseModel):
     job_role: str
     recruiter_email: str
     scheduled_date: str  # ISO format datetime string
-    status: str  # Candidate status: registered, scheduled, ongoing, done
+    status: str  # Candidate status: shortlisted, rejected, scheduled, in progress, completed, selected, not selected
 
 
 class ListInterviewsResponse(BaseModel):
@@ -102,4 +104,84 @@ class AssignQuestionResponse(BaseModel):
     success: bool
     message: str
     question_uuid: Optional[str] = None
+
+
+class CandidateBatchItemResponse(BaseModel):
+    """Response schema for individual candidate in batch."""
+    candidate_id: str
+    name: str
+    email_id: str
+    status: str
+    resume_score: float
+    processing_status: str
+    errors: Optional[str] = None
+
+
+class FailedFileResponse(BaseModel):
+    """Response schema for failed file processing."""
+    filename: str
+    error: str
+
+
+class AddCandidatesBatchResponse(BaseModel):
+    """Response schema for batch candidate addition."""
+    success: bool
+    message: str
+    total_files: int
+    successful: int
+    failed: int
+    candidates: List[CandidateBatchItemResponse] = []
+    failed_files: List[FailedFileResponse] = []
+
+
+class ResumeCandidateResponse(BaseModel):
+    """Response schema for candidate in resumes view."""
+    candidate_id: str
+    name: str
+    email_id: str
+    resume_score: float
+    status: str  # 'shortlisted' or 'rejected'
+
+
+class ResumesListResponse(BaseModel):
+    """Response schema for resumes list."""
+    success: bool
+    message: str
+    count: int
+    candidates: List[ResumeCandidateResponse] = []
+
+
+class ScheduledInterviewCandidateResponse(BaseModel):
+    """Response schema for candidate in scheduled interviews view."""
+    candidate_id: str
+    name: str
+    email_id: str
+    interview_status: str  # 'scheduled', 'in progress', or 'completed'
+    interview_date: Optional[str] = None  # ISO format datetime string
+
+
+class ScheduledInterviewsListResponse(BaseModel):
+    """Response schema for scheduled interviews list."""
+    success: bool
+    message: str
+    count: int
+    candidates: List[ScheduledInterviewCandidateResponse] = []
+
+
+class CompletedInterviewCandidateResponse(BaseModel):
+    """Response schema for candidate in completed interviews view."""
+    candidate_id: str
+    name: str
+    email_id: str
+    interview_score: Optional[float] = None
+    status: str  # 'selected' or 'not selected'
+    report_link: Optional[str] = None
+
+
+class CompletedInterviewsListResponse(BaseModel):
+    """Response schema for completed interviews list."""
+    success: bool
+    message: str
+    count: int
+    candidates: List[CompletedInterviewCandidateResponse] = []
 

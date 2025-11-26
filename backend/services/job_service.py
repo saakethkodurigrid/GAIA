@@ -47,7 +47,8 @@ class JobService:
                 job_id=job_id,
                 job_role=request.job_role,
                 job_description=request.job_description,
-                recruiter_email_id=recruiter_email.lower()
+                recruiter_email_id=recruiter_email.lower(),
+                grade=request.grade
             )
             
             self.db.add(new_job)
@@ -61,7 +62,8 @@ class JobService:
                     job_id=new_job.job_id,
                     job_role=new_job.job_role,
                     job_description=new_job.job_description,
-                    recruiter_email_id=new_job.recruiter_email_id
+                    recruiter_email_id=new_job.recruiter_email_id,
+                    grade=new_job.grade
                 )
             )
             
@@ -115,7 +117,8 @@ class JobService:
                     job_id=job.job_id,
                     job_role=job.job_role,
                     job_description=job.job_description,
-                    recruiter_email_id=job.recruiter_email_id
+                    recruiter_email_id=job.recruiter_email_id,
+                    grade=job.grade
                 )
                 for job in jobs
             ]
