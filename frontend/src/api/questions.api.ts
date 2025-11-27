@@ -1,28 +1,32 @@
 import { MOCK_QUESTIONS } from '../utils/constants';
 import type { Question } from '../types';
-import { API_BASE_URL } from '../utils/config';
+// import { API_BASE_URL } from '../utils/config';
 
 // Get auth token from localStorage
-const getAuthToken = (): string | null => {
-  return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
-};
+// const getAuthToken = (): string | null => {
+//   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+// };
 
 // Backend response types
-interface MCQQuestionResponse {
-  question_uuid: string;
-  question: string;
-  options: string[];
-}
+// interface MCQQuestionResponse {
+//   question_uuid: string;
+//   question: string;
+//   options: string[];
+// }
 
-interface MCQQuestionsResponse {
-  success: boolean;
-  message: string;
-  count: number;
-  questions: MCQQuestionResponse[];
-}
+// interface MCQQuestionsResponse {
+//   success: boolean;
+//   message: string;
+//   count: number;
+//   questions: MCQQuestionResponse[];
+// }
 
 // API functions for fetching questions
-export const fetchQuestions = async (candidateId?: string): Promise<Question[]> => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const fetchQuestions = async (_candidateId?: string): Promise<Question[]> => {
+  // For now, always return dummy Gen AI questions
+  // TODO: Uncomment below code when ready to fetch from backend
+  /*
   // If candidateId is provided, fetch from backend
   if (candidateId) {
     try {
@@ -57,8 +61,11 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
         throw new Error(data.message || 'Failed to fetch questions');
       }
 
+      // Limit to 25 questions
+      const limitedQuestions = data.questions.slice(0, 25);
+
       // Map backend response to frontend Question format
-      const mappedQuestions: Question[] = data.questions.map((q, index) => ({
+      const mappedQuestions: Question[] = limitedQuestions.map((q, index) => ({
         id: index + 1, // Use 1-based index as ID
         topic: '', // Backend doesn't provide topic
         question: q.question,
@@ -73,8 +80,9 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
       return MOCK_QUESTIONS;
     }
   }
+  */
 
-  // Fallback to mock data if no candidateId
+  // Return dummy Gen AI questions for now
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve(MOCK_QUESTIONS);
@@ -82,6 +90,7 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
   });
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const submitAssessment = async (_answers: Record<number, number>): Promise<{ success: boolean; message: string }> => {
   // In a real app, this would submit to backend
   return new Promise((resolve) => {

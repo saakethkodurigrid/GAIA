@@ -98,7 +98,7 @@ const TestOverviewPage = () => {
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 leading-tight">Multiple Choice Question</h2>
                 <div className="mb-6">
                   <p className="text-base text-gray-600 mb-2">Total Questions</p>
-                  <p className="text-3xl font-bold text-gray-900">20</p>
+                  <p className="text-3xl font-bold text-gray-900">25</p>
                 </div>
               </div>
               <button

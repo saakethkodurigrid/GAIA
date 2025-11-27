@@ -59,6 +59,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.removeItem('oauth_state');
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_data');
+    localStorage.removeItem('mcq_answers'); // Clear MCQ answers on logout
     // Redirect to login page after logout
     window.location.href = '/auth/login';
   }, []);
