@@ -12,6 +12,7 @@ class Job(Base):
     __tablename__ = 'jobs'
     
     job_id = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
+    job_reference_number = Column(String(10), unique=True, index=True, nullable=True)  # Display ID like "JD-783901"
     job_description = Column(Text, nullable=False)
     job_role = Column(Text, nullable=False)  # Changed from String(255) to Text for unlimited length
     recruiter_email_id = Column(

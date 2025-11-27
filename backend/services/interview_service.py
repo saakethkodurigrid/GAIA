@@ -85,7 +85,7 @@ class InterviewService:
                         candidate_id=candidate.candidate_id,
                         candidate_name=candidate.name,
                         candidate_email=candidate.email_id,
-                        job_id=job.job_id,
+                        job_id=job.job_reference_number or job.job_id,  # Return reference number, fallback to UUID if None
                         job_role=job.job_role,
                         recruiter_email=assignment.recruiter_admin_email,
                         scheduled_date=scheduled_date_str,
@@ -201,7 +201,7 @@ class InterviewService:
                         candidate_id=candidate.candidate_id,
                         candidate_name=candidate.name,
                         candidate_email=candidate.email_id,
-                        job_id=job.job_id,
+                        job_id=job.job_reference_number or job.job_id,  # Return reference number, fallback to UUID if None
                         job_role=job.job_role,
                         recruiter_email=assignment.recruiter_admin_email,
                         scheduled_date=scheduled_date_str,

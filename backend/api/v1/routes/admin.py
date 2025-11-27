@@ -283,7 +283,7 @@ async def list_today_interviews(
 
 @router.post("/jobs/{job_id}/candidates/batch", response_model=AddCandidatesBatchResponse)
 async def add_candidates_batch(
-    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
     files: List[UploadFile] = File(..., description="Resume files (PDF or DOCX, max 10 files)"),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
@@ -305,7 +305,7 @@ async def add_candidates_batch(
     - PII is NOT stored in candidate.resume column (only scrubbed text is stored)
     
     Args:
-        job_id: UUID of the job to assign candidates to
+        job_id: Job reference number (e.g., JD-783901) of the job to assign candidates to
         files: List of resume files (PDF or DOCX, maximum 10 files)
         current_user: Current recruiter/admin user (verified by dependency)
         db: Database session
@@ -350,10 +350,20 @@ async def add_candidates_batch(
             detail=f"Invalid file types. Only PDF and DOCX are allowed. Invalid files: {', '.join(invalid_files)}"
         )
     
+    # Get job by reference number (fetches from database)
+    job_service = JobService(db)
+    try:
+        job = job_service.get_job_by_reference_number(job_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    
     # Process batch
     batch_service = CandidateBatchService(db)
     result = batch_service.process_batch_candidates(
-        job_id=job_id,
+        job_id=job.job_id,  # Use UUID from fetched job object
         files=files,
         recruiter_email=current_user.email_id
     )
@@ -389,7 +399,7 @@ async def add_candidates_batch(
 
 @router.get("/jobs/{job_id}/candidates/resumes", response_model=ResumesListResponse)
 async def get_resumes_list(
-    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -400,14 +410,15 @@ async def get_resumes_list(
     """
     from models.candidate import Candidate
     from models.recruiter_admin_candidate import RecruiterAdminCandidate
-    from models.job import Job
     
-    # Verify job exists
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if not job:
+    # Get job by reference number (fetches from database)
+    job_service = JobService(db)
+    try:
+        job = job_service.get_job_by_reference_number(job_id)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job with ID {job_id} not found"
+            detail=str(e)
         )
     
     # Get all candidates assigned to this job (no status filter)
@@ -415,7 +426,7 @@ async def get_resumes_list(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
-        RecruiterAdminCandidate.job_id == job_id
+        RecruiterAdminCandidate.job_id == job.job_id  # Use UUID from fetched job object
     ).order_by(Candidate.resume_score.desc()).all()
     
     candidate_list = [
@@ -439,7 +450,7 @@ async def get_resumes_list(
 
 @router.get("/jobs/{job_id}/candidates/scheduled-interviews", response_model=ScheduledInterviewsListResponse)
 async def get_scheduled_interviews(
-    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -452,14 +463,15 @@ async def get_scheduled_interviews(
     """
     from models.candidate import Candidate
     from models.recruiter_admin_candidate import RecruiterAdminCandidate
-    from models.job import Job
     
-    # Verify job exists
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if not job:
+    # Get job by reference number (fetches from database)
+    job_service = JobService(db)
+    try:
+        job = job_service.get_job_by_reference_number(job_id)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job with ID {job_id} not found"
+            detail=str(e)
         )
     
     # Get candidates assigned to this job with shortlisted statuses (excluding rejected)
@@ -467,7 +479,7 @@ async def get_scheduled_interviews(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
-        RecruiterAdminCandidate.job_id == job_id,
+        RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
         Candidate.status.in_(['shortlisted', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'])
     ).order_by(
         Candidate.scheduled_date.asc().nullslast(),
@@ -495,7 +507,7 @@ async def get_scheduled_interviews(
 
 @router.get("/jobs/{job_id}/candidates/completed-interviews", response_model=CompletedInterviewsListResponse)
 async def get_completed_interviews(
-    job_id: str = Path(..., description="Job UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -507,14 +519,15 @@ async def get_completed_interviews(
     """
     from models.candidate import Candidate
     from models.recruiter_admin_candidate import RecruiterAdminCandidate
-    from models.job import Job
     
-    # Verify job exists
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if not job:
+    # Get job by reference number (fetches from database)
+    job_service = JobService(db)
+    try:
+        job = job_service.get_job_by_reference_number(job_id)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job with ID {job_id} not found"
+            detail=str(e)
         )
     
     # Get candidates assigned to this job with final statuses
@@ -522,7 +535,7 @@ async def get_completed_interviews(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
-        RecruiterAdminCandidate.job_id == job_id,
+        RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
         Candidate.status.in_(['selected', 'not selected'])
     ).order_by(Candidate.resume_score.desc()).all()
     
