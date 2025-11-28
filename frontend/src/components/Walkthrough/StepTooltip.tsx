@@ -144,11 +144,10 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
 
   return (
     <div
-      className="fixed z-[9999] bg-white rounded-lg shadow-2xl p-6 max-w-sm"
+      className="fixed z-[10000] bg-white rounded-lg shadow-2xl p-6 max-w-sm"
       style={{
         ...tooltipStyle,
-        position: 'fixed',
-        zIndex: 9999
+        position: 'fixed'
       }}
     >
       {step.title && (

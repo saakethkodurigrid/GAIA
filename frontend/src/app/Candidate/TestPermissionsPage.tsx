@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useVideo } from '../../context/VideoContext';
 import Header from '../../components/Header';
@@ -10,8 +10,6 @@ const TestPermissionsPage = () => {
   const { user, logout } = useAuth();
   const { videoStream: globalVideoStream, setVideoStream: setGlobalVideoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const fromTour = searchParams.get('from') === 'tour';
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [fullscreenPermission, setFullscreenPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [isChecking, setIsChecking] = useState(true);
@@ -155,11 +153,8 @@ const TestPermissionsPage = () => {
 
   const handleJoinInterview = () => {
     if (cameraPermission === 'granted' && fullscreenPermission === 'granted' && consentChecked) {
-      if (fromTour) {
-        navigate('/tutorial/mcq');
-      } else {
-        navigate('/test-overview');
-      }
+      // Navigate to instructions page after permissions are granted
+      navigate('/test/instructions');
     }
   };
 
@@ -290,7 +285,7 @@ const TestPermissionsPage = () => {
                   : 'bg-gray-400 text-gray-200 cursor-not-allowed'
               }`}
             >
-              {fromTour ? 'Start Tour' : 'Join Interview'}
+              Start Tour
             </button>
           </div>
         </div>

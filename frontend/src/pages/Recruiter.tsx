@@ -10,6 +10,7 @@ interface JobDescription {
   jobTitle: string;
   status: 'Active' | 'Closed';
   grade: string;
+  jobDescription: string;
 }
 
 interface ScheduledInterview {
@@ -54,6 +55,7 @@ const Recruiter = () => {
             jobTitle: job.job_role,
             status: 'Active' as const, // Default status since backend doesn't provide status
             grade: job.grade,
+            jobDescription: job.job_description || '',
           }));
           setJobDescriptions(mappedJobs);
           console.log(mappedJobs);
@@ -188,6 +190,7 @@ const Recruiter = () => {
             jobTitle: job.job_role,
             status: 'Active' as const,
             grade: job.grade,
+            jobDescription: job.job_description || '',
           }));
           setJobDescriptions(mappedJobs);
           console.log(mappedJobs);
@@ -279,6 +282,7 @@ const Recruiter = () => {
                                 jobTitle: job.job_role,
                                 status: 'Active' as const,
                                 grade: job.grade,
+                                jobDescription: job.job_description || '',
                               }));
                               setJobDescriptions(mappedJobs);
                             } else {
@@ -305,11 +309,11 @@ const Recruiter = () => {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">ID</th>
-                        <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Job Title</th>
-                        <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Status</th>
-                        <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Grade</th>
-                        <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Actions</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">ID</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Job Title</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Status</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Grade</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -326,7 +330,7 @@ const Recruiter = () => {
                           <td className="py-3 px-4">
                             <button 
                               onClick={() => navigate('/recruiter/job-details', { 
-                                state: { jobId: jd.id, jobTitle: jd.jobTitle } 
+                                state: { jobId: jd.id, jobTitle: jd.jobTitle, jobDescription: jd.jobDescription } 
                               })}
                               className="text-blue-600 hover:text-blue-800 text-base font-medium"
                             >

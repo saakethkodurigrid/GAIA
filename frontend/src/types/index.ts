@@ -109,6 +109,7 @@ export interface SystemDesignContextType {
   sendMessage: (message: string) => Promise<void>;
   clearCanvas: (excalidrawAPI?: any) => void;
   formatTime: (seconds: number) => string;
+  submitSolution: () => Promise<void>;
 }
 
 // Auth Types

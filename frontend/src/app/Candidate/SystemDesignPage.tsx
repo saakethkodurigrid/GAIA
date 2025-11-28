@@ -1,5 +1,4 @@
-// import { useEffect } from 'react';
-// import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { SystemDesignProvider, useSystemDesign } from '../../context/SystemDesignContext';
 import { useVideo } from '../../context/VideoContext';
 import DesignHeader from '../../components/SystemDesign/DesignHeader';
@@ -11,9 +10,20 @@ import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const SystemDesignPageContent = () => {
-  const { problem, isLoading } = useSystemDesign();
+  const { problem, isLoading, submitSolution } = useSystemDesign();
   const { videoStream, requestVideoStream } = useVideo();
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
+
+  const handleSubmit = async () => {
+    try {
+      await submitSolution();
+      // Navigate back to test overview page after successful submission
+      navigate('/test-overview');
+    } catch (error) {
+      console.error('Failed to submit solution:', error);
+      // You could show an error message to the user here
+    }
+  };
 
   // Monitor fullscreen exit with 5 second countdown
   const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
@@ -33,7 +43,7 @@ const SystemDesignPageContent = () => {
   return (
     <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
       {/* Header */}
-      <DesignHeader />
+      <DesignHeader onSubmit={handleSubmit} />
 
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">

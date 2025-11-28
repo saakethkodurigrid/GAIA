@@ -236,6 +236,29 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     setExcalidrawData(null);
   }, []);
 
+  const handleSubmitSolution = useCallback(async () => {
+    if (!sessionId || !excalidrawData) {
+      console.error('Cannot submit: missing session ID or canvas data');
+      return;
+    }
+
+    try {
+      await updateCanvas({
+        session_id: sessionId,
+        canvas_data: {
+          elements: excalidrawData.elements || [],
+          appState: excalidrawData.appState,
+          files: excalidrawData.files,
+        },
+        action: 'submit',
+      });
+      console.log('Solution submitted successfully');
+    } catch (error) {
+      console.error('Error submitting solution:', error);
+      throw error;
+    }
+  }, [sessionId, excalidrawData]);
+
   const value: SystemDesignContextType = {
     problem,
     excalidrawData,
@@ -247,7 +270,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     updateNotes: handleUpdateNotes,
     sendMessage: handleSendMessage,
     clearCanvas: handleClearCanvas,
-    formatTime
+    formatTime,
+    submitSolution: handleSubmitSolution
   };
 
   return <SystemDesignContext.Provider value={value}>{children}</SystemDesignContext.Provider>;

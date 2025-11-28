@@ -1,6 +1,10 @@
 import Timer from './Timer';
 
-const DesignHeader = () => {
+interface DesignHeaderProps {
+  onSubmit: () => void;
+}
+
+const DesignHeader = ({ onSubmit }: DesignHeaderProps) => {
   return (
     <header className="w-full max-w-full flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm m-0 flex-shrink-0">
       <button className="flex items-center gap-2 px-4 py-2 bg-transparent border-none cursor-pointer text-base text-gray-800 hover:text-blue-600 transition-colors">
@@ -17,7 +21,10 @@ const DesignHeader = () => {
           <span className="text-base">🕐</span>
           <Timer />
         </div>
-        <button className="px-6 py-2 bg-yellow-400 text-gray-800 rounded-md font-semibold text-base cursor-pointer hover:bg-yellow-500 transition-colors">
+        <button 
+          onClick={onSubmit}
+          className="px-6 py-2 bg-yellow-400 text-gray-800 rounded-md font-semibold text-base cursor-pointer hover:bg-yellow-500 transition-colors"
+        >
           Submit Solution
         </button>
       </div>

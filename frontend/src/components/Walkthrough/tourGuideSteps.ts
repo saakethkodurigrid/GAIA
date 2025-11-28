@@ -29,7 +29,7 @@ export const mcqTourSteps: TourStep[] = [
     target: '[data-tour="mark-for-review"]',
     title: 'Mark for Review',
     content: 'Use this to revisit questions later. Marked questions will appear with a flag.',
-    placement: 'center'
+    placement: 'bottom'
   },
   {
     target: '[data-tour="save-next"]',
@@ -107,12 +107,6 @@ export const systemDesignTourSteps: TourStep[] = [
     target: '[data-tour="header"]',
     title: 'Welcome to System Design Assessment',
     content: 'This is the header section. You can see the timer and submit button here.',
-    placement: 'bottom'
-  },
-  {
-    target: '[data-tour="progress-bar"]',
-    title: 'Progress Indicator',
-    content: 'This yellow bar shows your progress through the system design problem.',
     placement: 'bottom'
   },
   {

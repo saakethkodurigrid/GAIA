@@ -57,14 +57,6 @@ const TourSystemDesignPageContent = () => {
         </div>
       </header>
 
-      {/* Progress Bar */}
-      <div 
-        data-tour="progress-bar"
-        className="w-full h-1 bg-yellow-100 relative flex-shrink-0 m-0 p-0"
-      >
-        <div className="h-full bg-yellow-400 transition-all duration-300 ease-out w-1/3"></div>
-      </div>
-
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
         {/* Left Panel (70%) */}
