@@ -153,8 +153,8 @@ const TestPermissionsPage = () => {
 
   const handleJoinInterview = () => {
     if (cameraPermission === 'granted' && fullscreenPermission === 'granted' && consentChecked) {
-      // Navigate to instructions page after permissions are granted
-      navigate('/test/instructions');
+      // Navigate to tutorial page after permissions are granted
+      navigate('/tutorial/mcq');
     }
   };
 
@@ -165,7 +165,7 @@ const TestPermissionsPage = () => {
   const allPermissionsGranted = capturedPhoto !== null && fullscreenPermission === 'granted' && consentChecked;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <Header showUserInfo={true} showLogout={true} showTechInterviewLogo={true} user={user} onLogout={handleLogout} />
 

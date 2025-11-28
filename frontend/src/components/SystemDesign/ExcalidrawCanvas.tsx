@@ -66,4 +66,3 @@ const ExcalidrawCanvas = () => {
 };
 
 export default ExcalidrawCanvas;
-

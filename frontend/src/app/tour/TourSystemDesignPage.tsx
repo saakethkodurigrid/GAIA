@@ -25,7 +25,7 @@ const TourSystemDesignPageContent = () => {
   };
 
   return (
-    <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0 relative">
+    <div className="w-full min-h-screen max-w-full flex flex-col bg-gray-50 overflow-y-auto overflow-x-hidden m-0 p-0 relative">
       <TourOverlay />
 
       {/* Header */}

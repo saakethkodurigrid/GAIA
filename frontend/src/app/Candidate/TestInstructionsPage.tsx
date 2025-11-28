@@ -22,7 +22,7 @@ const TestInstructionsPage = () => {
   };
 
   const handleStartTour = () => {
-    navigate('/tutorial/mcq');
+    navigate('/test/permissions');
   };
 
   return (

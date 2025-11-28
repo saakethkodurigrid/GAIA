@@ -1,20 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CodingProvider, useCoding } from '../../context/CodingContext';
-import { useVideo } from '../../context/VideoContext';
 import LanguageTabs from '../../components/CodeEditor/LanguageTabs';
 import CodeEditor from '../../components/CodeEditor/CodeEditor';
 import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
-import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, isRunning, problems, code } = useCoding();
-  const { videoStream, requestVideoStream } = useVideo();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
   const navigate = useNavigate();
   
@@ -92,7 +89,7 @@ const CodingTestPageContent = () => {
 
 
   return (
-    <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
+    <div className="w-full min-h-screen max-w-full flex flex-col bg-gray-50 overflow-y-auto overflow-x-hidden m-0 p-0">
       {/* Header */}
       <header className="w-full max-w-full flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 m-0 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -213,72 +210,69 @@ const CodingTestPageContent = () => {
           {/* Language Tabs */}
           <LanguageTabs onSubmitSection={() => setShowSubmitSectionModal(true)} />
 
-          {/* Code Editor */}
-          <div className="flex-1 min-h-0 border-b border-gray-200">
+          {/* Code Editor - Takes remaining space */}
+          <div className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor />
           </div>
 
-          {/* Bottom Panel - Testcases/Output with Action Buttons */}
-          <div className="flex-shrink-0 h-64 flex flex-col border-t border-gray-200">
-            {/* Tabs and Action Buttons in Same Line */}
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white">
-              {/* Tabs */}
-              <div className="flex">
-                <button
-                  onClick={() => setActiveTab('testcases')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'testcases'
-                      ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Testcases
-                </button>
-                <button
-                  onClick={() => setActiveTab('output')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'output'
-                      ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Output
-                </button>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3 px-4">
-                <button
-                  onClick={runCode}
-                  disabled={isRunning}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
-                  Run Code
-                </button>
-                <button
-                  onClick={runCode}
-                  disabled={isRunning}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
-                  Run All Testcases
-                </button>
-                <button
-                  onClick={() => setShowSubmitModal(true)}
-                  className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors"
-                >
-                  Submit Solution
-                </button>
-              </div>
+          {/* Action Buttons */}
+          <div className="flex-shrink-0 flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-200 bg-white">
+            <button
+              onClick={runCode}
+              disabled={isRunning}
+              className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+              </svg>
+              Run Code
+            </button>
+            <button
+              onClick={runCode}
+              disabled={isRunning}
+              className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+              </svg>
+              Run All Testcases
+            </button>
+            <button
+              onClick={() => setShowSubmitModal(true)}
+              className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors"
+            >
+              Submit Solution
+            </button>
+          </div>
+
+          {/* Testcases/Output Panel - Fixed height at bottom */}
+          <div className="flex-shrink-0 flex flex-col border-t border-gray-200">
+            {/* Tabs */}
+            <div className="flex items-center border-b border-gray-200 bg-white">
+              <button
+                onClick={() => setActiveTab('testcases')}
+                className={`px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'testcases'
+                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Testcases
+              </button>
+              <button
+                onClick={() => setActiveTab('output')}
+                className={`px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'output'
+                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Output
+              </button>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            {/* Content - Scrollable, shows only 1 test case initially */}
+            <div className="overflow-y-auto h-[180px]">
               {activeTab === 'testcases' ? <TestCaseViewer /> : <OutputViewer />}
             </div>
           </div>
@@ -308,6 +302,16 @@ const CodingTestPageContent = () => {
               </button>
               <button
                 onClick={() => {
+                  // Mark Coding section as submitted in localStorage
+                  try {
+                    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+                    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+                    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+                    submitted.coding = true;
+                    localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+                  } catch (error) {
+                    console.error('Error marking Coding as submitted:', error);
+                  }
                   setShowSubmitSectionModal(false);
                   navigate('/test-overview');
                 }}

@@ -30,7 +30,7 @@ const TestCompletedPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <Header 
         showUserInfo={true} 

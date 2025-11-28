@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
 import { javascript } from '@codemirror/lang-javascript';
@@ -8,6 +8,31 @@ import { useCoding } from '../../context/CodingContext';
 const CodeEditor = () => {
   const { currentProblem, selectedLanguage, code, updateCode } = useCoding();
   const editorRef = useRef<HTMLDivElement>(null);
+  const [editorHeight, setEditorHeight] = useState('600px');
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (editorRef.current) {
+        const height = editorRef.current.clientHeight;
+        if (height > 0) {
+          setEditorHeight(`${height}px`);
+        }
+      }
+    };
+
+    updateHeight();
+    const resizeObserver = new ResizeObserver(updateHeight);
+    if (editorRef.current) {
+      resizeObserver.observe(editorRef.current);
+    }
+
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
 
   if (!currentProblem) return null;
 
@@ -28,10 +53,10 @@ const CodeEditor = () => {
   };
 
   return (
-    <div ref={editorRef} className="h-full">
+    <div ref={editorRef} className="h-full w-full">
       <CodeMirror
         value={currentCode}
-        height="100%"
+        height={editorHeight}
         extensions={[getLanguageExtension()]}
         onChange={(value) => updateCode(value)}
         theme="light"

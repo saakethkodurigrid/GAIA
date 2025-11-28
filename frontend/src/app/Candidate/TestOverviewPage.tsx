@@ -8,11 +8,27 @@ import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
+// Helper functions for localStorage
+const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+
+const getSubmittedSections = (): { mcq: boolean; coding: boolean; systemDesign: boolean } => {
+  try {
+    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Error loading submitted sections from localStorage:', error);
+  }
+  return { mcq: false, coding: false, systemDesign: false };
+};
+
 const TestOverviewPage = () => {
   const { user, logout } = useAuth();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
   const [timeRemaining, setTimeRemaining] = useState(3600); // 60 minutes in seconds
+  const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
 
   // Countdown timer logic
   useEffect(() => {
@@ -24,6 +40,18 @@ const TestOverviewPage = () => {
     }, 1000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Check for submitted sections when component mounts or when navigating back
+  useEffect(() => {
+    const checkSubmittedSections = () => {
+      setSubmittedSections(getSubmittedSections());
+    };
+    
+    checkSubmittedSections();
+    // Also check when window gains focus (user might have submitted in another tab)
+    window.addEventListener('focus', checkSubmittedSections);
+    return () => window.removeEventListener('focus', checkSubmittedSections);
   }, []);
 
   // Monitor fullscreen exit with 5 second countdown
@@ -44,6 +72,11 @@ const TestOverviewPage = () => {
   };
 
   const handleSolve = (section: string) => {
+    // Don't navigate if section is already submitted
+    if (section === 'mcq' && submittedSections.mcq) return;
+    if (section === 'coding' && submittedSections.coding) return;
+    if (section === 'system-design' && submittedSections.systemDesign) return;
+
     if (section === 'mcq') {
       navigate('/candidate/mcq');
     } else if (section === 'coding') {
@@ -59,7 +92,7 @@ const TestOverviewPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <Header 
         showUserInfo={true} 
@@ -82,7 +115,7 @@ const TestOverviewPage = () => {
                 <p className="text-base text-gray-700 mb-4">
                   Welcome to your Technical Assessment! This assessment consists of three sections: Multiple Choice, Coding, and System Design.
                 </p>
-                <p className="text-base text-gray-600 font-medium">
+                <p className="text-base text-gray-600 font-bold">
                   Important: Once a section is submitted, you will not be able to revisit or edit your answers.
                 </p>
               </div>
@@ -92,7 +125,9 @@ const TestOverviewPage = () => {
           {/* Cards Container */}
           <div className="flex gap-8 mb-8 justify-center">
             {/* Section 1 - Multiple Choice Question */}
-            <div className="bg-white rounded-xl shadow-lg border-2 border-gray-200 p-8 w-96 h-96 flex flex-col justify-center items-center text-center">
+            <div className={`bg-white rounded-xl shadow-lg border-2 p-8 w-96 h-96 flex flex-col justify-center items-center text-center ${
+              submittedSections.mcq ? 'border-gray-400 opacity-75' : 'border-gray-200'
+            }`}>
               <div className="flex flex-col items-center">
                 <p className="text-sm text-gray-500 mb-3">Section 1</p>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 leading-tight">Multiple Choice Question</h2>
@@ -103,14 +138,21 @@ const TestOverviewPage = () => {
               </div>
               <button
                 onClick={() => handleSolve('mcq')}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold text-base hover:bg-green-700 transition-colors mt-6"
+                disabled={submittedSections.mcq}
+                className={`w-full py-3 px-4 rounded-lg font-semibold text-base transition-colors mt-6 ${
+                  submittedSections.mcq
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
               >
-                Solve
+                {submittedSections.mcq ? 'Submitted' : 'Solve'}
               </button>
             </div>
 
             {/* Section 2 - Coding Test */}
-            <div className="bg-white rounded-xl shadow-lg border-2 border-gray-200 p-8 w-96 h-96 flex flex-col justify-center items-center text-center">
+            <div className={`bg-white rounded-xl shadow-lg border-2 p-8 w-96 h-96 flex flex-col justify-center items-center text-center ${
+              submittedSections.coding ? 'border-gray-400 opacity-75' : 'border-gray-200'
+            }`}>
               <div className="flex flex-col items-center">
                 <p className="text-sm text-gray-500 mb-3">Section 2</p>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 leading-tight">Coding Test</h2>
@@ -121,14 +163,21 @@ const TestOverviewPage = () => {
               </div>
               <button
                 onClick={() => handleSolve('coding')}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold text-base hover:bg-green-700 transition-colors mt-6"
+                disabled={submittedSections.coding}
+                className={`w-full py-3 px-4 rounded-lg font-semibold text-base transition-colors mt-6 ${
+                  submittedSections.coding
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
               >
-                Solve
+                {submittedSections.coding ? 'Submitted' : 'Solve'}
               </button>
             </div>
 
             {/* Section 3 - System Design */}
-            <div className="bg-white rounded-xl shadow-lg border-2 border-gray-200 p-8 w-96 h-96 flex flex-col justify-center items-center text-center">
+            <div className={`bg-white rounded-xl shadow-lg border-2 p-8 w-96 h-96 flex flex-col justify-center items-center text-center ${
+              submittedSections.systemDesign ? 'border-gray-400 opacity-75' : 'border-gray-200'
+            }`}>
               <div className="flex flex-col items-center">
                 <p className="text-sm text-gray-500 mb-3">Section 3</p>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 leading-tight">System Design</h2>
@@ -139,9 +188,14 @@ const TestOverviewPage = () => {
               </div>
               <button
                 onClick={() => handleSolve('system-design')}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold text-base hover:bg-green-700 transition-colors mt-6"
+                disabled={submittedSections.systemDesign}
+                className={`w-full py-3 px-4 rounded-lg font-semibold text-base transition-colors mt-6 ${
+                  submittedSections.systemDesign
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
               >
-                Solve
+                {submittedSections.systemDesign ? 'Submitted' : 'Solve'}
               </button>
             </div>
           </div>

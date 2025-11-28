@@ -8,15 +8,23 @@ import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
-
 const SystemDesignPageContent = () => {
   const { problem, isLoading, submitSolution } = useSystemDesign();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
-
   const handleSubmit = async () => {
     try {
       await submitSolution();
+      // Mark System Design section as submitted in localStorage
+      try {
+        const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+        const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+        const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+        submitted.systemDesign = true;
+        localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+      } catch (error) {
+        console.error('Error marking System Design as submitted:', error);
+      }
       // Navigate back to test overview page after successful submission
       navigate('/test-overview');
     } catch (error) {
@@ -24,14 +32,12 @@ const SystemDesignPageContent = () => {
       // You could show an error message to the user here
     }
   };
-
   // Monitor fullscreen exit with 5 second countdown
   const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
     onFinalAttempt: () => {
       // This will be called when time runs out
     },
   });
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -39,12 +45,10 @@ const SystemDesignPageContent = () => {
       </div>
     );
   }
-
   return (
     <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
       {/* Header */}
       <DesignHeader onSubmit={handleSubmit} />
-
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
         {/* Left Panel (70%) */}
@@ -59,7 +63,6 @@ const SystemDesignPageContent = () => {
                 <p className="text-sm text-gray-700 leading-relaxed m-0">{problem?.description}</p>
               </div>
             </div>
-
             {/* Canvas Container */}
             <div className="flex-1 min-h-0 flex flex-col p-6 overflow-hidden">
               {/* Excalidraw Canvas - Takes all space */}
@@ -69,34 +72,29 @@ const SystemDesignPageContent = () => {
             </div>
           </div>
         </div>
-
         {/* Right Panel (30%) - Chat */}
         <div className="w-[30%] flex-shrink-0 h-full bg-white border-l border-gray-200">
           <ClarifyingChat />
         </div>
       </div>
-
       {/* Footer */}
       <div className="flex-shrink-0">
         <Footer />
       </div>
-
       {/* Fullscreen Violation Modal */}
       <FullscreenViolationModal
         isOpen={showViolation}
         countdown={countdown}
         onRedirect={handleRedirect}
       />
-
       {/* Video Preview Component */}
-      <VideoPreview 
-        videoStream={videoStream} 
+      <VideoPreview
+        videoStream={videoStream}
         onStreamRequest={requestVideoStream}
       />
     </div>
   );
 };
-
 const SystemDesignPage = () => {
   return (
     <SystemDesignProvider>
@@ -104,6 +102,4 @@ const SystemDesignPage = () => {
     </SystemDesignProvider>
   );
 };
-
 export default SystemDesignPage;
-

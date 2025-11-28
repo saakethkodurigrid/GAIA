@@ -41,6 +41,17 @@ const MCQPageContent = () => {
       }
     });
     
+    // Mark MCQ section as submitted in localStorage
+    try {
+      const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+      const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+      const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+      submitted.mcq = true;
+      localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+    } catch (error) {
+      console.error('Error marking MCQ as submitted:', error);
+    }
+    
     // Close modal and navigate to test overview page
     setShowSubmitModal(false);
     navigate('/test-overview', { replace: true });
@@ -72,7 +83,7 @@ const MCQPageContent = () => {
   }
 
   return (
-    <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
+    <div className="w-full min-h-screen max-w-full flex flex-col bg-gray-50 overflow-y-auto overflow-x-hidden m-0 p-0">
       {/* Header */}
       <header className="w-full max-w-full flex items-center justify-between px-8 py-3 bg-white border-b border-gray-200 m-0 flex-shrink-0">
         <div className="flex items-center gap-3">

@@ -58,8 +58,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(null);
     localStorage.removeItem('oauth_state');
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('google_id_token');
     localStorage.removeItem('user_data');
-    localStorage.removeItem('mcq_answers'); // Clear MCQ answers on logout
+    // Clear all test-related data
+    localStorage.removeItem('mcq_answers');
+    localStorage.removeItem('submitted_sections');
+    // Clear any other test-related localStorage items
+    // Note: This ensures a clean slate when user logs out
     // Redirect to login page after logout
     window.location.href = '/auth/login';
   }, []);

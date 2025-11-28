@@ -188,17 +188,17 @@ const ScheduleInterviewPage = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex items-start justify-center p-8 pt-12">
-        <div className="w-full max-w-5xl mb-8">
+      <div className="flex-1 flex items-start justify-center p-4 pt-6">
+        <div className="w-full max-w-5xl mb-4">
           {/* Main Card */}
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Schedule Your Interview</h1>
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h1 className="text-xl font-bold text-gray-900 mb-4">Schedule Your Interview</h1>
 
             {/* Interview Details - 2 Columns */}
-            <div className="mb-6 grid grid-cols-2 gap-6">
+            <div className="mb-3 grid grid-cols-2 gap-4">
               {/* Left Column */}
               <div className="space-y-4">
-                <div>
+                <div className="py-1">
                   <div className="flex items-center gap-2 mb-1">
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -207,20 +207,20 @@ const ScheduleInterviewPage = () => {
                   </div>
                   <p className="text-sm font-semibold text-gray-900">{user?.name || 'Jane Doe'}</p>
                 </div>
-                <div>
+                <div className="py-1">
                   <div className="flex items-center gap-2 mb-1">
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     <span className="text-xs text-gray-600">Role</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-900">Senior Product Designer at Grid Dynamics</p>
+                  <p className="text-sm font-semibold text-gray-900">Senior Backend Developer</p>
                 </div>
               </div>
               
               {/* Right Column */}
               <div className="space-y-4">
-                <div>
+                <div className="py-1">
                   <div className="flex items-center gap-2 mb-1">
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -229,7 +229,7 @@ const ScheduleInterviewPage = () => {
                   </div>
                   <p className="text-sm font-semibold text-gray-900">Technical Interview</p>
                 </div>
-                <div>
+                <div className="py-1">
                   <div className="flex items-center gap-2 mb-1">
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -242,30 +242,30 @@ const ScheduleInterviewPage = () => {
             </div>
 
             {/* Timezone Notice */}
-            <div className="mb-6 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
-              <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
+              <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="text-sm text-yellow-800">
+              <span className="text-xs text-yellow-800">
                 Times are shown in your local timezone ({timezoneAbbr})
               </span>
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{error}</p>
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-xs text-red-800">{error}</p>
               </div>
             )}
 
             {/* Date and Time Selection - 2 Columns */}
-            <div className="mb-6 grid grid-cols-2 gap-6">
+            <div className="mb-4 grid grid-cols-2 gap-4">
               {/* Date Selection */}
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">1. Select a Date</h2>
-                <div className="border border-gray-200 rounded-lg p-4">
+                <h2 className="text-base font-semibold text-gray-900 mb-2">1. Select a Date</h2>
+                <div className="border border-gray-200 rounded-lg p-3 h-[420px] flex flex-col">
                   {/* Calendar Header */}
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-2 flex-shrink-0">
                     <button
                       onClick={handlePrevMonth}
                       className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -275,7 +275,7 @@ const ScheduleInterviewPage = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
                     </button>
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-sm font-semibold text-gray-900">
                       {monthNames[currentMonth]} {currentYear}
                     </h3>
                     <button
@@ -290,10 +290,10 @@ const ScheduleInterviewPage = () => {
                   </div>
 
                   {/* Calendar Grid */}
-                  <div className="grid grid-cols-7 gap-1">
+                  <div className="grid grid-cols-7 gap-1 flex-1">
                     {/* Day Headers */}
                     {dayNames.map((day) => (
-                      <div key={day} className="text-center text-xs font-semibold text-gray-600 py-2">
+                      <div key={day} className="text-center text-xs font-semibold text-gray-600 py-1">
                         {day}
                       </div>
                     ))}
@@ -312,7 +312,7 @@ const ScheduleInterviewPage = () => {
                           onClick={() => isCurrentMonth && handleDateClick(day)}
                           disabled={!isCurrentMonth}
                           className={`
-                            py-2 px-1 text-sm rounded-lg transition-colors
+                            py-1 px-1 text-xs rounded transition-colors
                             ${!isCurrentMonth ? 'text-gray-300 cursor-not-allowed' : 'text-gray-900 hover:bg-gray-100'}
                             ${isSelected ? 'bg-gray-200 font-semibold' : ''}
                           `}
@@ -328,9 +328,9 @@ const ScheduleInterviewPage = () => {
 
               {/* Time Selection */}
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">2. Select a Time</h2>
-                <div className="border border-gray-200 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <div className="grid grid-cols-2 gap-2">
+                <h2 className="text-base font-semibold text-gray-900 mb-2">2. Select a Time</h2>
+                <div className="border border-gray-200 rounded-lg p-3 h-[420px] overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {timeSlots.map((time) => {
                       const isSelected = selectedTime === time;
                       return (
@@ -338,7 +338,7 @@ const ScheduleInterviewPage = () => {
                           key={time}
                           onClick={() => handleTimeClick(time)}
                           className={`
-                            py-2 px-3 text-sm rounded-lg border transition-colors
+                            py-1.5 px-2 text-xs rounded border transition-colors
                             ${isSelected 
                               ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold' 
                               : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
@@ -356,12 +356,12 @@ const ScheduleInterviewPage = () => {
             </div>
 
             {/* Confirm Button */}
-            <div className="flex justify-center">
+            <div className="flex justify-center mt-4">
               <button
                 onClick={handleConfirmSchedule}
                 disabled={!selectedDate || !selectedTime || isLoading}
                 className={`
-                  py-3 px-8 rounded-lg font-semibold text-base transition-colors
+                  py-2.5 px-6 rounded-lg font-semibold text-sm transition-colors
                   ${selectedDate && selectedTime && !isLoading
                     ? 'bg-gray-700 text-white hover:bg-gray-800 cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'

@@ -212,7 +212,7 @@ const TestScheduledPage = () => {
 
         {/* Start Assessment Button */}
         <button
-          onClick={() => navigate('/test/permissions')}
+          onClick={() => navigate('/test/instructions')}
           className="bg-yellow-400 text-gray-900 py-3 px-8 rounded-lg font-semibold text-base hover:bg-yellow-500 transition-colors shadow-md"
         >
           Start Assessment
