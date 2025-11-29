@@ -1,7 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
-import { createSession, getQuestionByUuid, sendChatMessage, updateCanvas } from '../api/systemDesign.api';
+import { 
+  createSession, 
+  getQuestionByUuid, 
+  sendChatMessage, 
+  updateCanvas,
+  getAssignedQuestion,
+  getChatHistory,
+  checkProactivePrompts,
+  endSession
+} from '../api/systemDesign.api';
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
 
 const TIMER_DURATION = 60 * 60; // 60 minutes
@@ -22,6 +31,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [isLoading, setIsLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionCreatedRef = useRef(false);
+  const proactivePromptIntervalRef = useRef<number | null>(null);
 
   // Create session and load question on mount
   useEffect(() => {
@@ -39,42 +49,112 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       setIsLoading(true);
 
       try {
-        // Step 1: Create session
+        // Step 1: Fetch assigned question (if test is in progress)
+        let assignedQuestion = null;
+        try {
+          console.log('Fetching assigned question...');
+          assignedQuestion = await getAssignedQuestion(user.candidateId);
+          console.log('Assigned question fetched:', assignedQuestion);
+        } catch (error: any) {
+          // If test is not in progress, this will fail - that's okay, we'll create session without it
+          console.log('No assigned question found or test not in progress:', error.message);
+        }
+
+        // Step 2: Create session with assigned question UUID (if available)
         console.log('Creating session...');
         const sessionResponse = await createSession({
           candidate_id: user.candidateId,
+          question_uuid: assignedQuestion?.question_uuid || undefined,
         });
 
         console.log('Session created:', sessionResponse);
         setSessionId(sessionResponse.session_id);
 
-        // Step 2: Fetch question if UUID is available
-        if (sessionResponse.question_uuid) {
-          console.log('Fetching question with UUID:', sessionResponse.question_uuid);
-          const questionResponse = await getQuestionByUuid(sessionResponse.question_uuid);
-          
-          // Map question response to SystemDesignProblem
-          const problemData: SystemDesignProblem = {
-            id: 1, // Using 1 as default since backend doesn't provide numeric ID
-            title: questionResponse.question_id || 'System Design Problem',
-            description: questionResponse.question,
-            requirements: questionResponse.evaluation_criteria
-              ? questionResponse.evaluation_criteria.split('\n').filter(line => line.trim())
-              : [],
-          };
-
-          setProblem(problemData);
-          console.log('Question loaded:', problemData);
-        } else {
-          // Fallback: Use question_text from session if no UUID
-          console.log('No question UUID, using question_text from session');
-          const problemData: SystemDesignProblem = {
+        // Step 3: Load question details
+        // Priority: Use question_text from session response (always available)
+        // Only fetch by UUID if we need additional details (evaluation_criteria, etc.)
+        let problemData: SystemDesignProblem;
+        
+        if (assignedQuestion) {
+          // Use assigned question data (has evaluation_criteria)
+          problemData = {
             id: 1,
             title: 'System Design Problem',
-            description: sessionResponse.question_text,
+            description: assignedQuestion.question,
+            requirements: assignedQuestion.evaluation_criteria
+              ? assignedQuestion.evaluation_criteria.split('\n').filter(line => line.trim())
+              : [],
+          };
+        } else if (sessionResponse.question_text) {
+          // Primary: Use question_text from session (always available)
+          // Try to fetch additional details by UUID if available, but don't fail if it doesn't exist
+          if (sessionResponse.question_uuid) {
+            try {
+              console.log('Fetching additional question details with UUID:', sessionResponse.question_uuid);
+              const questionResponse = await getQuestionByUuid(sessionResponse.question_uuid);
+              
+              // Use fetched question details if available
+              problemData = {
+                id: 1,
+                title: questionResponse.question_id || 'System Design Problem',
+                description: questionResponse.question || sessionResponse.question_text,
+                requirements: questionResponse.evaluation_criteria
+                  ? questionResponse.evaluation_criteria.split('\n').filter(line => line.trim())
+                  : [],
+              };
+              console.log('Question details fetched successfully');
+            } catch (error: any) {
+              // UUID fetch failed (404 or other error), use session question_text
+              console.warn('Could not fetch question by UUID, using question_text from session:', error.message);
+              problemData = {
+                id: 1,
+                title: 'System Design Problem',
+                description: sessionResponse.question_text,
+                requirements: [],
+              };
+            }
+          } else {
+            // No UUID, just use question_text from session
+            console.log('Using question_text from session (no UUID available)');
+            problemData = {
+              id: 1,
+              title: 'System Design Problem',
+              description: sessionResponse.question_text,
+              requirements: [],
+            };
+          }
+        } else {
+          // Last resort: Use hardcoded fallback
+          console.warn('No question_text in session response, using fallback');
+          problemData = {
+            id: 1,
+            title: 'System Design Problem',
+            description: 'An error occurred loading the problem. Please refresh the page.',
             requirements: [],
           };
-          setProblem(problemData);
+        }
+
+        setProblem(problemData);
+        console.log('Question loaded:', problemData);
+
+        // Step 4: Load chat history if session exists
+        if (sessionResponse.session_id) {
+          try {
+            const chatHistory = await getChatHistory(sessionResponse.session_id);
+            if (chatHistory.messages && chatHistory.messages.length > 0) {
+              const mappedMessages: ChatMessage[] = chatHistory.messages.map((msg, index) => ({
+                id: `${msg.timestamp || index}`,
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+              }));
+              setChatMessages(mappedMessages);
+              console.log('Chat history loaded:', mappedMessages.length, 'messages');
+            }
+          } catch (error) {
+            console.error('Error loading chat history:', error);
+            // Continue without chat history
+          }
         }
 
         setIsLoading(false);
@@ -99,6 +179,52 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
     initializeSession();
   }, [user?.candidateId]);
+
+  // Poll for proactive prompts
+  useEffect(() => {
+    if (!sessionId) return;
+
+    // Check for prompts every 5 seconds
+    const checkPrompts = async () => {
+      try {
+        const promptResponse = await checkProactivePrompts(sessionId);
+        if (promptResponse.has_prompt && promptResponse.prompt) {
+          // Add proactive prompt as assistant message
+          const proactiveMessage: ChatMessage = {
+            id: `proactive-${Date.now()}`,
+            role: 'assistant',
+            content: promptResponse.prompt,
+            timestamp: new Date(),
+          };
+          
+          // Check if this prompt was already shown
+          setChatMessages((prev) => {
+            const exists = prev.some(
+              (msg) => msg.role === 'assistant' && msg.content === promptResponse.prompt
+            );
+            if (!exists) {
+              return [...prev, proactiveMessage];
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error checking proactive prompts:', error);
+      }
+    };
+
+    // Initial check
+    checkPrompts();
+
+    // Set up interval
+    proactivePromptIntervalRef.current = window.setInterval(checkPrompts, 5000);
+
+    return () => {
+      if (proactivePromptIntervalRef.current) {
+        clearInterval(proactivePromptIntervalRef.current);
+      }
+    };
+  }, [sessionId]);
 
   // Timer countdown
   useEffect(() => {
@@ -243,6 +369,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     }
 
     try {
+      // First submit the canvas
       await updateCanvas({
         session_id: sessionId,
         canvas_data: {
@@ -253,6 +380,16 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         action: 'submit',
       });
       console.log('Solution submitted successfully');
+
+      // Then end the session to get final report
+      try {
+        const report = await endSession(sessionId);
+        console.log('Final report received:', report);
+        // You can store the report or show it to the user
+      } catch (error) {
+        console.error('Error ending session:', error);
+        // Continue even if ending session fails
+      }
     } catch (error) {
       console.error('Error submitting solution:', error);
       throw error;

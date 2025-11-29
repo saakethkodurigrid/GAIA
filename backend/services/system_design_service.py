@@ -6,8 +6,11 @@ import time
 import copy
 import json
 import hashlib
+import logging
 from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 from utils.system_design.models import Session as SessionModel, CanvasVersion, ChatMessage, Evaluation
 from utils.system_design.question_service import QuestionService
 from utils.system_design.evaluator import EvaluationEngine
@@ -60,37 +63,49 @@ class SystemDesignService:
             if question:
                 question_uuid = question.uuid
                 question_text = question.question
+                logger.info(f"[SESSION CREATION] ✅ Using pre-assigned question for candidate {candidate_id}")
+                logger.info(f"[SESSION CREATION]    Question UUID: {question_uuid}")
+                logger.info(f"[SESSION CREATION]    Question: {question_text[:100]}...")
             else:
                 # Question deleted from bank, fall back to default logic
-                print(f"Warning: Pre-assigned question {assigned_question_uuid} not found in question bank. Using fallback.")
+                logger.warning(f"[SESSION CREATION] ⚠️  Pre-assigned question {assigned_question_uuid} not found in question bank for candidate {candidate_id}. Using fallback.")
                 assigned_question_uuid = None  # Continue with fallback logic
         
         # PRIORITY 2: Use explicit question_uuid from request (if no pre-assigned question)
         if not assigned_question_uuid:
             if request.question_uuid:
                 # Fetch specific question by UUID
+                logger.info(f"[SESSION CREATION] Using explicit question_uuid from request: {request.question_uuid} for candidate {candidate_id}")
                 question = self.question_service.get_question_by_id(request.question_uuid)
                 if question:
                     question_uuid = question.uuid
                     question_text = question.question
+                    logger.info(f"[SESSION CREATION] ✅ Loaded question UUID: {question_uuid}")
                 else:
+                    logger.error(f"[SESSION CREATION] Question with UUID {request.question_uuid} not found for candidate {candidate_id}")
                     raise ValueError(f"Question with UUID {request.question_uuid} not found")
             elif request.tag:
                 # Get random question by tag
+                logger.info(f"[SESSION CREATION] Selecting random question by tag '{request.tag}' for candidate {candidate_id}")
                 question = self.question_service.get_random_question_by_tag(request.tag)
                 if question:
                     question_uuid = question.uuid
                     question_text = question.question
+                    logger.info(f"[SESSION CREATION] ✅ Selected question UUID: {question_uuid} (tag: {request.tag})")
                 else:
+                    logger.error(f"[SESSION CREATION] No questions found with tag '{request.tag}' for candidate {candidate_id}")
                     raise ValueError(f"No questions found with tag: {request.tag}")
             elif not question_text:
                 # Default: use URL shortener question
+                logger.info(f"[SESSION CREATION] Using default question for candidate {candidate_id}")
                 question = self.question_service.get_question_by_id("q1-normal-hld-url-shortener")
                 if question:
                     question_uuid = question.uuid
                     question_text = question.question
+                    logger.info(f"[SESSION CREATION] ✅ Using default question UUID: {question_uuid}")
                 else:
                     # Fallback to hardcoded
+                    logger.warning(f"[SESSION CREATION] Default question not found, using hardcoded question for candidate {candidate_id}")
                     question_text = "Design a URL shortener like bit.ly"
                     question_uuid = None
         
@@ -121,10 +136,20 @@ class SystemDesignService:
         
         sessions[session_id] = session
         
+        # Verify question_uuid exists in question bank before returning it
+        # If it doesn't exist, return None to prevent frontend 404 errors
+        final_question_uuid = question_uuid
+        if question_uuid:
+            # Verify the question still exists
+            verify_question = self.question_service.get_question_by_id(question_uuid)
+            if not verify_question:
+                logger.warning(f"[SESSION CREATION] Question UUID {question_uuid} does not exist in question bank, returning None to prevent frontend errors")
+                final_question_uuid = None
+        
         return SessionResponse(
             session_id=session_id,
             question_text=question_text,
-            question_uuid=question_uuid
+            question_uuid=final_question_uuid
         )
     
     def get_session(self, session_id: str, candidate_id: Optional[str] = None) -> SessionModel:

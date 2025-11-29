@@ -207,3 +207,46 @@ export const getResumesList = async (jobId: string): Promise<ResumesListResponse
   return response.json();
 };
 
+export interface InterviewResponse {
+  candidate_id: string;
+  candidate_name: string;
+  candidate_email: string;
+  job_id: string;
+  job_role: string;
+  recruiter_email: string;
+  scheduled_date: string; // ISO format datetime string
+  status: string; // 'shortlisted', 'rejected', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'
+}
+
+export interface ListInterviewsResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  interviews: InterviewResponse[];
+}
+
+/**
+ * Get list of interviews scheduled for today
+ */
+export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/list-interviews/today`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch interviews' }));
+    throw new Error(error.detail || 'Failed to fetch interviews');
+  }
+
+  return response.json();
+};
+

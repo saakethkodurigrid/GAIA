@@ -1,6 +1,7 @@
 """
 Question Assignment Service for managing system design question assignments to candidates.
 """
+import logging
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -9,6 +10,8 @@ from models.recruiter_admin_candidate import RecruiterAdminCandidate
 from models.job import Job
 from models.interview_system_design import InterviewSystemDesign
 from utils.system_design.question_service import QuestionService
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionAssignmentService:
@@ -35,10 +38,12 @@ class QuestionAssignmentService:
             ).first()
             
             if assignment:
+                logger.info(f"[QUESTION ASSIGNMENT] Found pre-assigned question for candidate {candidate_id}: {assignment.question_uuid}")
                 return assignment.question_uuid
+            logger.info(f"[QUESTION ASSIGNMENT] No pre-assigned question found for candidate {candidate_id}")
             return None
         except Exception as e:
-            print(f"Error fetching assigned question: {e}")
+            logger.error(f"Error fetching assigned question for candidate {candidate_id}: {e}")
             return None
     
     def select_question_by_job_role(self, candidate_id: str) -> Optional[str]:
@@ -67,7 +72,10 @@ class QuestionAssignmentService:
             
             if not assignment:
                 # No job assignment, use default tag
+                logger.info(f"[QUESTION ASSIGNMENT] No job assignment for candidate {candidate_id}, using default tag: normal_hld")
                 question = self.question_service.get_random_question_by_tag("normal_hld")
+                if question:
+                    logger.info(f"[QUESTION ASSIGNMENT] Selected default question UUID: {question.uuid}")
                 return question.uuid if question else None
             
             # Get job details
@@ -77,7 +85,10 @@ class QuestionAssignmentService:
             
             if not job:
                 # Job not found, use default tag
+                logger.info(f"[QUESTION ASSIGNMENT] Job not found for candidate {candidate_id}, using default tag: normal_hld")
                 question = self.question_service.get_random_question_by_tag("normal_hld")
+                if question:
+                    logger.info(f"[QUESTION ASSIGNMENT] Selected default question UUID: {question.uuid}")
                 return question.uuid if question else None
             
             # Map job_role to question tag
@@ -100,20 +111,28 @@ class QuestionAssignmentService:
             else:
                 tag = "normal_hld"  # Default fallback
             
+            logger.info(f"[QUESTION ASSIGNMENT] Auto-selecting question for candidate {candidate_id} with job role '{job.job_role}' -> tag: {tag}")
+            
             # Get random question by tag
             question = self.question_service.get_random_question_by_tag(tag)
             
             if question:
+                logger.info(f"[QUESTION ASSIGNMENT] Selected question UUID: {question.uuid} (tag: {tag})")
                 return question.uuid
             
             # If no question found with tag, try default
+            logger.warning(f"[QUESTION ASSIGNMENT] No question found with tag '{tag}' for candidate {candidate_id}, trying default tag")
             question = self.question_service.get_random_question_by_tag("normal_hld")
+            if question:
+                logger.info(f"[QUESTION ASSIGNMENT] Selected fallback question UUID: {question.uuid}")
             return question.uuid if question else None
             
         except Exception as e:
-            print(f"Error selecting question by job role: {e}")
+            logger.error(f"Error selecting question by job role for candidate {candidate_id}: {e}")
             # Fallback to default
             question = self.question_service.get_random_question_by_tag("normal_hld")
+            if question:
+                logger.info(f"[QUESTION ASSIGNMENT] Selected error-fallback question UUID: {question.uuid}")
             return question.uuid if question else None
     
     def assign_question_to_candidate(
@@ -146,21 +165,27 @@ class QuestionAssignmentService:
             # Determine question UUID
             if not question_uuid:
                 # Auto-select based on job role
+                logger.info(f"[QUESTION ASSIGNMENT] Auto-selecting question for candidate {candidate_id} based on job role")
                 question_uuid = self.select_question_by_job_role(candidate_id)
                 
                 if not question_uuid:
+                    logger.error(f"[QUESTION ASSIGNMENT] Failed to auto-select question for candidate {candidate_id}")
                     return {
                         "success": False,
                         "message": "Failed to auto-select question. No questions available."
                     }
             else:
                 # Verify question exists
+                logger.info(f"[QUESTION ASSIGNMENT] Using provided question UUID {question_uuid} for candidate {candidate_id}")
                 question = self.question_service.get_question_by_id(question_uuid)
                 if not question:
+                    logger.error(f"[QUESTION ASSIGNMENT] Question UUID {question_uuid} not found for candidate {candidate_id}")
                     return {
                         "success": False,
                         "message": f"Question with UUID {question_uuid} not found"
                     }
+                else:
+                    logger.info(f"[QUESTION ASSIGNMENT] Verified question UUID {question_uuid} exists")
             
             # Check if assignment already exists
             existing_assignment = self.db.query(InterviewSystemDesign).filter(
@@ -170,14 +195,18 @@ class QuestionAssignmentService:
             if existing_assignment:
                 # Check if test has started (score is not NULL)
                 if existing_assignment.score is not None:
+                    logger.warning(f"[QUESTION ASSIGNMENT] Cannot reassign question for candidate {candidate_id} - test already completed")
                     return {
                         "success": False,
                         "message": "Cannot reassign question. Candidate has already completed the test."
                     }
                 
                 # Update existing assignment
+                old_uuid = existing_assignment.question_uuid
                 existing_assignment.question_uuid = question_uuid
                 self.db.commit()
+                
+                logger.info(f"[QUESTION ASSIGNMENT] ✅ REASSIGNED question for candidate {candidate_id}: {old_uuid} -> {question_uuid}")
                 
                 return {
                     "success": True,
@@ -194,6 +223,14 @@ class QuestionAssignmentService:
                 )
                 self.db.add(new_assignment)
                 self.db.commit()
+                
+                # Get question details for logging
+                question = self.question_service.get_question_by_id(question_uuid)
+                question_text = question.question[:100] + "..." if question and len(question.question) > 100 else (question.question if question else "N/A")
+                
+                logger.info(f"[QUESTION ASSIGNMENT] ✅ ASSIGNED question to candidate {candidate_id}")
+                logger.info(f"[QUESTION ASSIGNMENT]    Question UUID: {question_uuid}")
+                logger.info(f"[QUESTION ASSIGNMENT]    Question: {question_text}")
                 
                 return {
                     "success": True,
