@@ -152,6 +152,148 @@ export const sendChatMessage = async (request: ChatMessageRequest): Promise<Chat
   return response.json();
 };
 
+// Proactive Prompts Types
+export interface ProactivePromptResponse {
+  has_prompt: boolean;
+  prompt?: string | null;
+}
+
+// Check Proactive Prompts API
+export const checkProactivePrompts = async (sessionId: string): Promise<ProactivePromptResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/check-prompts`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to check prompts' }));
+    throw new Error(error.detail || 'Failed to check prompts');
+  }
+
+  return response.json();
+};
+
+// Chat History Types
+export interface ChatHistoryResponse {
+  messages: Array<{
+    role: string;
+    content: string;
+    timestamp?: string | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
+  }>;
+}
+
+// Get Chat History API
+export const getChatHistory = async (sessionId: string): Promise<ChatHistoryResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/chat-history`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch chat history' }));
+    throw new Error(error.detail || 'Failed to fetch chat history');
+  }
+
+  return response.json();
+};
+
+// Final Report Types
+export interface FinalReportResponse {
+  session_id: string;
+  question: string;
+  average_scores: Record<string, number>;
+  timeline: Array<{
+    timestamp: string;
+    event: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
+  }>;
+  total_versions: number;
+  total_messages: number;
+  lowest_area?: string | null;
+  suggested_learning: string[];
+}
+
+// End Session API
+export const endSession = async (sessionId: string): Promise<FinalReportResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/end`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to end session' }));
+    throw new Error(error.detail || 'Failed to end session');
+  }
+
+  return response.json();
+};
+
+// Get Report API
+export const getReport = async (sessionId: string): Promise<FinalReportResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/report`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch report' }));
+    throw new Error(error.detail || 'Failed to fetch report');
+  }
+
+  return response.json();
+};
+
+// Assigned Question Types (from candidate API)
+export interface AssignedQuestionResponse {
+  candidate_id: string;
+  question_uuid: string;
+  question: string;
+  evaluation_criteria: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tags?: Record<string, any> | null;
+  score?: number | null;
+  diagram?: string | null;
+  test_completed: boolean;
+}
+
+// Get Assigned Question API (from candidate endpoint)
+export const getAssignedQuestion = async (candidateId: string): Promise<AssignedQuestionResponse> => {
+  const response = await fetch(`${API_BASE_URL}/candidate/${candidateId}/assigned-question`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch assigned question' }));
+    console.error('[getAssignedQuestion] API Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: error
+    });
+    throw new Error(error.detail || 'Failed to fetch assigned question');
+  }
+
+  const data = await response.json();
+  console.log('[getAssignedQuestion] API Response:', {
+    candidateId,
+    response: data
+  });
+  return data;
+};
+
 // Legacy function for backward compatibility
 export const MOCK_SYSTEM_DESIGN_PROBLEM: SystemDesignProblem = {
   id: 1,

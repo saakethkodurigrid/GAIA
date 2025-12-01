@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { addJob, listJobs } from '../api/admin.api';
+import { addJob, listJobs, listTodayInterviews } from '../api/admin.api';
+import type { InterviewResponse } from '../api/admin.api';
 
 interface JobDescription {
   id: string;
@@ -16,14 +17,14 @@ interface JobDescription {
 interface ScheduledInterview {
   jobTitle: string;
   status: 'Scheduled' | 'Completed' | 'In Progress';
-  interviewer: string;
+  candidateName: string;
   time: string;
 }
 
 const Recruiter = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [selectedDate, setSelectedDate] = useState(new Date(2025, 10, 5)); // Nov 5, 2025
+  const [selectedDate, setSelectedDate] = useState(new Date()); // Today
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,9 @@ const Recruiter = () => {
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
+  const [isLoadingInterviews, setIsLoadingInterviews] = useState(true);
+  const [interviewsError, setInterviewsError] = useState<string | null>(null);
 
   const handleLogout = () => {
     logout();
@@ -74,17 +78,83 @@ const Recruiter = () => {
     fetchJobs();
   }, []);
 
-  // Mock data for scheduled interviews
-  const scheduledInterviews: ScheduledInterview[] = [
-    { jobTitle: 'Backend Engineer', status: 'Scheduled', interviewer: 'Alex Johnson', time: '9:00 AM' },
-    { jobTitle: 'Frontend Engineer', status: 'Completed', interviewer: 'Alex Johnson', time: '9:00 AM' },
-    { jobTitle: 'Senior Software Engineer', status: 'Completed', interviewer: 'Alex Johnson', time: '9:00 AM' },
-    { jobTitle: 'Backend Engineer', status: 'Scheduled', interviewer: 'Alex Johnson', time: '9:00 AM' },
-    { jobTitle: 'Backend Engineer', status: 'In Progress', interviewer: 'Alex Johnson', time: '9:00 AM' },
-    { jobTitle: 'Backend Engineer', status: 'In Progress', interviewer: 'Alex Johnson', time: '9:00 AM' },
-  ];
+  // Map API interview response to component format
+  const mapInterviewToScheduled = (interview: InterviewResponse): ScheduledInterview => {
+    // Map status from backend to frontend format
+    let mappedStatus: 'Scheduled' | 'Completed' | 'In Progress' = 'Scheduled';
+    if (interview.status === 'completed' || interview.status === 'selected' || interview.status === 'not selected') {
+      mappedStatus = 'Completed';
+    } else if (interview.status === 'in progress') {
+      mappedStatus = 'In Progress';
+    } else {
+      mappedStatus = 'Scheduled';
+    }
+
+    // Parse scheduled_date and format time
+    let timeString = 'TBD';
+    if (interview.scheduled_date) {
+      try {
+        const date = new Date(interview.scheduled_date);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = minutes.toString().padStart(2, '0');
+        timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+      } catch (e) {
+        console.error('Error parsing date:', e);
+      }
+    }
+
+    const mappedInterview = {
+      jobTitle: interview.job_role,
+      status: mappedStatus,
+      candidateName: interview.candidate_name || 'N/A',
+      time: timeString,
+    };
+    
+    console.log('Mapping interview:', {
+      original: interview,
+      mapped: mappedInterview
+    });
+    
+    return mappedInterview;
+  };
+
+  // Fetch interviews from backend
+  useEffect(() => {
+    const fetchInterviews = async () => {
+      setIsLoadingInterviews(true);
+      setInterviewsError(null);
+      try {
+        const response = await listTodayInterviews();
+        console.log('API Response from /admin/list-interviews/today:', response);
+        if (response.success && response.interviews) {
+          console.log('Interviews array:', response.interviews);
+          const mappedInterviews: ScheduledInterview[] = response.interviews.map(mapInterviewToScheduled);
+          console.log('Mapped interviews:', mappedInterviews);
+          setScheduledInterviews(mappedInterviews);
+        } else {
+          setInterviewsError(response.message || 'Failed to load interviews');
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load interviews. Please try again.';
+        setInterviewsError(errorMessage);
+        console.error('Error fetching interviews:', err);
+      } finally {
+        setIsLoadingInterviews(false);
+      }
+    };
+
+    fetchInterviews();
+  }, []);
 
   const formatDate = (date: Date) => {
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    if (isToday) {
+      return 'Today';
+    }
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
@@ -382,31 +452,82 @@ const Recruiter = () => {
 
               {/* Interviews List */}
               <div className="space-y-4 overflow-y-auto flex-1">
-                {scheduledInterviews.map((interview, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">{interview.jobTitle}</h3>
-                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(interview.status)}`}>
-                        {interview.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-base text-gray-600">
-                      <span>Interviewer: {interview.interviewer}</span>
-                      <span>•</span>
-                      <span>Time: {interview.time}</span>
-                      {interview.status === 'Completed' && (
-                        <>
-                          <span>•</span>
-                          <button className="text-blue-600 hover:text-blue-800">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </button>
-                        </>
-                      )}
+                {isLoadingInterviews ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="flex flex-col items-center gap-3">
+                      <svg className="animate-spin h-8 w-8 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <p className="text-gray-600">Loading interviews...</p>
                     </div>
                   </div>
-                ))}
+                ) : interviewsError ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="text-center">
+                      <p className="text-red-600 mb-2">{interviewsError}</p>
+                      <button
+                        onClick={async () => {
+                          setInterviewsError(null);
+                          setIsLoadingInterviews(true);
+                          try {
+                            const response = await listTodayInterviews();
+                            console.log('API Response from /admin/list-interviews/today (retry):', response);
+                            if (response.success && response.interviews) {
+                              const mappedInterviews: ScheduledInterview[] = response.interviews.map(mapInterviewToScheduled);
+                              setScheduledInterviews(mappedInterviews);
+                            } else {
+                              setInterviewsError(response.message || 'Failed to load interviews');
+                            }
+                          } catch (err) {
+                            const errorMessage = err instanceof Error ? err.message : 'Failed to load interviews. Please try again.';
+                            setInterviewsError(errorMessage);
+                          } finally {
+                            setIsLoadingInterviews(false);
+                          }
+                        }}
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  </div>
+                ) : scheduledInterviews.length === 0 ? (
+                  <div className="flex items-center justify-center h-64">
+                    <p className="text-gray-600">No interviews scheduled for today.</p>
+                  </div>
+                ) : (
+                  scheduledInterviews.map((interview, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-blue-600 mb-3">{interview.jobTitle}</h3>
+                          <div className="text-base text-gray-600">
+                            <span>{interview.candidateName || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(interview.status)} mb-3`}>
+                            {interview.status}
+                          </span>
+                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{interview.time}</span>
+                          </div>
+                          {interview.status === 'Completed' && (
+                            <button className="text-blue-600 hover:text-blue-800 mt-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -1,32 +1,28 @@
 import { MOCK_QUESTIONS } from '../utils/constants';
 import type { Question } from '../types';
-// import { API_BASE_URL } from '../utils/config';
+import { API_BASE_URL } from '../utils/config';
 
 // Get auth token from localStorage
-// const getAuthToken = (): string | null => {
-//   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
-// };
+const getAuthToken = (): string | null => {
+  return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+};
 
 // Backend response types
-// interface MCQQuestionResponse {
-//   question_uuid: string;
-//   question: string;
-//   options: string[];
-// }
+interface MCQQuestionResponse {
+  question_uuid: string;
+  question: string;
+  options: string[];
+}
 
-// interface MCQQuestionsResponse {
-//   success: boolean;
-//   message: string;
-//   count: number;
-//   questions: MCQQuestionResponse[];
-// }
+interface MCQQuestionsResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  questions: MCQQuestionResponse[];
+}
 
 // API functions for fetching questions
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const fetchQuestions = async (_candidateId?: string): Promise<Question[]> => {
-  // For now, always return dummy Gen AI questions
-  // TODO: Uncomment below code when ready to fetch from backend
-  /*
+export const fetchQuestions = async (candidateId?: string): Promise<Question[]> => {
   // If candidateId is provided, fetch from backend
   if (candidateId) {
     try {
@@ -80,9 +76,8 @@ export const fetchQuestions = async (_candidateId?: string): Promise<Question[]>
       return MOCK_QUESTIONS;
     }
   }
-  */
 
-  // Return dummy Gen AI questions for now
+  // Return dummy Gen AI questions for now if no candidateId
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve(MOCK_QUESTIONS);
