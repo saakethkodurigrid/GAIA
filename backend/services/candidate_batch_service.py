@@ -4,6 +4,8 @@ Handles batch addition of candidates from resume files.
 """
 import uuid
 import logging
+import asyncio
+import threading
 from datetime import date
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -16,6 +18,8 @@ from utils.resume.file_extractor import file_extractor
 from utils.resume.resume_scorer import resume_scorer
 from utils.mcq.pii_scrubber import pii_scrubber
 from presidio_analyzer import AnalyzerEngine
+from services.email_service import email_service
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -181,15 +185,20 @@ class CandidateBatchService:
                 # Step 5: Create candidate record
                 candidate_id = str(uuid.uuid4())
                 
-                # Check if email already exists
-                existing_candidate = self.db.query(Candidate).filter(
-                    Candidate.email_id == pii_data["email"].lower()
+                # Check if candidate with this email is already assigned to THIS SPECIFIC JOB
+                # This allows same email in different jobs (with different UUIDs) but prevents duplicates within same job
+                existing_assignment = self.db.query(RecruiterAdminCandidate).join(
+                    Candidate,
+                    RecruiterAdminCandidate.candidate_id == Candidate.candidate_id
+                ).filter(
+                    Candidate.email_id == pii_data["email"].lower(),
+                    RecruiterAdminCandidate.job_id == job_id
                 ).first()
                 
-                if existing_candidate:
+                if existing_assignment:
                     failed_files.append({
                         "filename": file.filename or "unknown",
-                        "error": f"Candidate with email {pii_data['email']} already exists"
+                        "error": f"Candidate with email {pii_data['email']} is already assigned to this job"
                     })
                     continue
                 
@@ -217,6 +226,41 @@ class CandidateBatchService:
                 
                 self.db.add(assignment)
                 self.db.commit()
+                
+                # Step 7: Send scheduling invitation email AUTOMATICALLY if candidate is shortlisted
+                if initial_status == 'shortlisted' and resume_score >= settings.RESUME_SCORE_THRESHOLD:
+                    try:
+                        # Get job role for email
+                        job = self.db.query(Job).filter(Job.job_id == job_id).first()
+                        job_role = job.job_role if job else "Technical Interview"
+                        
+                        # Send scheduling invitation email (async, non-blocking)
+                        # Use threading to run async function in background
+                        import threading
+                        
+                        def send_email_async():
+                            """Helper function to run async email sending in background thread."""
+                            try:
+                                asyncio.run(
+                                    email_service.send_scheduling_invitation_email(
+                                        candidate_email=pii_data["email"].lower(),
+                                        candidate_name=pii_data["name"],
+                                        candidate_id=candidate_id,
+                                        job_role=job_role,
+                                        resume_score=resume_score
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Error in background email thread: {str(e)}")
+                        
+                        # Start email sending in background thread
+                        email_thread = threading.Thread(target=send_email_async, daemon=True)
+                        email_thread.start()
+                        
+                        logger.info(f"Scheduling invitation email queued for candidate {candidate_id}")
+                    except Exception as e:
+                        # Don't fail candidate creation if email fails
+                        logger.error(f"Failed to queue scheduling invitation email to {pii_data['email']}: {str(e)}")
                 
                 successful_candidates.append({
                     "candidate_id": candidate_id,

@@ -1,7 +1,8 @@
 """
 Dependency functions for FastAPI routes.
 """
-from fastapi import Depends, HTTPException, status, Header
+import re
+from fastapi import Depends, HTTPException, status, Header, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 from core.database import get_db
@@ -143,13 +144,18 @@ def get_current_recruiter_admin(
 
 
 def get_current_candidate(
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ) -> Candidate:
     """
     Dependency to verify that the current user is an authenticated candidate.
     
+    For schedule/test routes, candidate_id is REQUIRED from invitation link.
+    If candidate_id is not provided, access is blocked.
+    
     Args:
+        request: FastAPI Request object to extract path and query parameters
         authorization: Authorization header containing "Bearer <token>"
         db: Database session
         
@@ -157,7 +163,7 @@ def get_current_candidate(
         Candidate object if user is authenticated
         
     Raises:
-        HTTPException: If token is missing, invalid, or user is not a candidate
+        HTTPException: If token is missing, invalid, candidate_id missing, or user is not a candidate
     """
     if not authorization:
         raise HTTPException(
@@ -186,23 +192,53 @@ def get_current_candidate(
     
     email = user_info.get('email', '').lower()
     
-    # Check if user exists in CANDIDATE table
-    candidate = db.query(Candidate).filter(
-        Candidate.email_id == email
-    ).first()
+    # Try to get candidate_id from path parameters first (for routes like /candidate/{candidate_id}/...)
+    # Then fall back to query parameter (for routes like /schedule-test?candidate_id=...)
+    path_candidate_id = request.path_params.get('candidate_id')
+    query_candidate_id = request.query_params.get('candidate_id')
+    final_candidate_id = path_candidate_id or query_candidate_id
     
-    if not candidate:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. User is not registered as a candidate."
-        )
+    # If candidate_id is provided (from path or query), use UUID-based authentication
+    if final_candidate_id:
+        # Validate UUID format
+        uuid_pattern = r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        if not re.match(uuid_pattern, final_candidate_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid candidate_id format. Must be a valid UUID."
+            )
+        
+        # Check if candidate exists by UUID
+        candidate = db.query(Candidate).filter(
+            Candidate.candidate_id == final_candidate_id
+        ).first()
+        
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Candidate not found with the provided ID."
+            )
+        
+        # Verify email matches
+        if candidate.email_id.lower() != email:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Email does not match candidate record."
+            )
+        
+        # Verify candidate has correct role_id (0 for candidates)
+        if candidate.role_id != 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Invalid role for candidate access."
+            )
+        
+        return candidate
     
-    # Verify candidate has correct role_id (0 for candidates)
-    if candidate.role_id != 0:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Invalid role for candidate access."
-        )
-    
-    return candidate
+    # If candidate_id is NOT provided, block access
+    # This enforces that schedule/test routes require invitation links
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied. Candidate ID is required. Please use the invitation link provided in your email."
+    )
 

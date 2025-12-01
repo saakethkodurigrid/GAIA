@@ -1,6 +1,7 @@
 # Web Framework
 fastapi>=0.115.2,<1.0.0
 uvicorn[standard]>=0.24.0
+fastapi-mail>=1.4.1
 
 # Database
 sqlalchemy>=2.0.0

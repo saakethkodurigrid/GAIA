@@ -1,6 +1,9 @@
 """
 Interview service for managing interviews.
 """
+import logging
+import asyncio
+import threading
 from datetime import datetime, date
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -12,6 +15,9 @@ from models.interview_mcq import InterviewMCQ
 from schemas.admin import ListInterviewsResponse, InterviewResponse
 from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse, GenerateMCQRequest
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
+from services.email_service import email_service
+
+logger = logging.getLogger(__name__)
 
 
 class InterviewService:
@@ -451,6 +457,45 @@ class InterviewService:
             
             # Commit the schedule update first
             self.db.commit()
+            
+            # Send test invitation email AUTOMATICALLY after successful scheduling
+            try:
+                # Get job information for email
+                assignment = self.db.query(RecruiterAdminCandidate).filter(
+                    RecruiterAdminCandidate.candidate_id == candidate_id
+                ).first()
+                
+                if assignment:
+                    job = self.db.query(Job).filter(Job.job_id == assignment.job_id).first()
+                    job_role = job.job_role if job else "Technical Interview"
+                    
+                    # Send test invitation email (async, non-blocking)
+                    # Use threading to run async function in background
+                    import threading
+                    
+                    def send_email_async():
+                        """Helper function to run async email sending in background thread."""
+                        try:
+                            asyncio.run(
+                                email_service.send_test_invitation_email(
+                                    candidate_email=candidate.email_id,
+                                    candidate_name=candidate.name,
+                                    candidate_id=candidate_id,
+                                    job_role=job_role,
+                                    scheduled_date=request.scheduled_date
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in background email thread: {str(e)}")
+                    
+                    # Start email sending in background thread
+                    email_thread = threading.Thread(target=send_email_async, daemon=True)
+                    email_thread.start()
+                    
+                    logger.info(f"Test invitation email queued for candidate {candidate_id}")
+            except Exception as e:
+                # Don't fail scheduling if email fails
+                logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
             
             # Get job information for MCQ generation
             assignment = self.db.query(RecruiterAdminCandidate).filter(
