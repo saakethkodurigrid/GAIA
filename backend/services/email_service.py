@@ -4,10 +4,41 @@ Email service for sending invitation emails to candidates.
 import logging
 from typing import Optional
 from datetime import datetime
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+# Import pydantic first to ensure SecretStr is available for fastapi_mail
+try:
+    from pydantic import SecretStr  # noqa: F401
+except ImportError:
+    pass  # pydantic might not be installed, but that's okay
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Lazy import to avoid import errors if fastapi_mail has issues
+_fastapi_mail_imported = False
+_FastMail = None
+_MessageSchema = None
+_ConnectionConfig = None
+
+def _lazy_import_fastapi_mail():
+    """Lazy import fastapi_mail to avoid import errors at startup."""
+    global _fastapi_mail_imported, _FastMail, _MessageSchema, _ConnectionConfig
+    if not _fastapi_mail_imported:
+        try:
+            # Try to import pydantic SecretStr first to ensure it's available
+            from pydantic import SecretStr
+            from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+            _FastMail = FastMail
+            _MessageSchema = MessageSchema
+            _ConnectionConfig = ConnectionConfig
+            _fastapi_mail_imported = True
+        except ImportError as e:
+            logger.error(f"Failed to import fastapi_mail dependencies: {e}. Email functionality will be disabled.")
+            logger.error("This may be due to a version incompatibility. Try: pip install --upgrade fastapi-mail pydantic")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to import fastapi_mail: {e}. Email functionality will be disabled.")
+            raise
+    return _FastMail, _MessageSchema, _ConnectionConfig
 
 
 class EmailService:
@@ -15,20 +46,34 @@ class EmailService:
     
     def __init__(self):
         """Initialize email service with configuration."""
-        self.config = ConnectionConfig(
-            MAIL_USERNAME=settings.MAIL_USERNAME,
-            MAIL_PASSWORD=settings.MAIL_PASSWORD,
-            MAIL_FROM=settings.MAIL_FROM,
-            MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
-            MAIL_PORT=settings.MAIL_PORT,
-            MAIL_SERVER=settings.MAIL_SERVER,
-            MAIL_STARTTLS=settings.MAIL_STARTTLS,
-            MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
-            USE_CREDENTIALS=settings.MAIL_USE_CREDENTIALS,
-            VALIDATE_CERTS=settings.MAIL_VALIDATE_CERTS,
-        )
-        self.fastmail = FastMail(self.config)
+        self.config = None
+        self.fastmail = None
         self.enabled = settings.EMAIL_ENABLED
+        self._initialized = False
+    
+    def _ensure_initialized(self):
+        """Lazy initialization of fastapi_mail components."""
+        if not self._initialized:
+            try:
+                FastMail, _, ConnectionConfig = _lazy_import_fastapi_mail()
+                self.config = ConnectionConfig(
+                    MAIL_USERNAME=settings.MAIL_USERNAME,
+                    MAIL_PASSWORD=settings.MAIL_PASSWORD,
+                    MAIL_FROM=settings.MAIL_FROM,
+                    MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
+                    MAIL_PORT=settings.MAIL_PORT,
+                    MAIL_SERVER=settings.MAIL_SERVER,
+                    MAIL_STARTTLS=settings.MAIL_STARTTLS,
+                    MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
+                    USE_CREDENTIALS=settings.MAIL_USE_CREDENTIALS,
+                    VALIDATE_CERTS=settings.MAIL_VALIDATE_CERTS,
+                )
+                self.fastmail = FastMail(self.config)
+                self._initialized = True
+            except Exception as e:
+                logger.error(f"Failed to initialize email service: {e}")
+                self.enabled = False
+                raise
     
     def _is_valid_email(self, email: str) -> bool:
         """
@@ -240,6 +285,10 @@ This is an automated email. Please do not reply to this message.
             return False
         
         try:
+            # Ensure email service is initialized
+            self._ensure_initialized()
+            _, MessageSchema, _ = _lazy_import_fastapi_mail()
+            
             # Generate invitation link
             invitation_link = self._generate_invitation_link(candidate_id)
             
@@ -441,6 +490,10 @@ This is an automated email. Please do not reply to this message.
             return False
         
         try:
+            # Ensure email service is initialized
+            self._ensure_initialized()
+            _, MessageSchema, _ = _lazy_import_fastapi_mail()
+            
             # Generate scheduling invitation link
             invitation_link = self._generate_invitation_link(candidate_id, link_type="scheduling")
             
@@ -509,6 +562,10 @@ This is an automated email. Please do not reply to this message.
             return False
         
         try:
+            # Ensure email service is initialized
+            self._ensure_initialized()
+            _, MessageSchema, _ = _lazy_import_fastapi_mail()
+            
             # Generate test invitation link
             invitation_link = self._generate_invitation_link(candidate_id, link_type="test")
             
@@ -541,6 +598,19 @@ This is an automated email. Please do not reply to this message.
             return False
 
 
-# Create singleton instance
-email_service = EmailService()
+# Create singleton instance - handle import errors gracefully
+try:
+    email_service = EmailService()
+except Exception as e:
+    logger.error(f"Failed to create email service singleton: {e}. Email functionality will be disabled.")
+    # Create a dummy service that does nothing
+    class DummyEmailService:
+        enabled = False
+        async def send_invitation_email(self, *args, **kwargs):
+            return False
+        async def send_scheduling_invitation_email(self, *args, **kwargs):
+            return False
+        async def send_test_invitation_email(self, *args, **kwargs):
+            return False
+    email_service = DummyEmailService()
 

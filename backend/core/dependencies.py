@@ -235,10 +235,24 @@ def get_current_candidate(
         
         return candidate
     
-    # If candidate_id is NOT provided, block access
-    # This enforces that schedule/test routes require invitation links
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Access denied. Candidate ID is required. Please use the invitation link provided in your email."
-    )
+    # If candidate_id is NOT provided, try to find candidate by email from token
+    # This allows routes like /schedule-test to work with just authentication
+    candidate = db.query(Candidate).filter(
+        Candidate.email_id == email
+    ).first()
+    
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. No candidate found with this email address."
+        )
+    
+    # Verify candidate has correct role_id (0 for candidates)
+    if candidate.role_id != 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Invalid role for candidate access."
+        )
+    
+    return candidate
 

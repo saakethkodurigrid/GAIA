@@ -344,12 +344,15 @@ class SystemDesignService:
             latest_chat = session.chat_history[-10:] if session.chat_history else []
             chat_text = "\n".join([msg.content for msg in latest_chat])
             
-            # Get evaluation criteria from database if question_id is a UUID
+            # Always fetch evaluation criteria from database using question_id
             evaluation_criteria = None
-            if session.question_id and session.question_id.startswith("q"):
+            if session.question_id:
                 question = self.question_service.get_question_by_id(session.question_id)
                 if question:
                     evaluation_criteria = question.evaluation_criteria
+                    logger.info(f"[CANVAS SUBMIT] Using evaluation_criteria from question {session.question_id}")
+                else:
+                    logger.warning(f"[CANVAS SUBMIT] Question {session.question_id} not found in database")
             
             evaluation = await self.evaluator.evaluate(
                 canvas_json=canvas_json,
@@ -456,10 +459,21 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
                 latest_chat = session.chat_history[-10:] if session.chat_history else []
                 chat_text = "\n".join([msg.content for msg in latest_chat])
                 
+                # Always fetch evaluation criteria from database using question_id
+                evaluation_criteria = None
+                if session.question_id:
+                    question = self.question_service.get_question_by_id(session.question_id)
+                    if question:
+                        evaluation_criteria = question.evaluation_criteria
+                        logger.info(f"[CHAT EVALUATION] Using evaluation_criteria from question {session.question_id}")
+                    else:
+                        logger.warning(f"[CHAT EVALUATION] Question {session.question_id} not found in database")
+                
                 evaluation = await self.evaluator.evaluate(
                     canvas_json=latest_canvas,
                     chat_text=chat_text,
-                    question_text=session.question_text
+                    question_text=session.question_text,
+                    evaluation_criteria=evaluation_criteria
                 )
                 
                 # Format evaluation response
@@ -577,6 +591,19 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
     async def generate_final_report(self, session_id: str, candidate_id: Optional[str] = None) -> FinalReportResponse:
         """Generate final evaluation report for the session."""
         session = self.get_session(session_id, candidate_id)
-        report = await self.evaluator.generate_final_report(session)
+        
+        # Fetch evaluation_criteria from database using question_id (UUID)
+        # Try to fetch question from database - question_id could be a UUID or legacy format
+        evaluation_criteria = None
+        if session.question_id:
+            # Try fetching by UUID (question_id should be the UUID from system_design_question_bank)
+            question = self.question_service.get_question_by_id(session.question_id)
+            if question:
+                evaluation_criteria = question.evaluation_criteria
+                logger.info(f"[FINAL REPORT] ✅ Using evaluation_criteria from question {session.question_id}")
+            else:
+                logger.warning(f"[FINAL REPORT] ⚠️  Question {session.question_id} not found in database, will use default evaluation criteria")
+        
+        report = await self.evaluator.generate_final_report(session, evaluation_criteria)
         return FinalReportResponse(**report)
 

@@ -2,6 +2,7 @@
 Evaluation Engine using Groq LLM API
 """
 import httpx
+import re
 from typing import Dict, Any, List, Optional
 import json
 from core.config import settings
@@ -88,54 +89,119 @@ class EvaluationEngine:
         if not is_safe:
             print(f"[GUARDRAIL] Chat text flagged during evaluation: {warning}")
         
-        # Use database-driven evaluation criteria if provided, otherwise use default
-        if evaluation_criteria:
-            # Use the evaluation criteria from the database
-            system_prompt = f"""You are an experienced system design interviewer evaluating a candidate's design.
-Analyze both the figure (Excalidraw diagram) and the candidate's explanation.
+        # Always use database-driven evaluation criteria - it should always be provided
+        if not evaluation_criteria:
+            print("WARNING: evaluation_criteria not provided. Evaluation may be less accurate.")
+            # Generic fallback if somehow evaluation_criteria is missing
+            system_prompt = """You are an experienced system design interviewer evaluating a candidate's design solution.
+Your role is to provide a thorough, fair, and constructive evaluation based on industry best practices.
 
+EVALUATION INSTRUCTIONS:
+1. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
+2. Evaluate the design based on general system design principles
+3. Provide specific, actionable feedback that references actual components, connections, or design decisions from their diagram
+4. Be constructive and encouraging - frame feedback as opportunities for improvement
+5. Consider the overall design quality, completeness, and alignment with the problem requirements
+6. Assess technical depth, scalability considerations, and architectural soundness
+7. Note any missing critical components or design patterns that should be included
+8. Acknowledge strengths while also identifying areas that need improvement
+
+FEEDBACK STYLE:
+- Be conversational and friendly, as if you're mentoring a colleague
+- Use specific examples from their diagram
+- Balance praise with constructive criticism
+- Focus on the most impactful improvements first
+- Keep feedback concise but comprehensive (3-5 sentences for feedback, 1-2 for follow-up)
+
+SCORING GUIDELINES:
+- Use a 1-5 scale for each evaluation dimension
+- 1-2: Critical issues, fundamental gaps, or missing core components
+- 3: Adequate but needs significant improvement
+- 4: Good design with minor gaps or areas for enhancement
+- 5: Excellent, production-ready design with comprehensive considerations
+
+Provide your evaluation as JSON with scores, detailed feedback, and a thoughtful follow-up question."""
+        else:
+            # Use the evaluation criteria from the database with comprehensive system prompt
+            system_prompt = f"""You are an experienced system design interviewer evaluating a candidate's design solution.
+Your role is to provide a thorough, fair, and constructive evaluation STRICTLY based on the evaluation criteria provided below.
+
+CRITICAL: You MUST evaluate using ONLY the categories and criteria specified below. Do NOT use generic categories.
+
+EVALUATION CRITERIA (MANDATORY - Use these exact categories):
 {evaluation_criteria}
 
-Provide constructive, conversational feedback. Be friendly and encouraging, like you're helping them improve.
-Reference specific components from their diagram naturally."""
+EVALUATION INSTRUCTIONS:
+1. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
+2. Evaluate how well the candidate addressed EACH specific aspect mentioned in the evaluation criteria above
+3. Extract the exact category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", etc.)
+4. Score each category mentioned in the evaluation criteria on a 1-5 scale
+5. If weightages are specified, consider them when providing overall feedback
+6. Provide specific, actionable feedback that references actual components, connections, or design decisions from their diagram
+7. Be constructive and encouraging - frame feedback as opportunities for improvement
+8. Note any missing critical components or design patterns mentioned in the evaluation criteria
+9. Acknowledge strengths while also identifying areas that need improvement based on the criteria
+
+FEEDBACK STYLE:
+- Be conversational and friendly, as if you're mentoring a colleague
+- Use specific examples from their diagram (e.g., "I see you included a load balancer here, which is great for...")
+- Balance praise with constructive criticism
+- Focus on the most impactful improvements first based on the evaluation criteria
+- Keep feedback concise but comprehensive (3-5 sentences for feedback, 1-2 for follow-up)
+
+SCORING GUIDELINES:
+- Use a 1-5 scale for each evaluation dimension specified in the criteria
+- 1-2: Critical issues, fundamental gaps, or missing core components mentioned in criteria
+- 3: Adequate but needs significant improvement in areas specified in criteria
+- 4: Good design with minor gaps or areas for enhancement per criteria
+- 5: Excellent, production-ready design with comprehensive considerations for all criteria points
+
+IMPORTANT: Your JSON response must include scores for the EXACT categories mentioned in the evaluation criteria above. Do not use generic category names."""
+
+        # Build dynamic JSON example based on evaluation_criteria if available
+        if evaluation_criteria:
+            # Extract category names from evaluation_criteria (look for numbered sections)
+            # Try multiple patterns to find category headers
+            # Pattern 1: "1. **Core Functionality**" or "1. Core Functionality"
+            # Pattern 2: "**Core Functionality**" (without number)
+            # Pattern 3: "Core Functionality (Weight: 25%)"
+            categories = []
+            
+            # Pattern 1: Numbered with bold
+            pattern1 = r'\d+\.\s*\*\*([^*]+)\*\*'
+            categories.extend(re.findall(pattern1, evaluation_criteria))
+            
+            # Pattern 2: Numbered without bold
+            pattern2 = r'\d+\.\s*([A-Z][^:]+?)(?:\s*\(|:)'
+            categories.extend(re.findall(pattern2, evaluation_criteria))
+            
+            # Pattern 3: Bold text (fallback)
+            if not categories:
+                pattern3 = r'\*\*([^*]+)\*\*'
+                categories.extend(re.findall(pattern3, evaluation_criteria))
+            
+            # Clean and deduplicate categories
+            cleaned_categories = []
+            seen = set()
+            for cat in categories:
+                cleaned = cat.strip()
+                # Remove weightage info if present
+                cleaned = re.sub(r'\s*\(Weight:.*?\)', '', cleaned)
+                cleaned = re.sub(r'\s*Weight:.*?%', '', cleaned)
+                cleaned = cleaned.strip()
+                if cleaned and cleaned.lower() not in seen:
+                    seen.add(cleaned.lower())
+                    cleaned_categories.append(cleaned)
+            
+            # Build scores object with found categories
+            if cleaned_categories:
+                scores_example = {cat.lower().replace(' ', '_').replace('&', 'and').replace('/', '_'): 3.5 for cat in cleaned_categories}
+                scores_example_str = ',\n    '.join([f'"{k}": {v}' for k, v in scores_example.items()])
+            else:
+                # Fallback if pattern doesn't match
+                scores_example_str = '"core_functionality": 3.5,\n    "architecture": 3.0,\n    "scalability": 2.5,\n    "reliability": 3.0,\n    "design_quality": 4.0'
         else:
-            # Fallback to default URL Shortener criteria
-            system_prompt = """You are an experienced system design interviewer evaluating a candidate's URL shortener design.
-Analyze both the figure (Excalidraw diagram) and the candidate's explanation.
-
-Evaluate based on URL Shortener HLD (High-Level Design) criteria:
-
-1. **Core Functionality**:
-   - URL encoding/decoding mechanism (hash function, base62/base64, etc.)
-   - Short URL generation and storage
-   - Original URL retrieval and redirection
-
-2. **System Architecture**:
-   - API design (RESTful endpoints)
-   - Database schema and data modeling
-   - Caching strategy (for frequently accessed URLs)
-   - Load balancing and horizontal scaling
-
-3. **Scalability**:
-   - Handling high write throughput (URL creation)
-   - Handling high read throughput (URL redirection)
-   - Database partitioning/sharding strategy
-   - CDN usage for static content
-
-4. **Reliability & Performance**:
-   - Fault tolerance and redundancy
-   - Rate limiting and abuse prevention
-   - Monitoring and observability
-   - Error handling and edge cases
-
-5. **Design Quality**:
-   - Diagram clarity and component labeling
-   - Consistency between diagram and explanation
-   - Consideration of trade-offs
-   - Edge case handling (expired URLs, custom URLs, collisions)
-
-Provide constructive, conversational feedback. Be friendly and encouraging, like you're helping them improve.
-Reference specific components from their diagram naturally."""
+            scores_example_str = '"core_functionality": 3.5,\n    "architecture": 3.0,\n    "scalability": 2.5,\n    "reliability": 3.0,\n    "design_quality": 4.0'
 
         user_prompt = f"""QUESTION: {question_text}
 
@@ -153,32 +219,30 @@ CONNECTIONS IN DIAGRAM ({len(connection_details)} shown):
 CANDIDATE EXPLANATION:
 {sanitized_chat_text if sanitized_chat_text else "(No explanation provided yet)"}
 
-Evaluate this URL shortener design on the following rubric (1-5 scale):
-1. **Core Functionality**: URL encoding/decoding, short URL generation, redirection logic
-2. **Architecture**: Component selection, API design, database schema, system organization
-3. **Scalability**: Handling high read/write throughput, partitioning, horizontal scaling, caching strategy
-4. **Reliability**: Fault tolerance, redundancy, error handling, rate limiting
-5. **Design Quality**: Diagram clarity, explanation quality, trade-off considerations, edge case handling
+CRITICAL INSTRUCTIONS:
+1. Review the EVALUATION CRITERIA in the system prompt above
+2. Extract the EXACT category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", "Reliability & Performance", "Design Quality")
+3. Score EACH category mentioned in the evaluation criteria on a 1-5 scale
+4. Use the EXACT category names (convert to lowercase with underscores for JSON keys, e.g., "Core Functionality" becomes "core_functionality")
+5. Evaluate how well the candidate addressed each specific point mentioned under each category
+6. If weightages are specified, consider them in your overall assessment
 
 IMPORTANT: 
 - Reference specific components from the diagram naturally in your feedback
 - Be conversational and friendly - write like you're giving feedback to a colleague
-- Focus on the most critical aspects for a URL shortener system
-- Keep feedback concise but helpful (2-3 sentences)
+- Focus on the most critical aspects relevant to this specific system design problem based on the evaluation criteria
+- Keep feedback concise but helpful (3-5 sentences)
+- Your scores object MUST include all categories from the evaluation criteria
 
 The entire canvas has been analyzed ({total_components} components, {total_connections} connections).
 
-Provide your response as JSON:
+Provide your response as JSON with the EXACT category names from the evaluation criteria:
 {{
   "scores": {{
-    "core_functionality": 3.5,
-    "architecture": 3.0,
-    "scalability": 2.5,
-    "reliability": 3.0,
-    "design_quality": 4.0
+    {scores_example_str}
   }},
-  "feedback": "I like how you've set up the API and database layers - that's a solid foundation. I noticed you have a cache in your diagram which is great for handling those frequent redirect requests. One thing to think about: how would you handle the case where someone tries to shorten the same URL multiple times? Also, I don't see any rate limiting - that might be worth considering to prevent abuse.",
-  "follow_up": "I see you're using a hash function for URL encoding. What happens if you get a collision, and how would you handle that?"
+  "feedback": "Provide comprehensive feedback addressing each category from the evaluation criteria. Reference specific components from the diagram. Be constructive and encouraging.",
+  "follow_up": "Ask a thoughtful follow-up question related to the evaluation criteria that helps the candidate improve their design."
 }}"""
 
         # Apply guardrails to prompts
@@ -316,19 +380,44 @@ Provide your response as JSON:
             print(f"Groq API error: {str(e)}")
             raise
     
-    async def generate_final_report(self, session: Session) -> Dict[str, Any]:
-        """Generate final evaluation report for the session"""
-        if not session.evaluations:
-            return {
-                "message": "No evaluations available",
-                "scores": {},
-                "timeline": []
-            }
+    async def generate_final_report(self, session: Session, evaluation_criteria: Optional[str] = None) -> Dict[str, Any]:
+        """Generate final evaluation report for the session using LLM evaluation with evaluation_criteria from database"""
         
-        # Aggregate scores
+        # Get the latest canvas and chat history for comprehensive evaluation
+        latest_canvas = session.current_canvas
+        if not latest_canvas and session.canvas_versions:
+            latest_canvas = session.canvas_versions[-1].data
+        
+        # Get all chat history
+        chat_text = "\n".join([msg.content for msg in session.chat_history]) if session.chat_history else ""
+        
+        # Perform comprehensive final evaluation using LLM
+        final_evaluation = None
+        if latest_canvas:
+            try:
+                final_evaluation = await self.evaluate(
+                    canvas_json=latest_canvas,
+                    chat_text=chat_text,
+                    question_text=session.question_text,
+                    evaluation_criteria=evaluation_criteria
+                )
+            except Exception as e:
+                print(f"Error performing final LLM evaluation: {str(e)}")
+                # Fall back to aggregating existing evaluations
+        
+        # Aggregate scores from all evaluations (including final one if available)
         all_scores = {}
+        
+        # Add existing evaluations
         for eval_obj in session.evaluations:
             for key, value in eval_obj.scores.items():
+                if key not in all_scores:
+                    all_scores[key] = []
+                all_scores[key].append(value)
+        
+        # Add final evaluation if available
+        if final_evaluation and "scores" in final_evaluation:
+            for key, value in final_evaluation["scores"].items():
                 if key not in all_scores:
                     all_scores[key] = []
                 all_scores[key].append(value)
@@ -337,7 +426,7 @@ Provide your response as JSON:
         avg_scores = {
             key: sum(values) / len(values)
             for key, values in all_scores.items()
-        }
+        } if all_scores else {}
         
         # Build timeline
         timeline = []
@@ -349,8 +438,20 @@ Provide your response as JSON:
                 "follow_up": eval_obj.follow_up
             })
         
+        # Add final evaluation to timeline if available
+        if final_evaluation:
+            timeline.append({
+                "version": "final",
+                "scores": final_evaluation.get("scores", {}),
+                "feedback": final_evaluation.get("feedback", "Final evaluation completed."),
+                "follow_up": final_evaluation.get("follow_up", "Great work on your system design!")
+            })
+        
         # Generate summary
         lowest_score_key = min(avg_scores.items(), key=lambda x: x[1])[0] if avg_scores else None
+        
+        # Use final evaluation feedback as primary feedback if available
+        primary_feedback = final_evaluation.get("feedback", "Evaluation completed.") if final_evaluation else "No evaluations available"
         
         return {
             "session_id": session.session_id,
@@ -360,7 +461,8 @@ Provide your response as JSON:
             "total_versions": len(session.canvas_versions),
             "total_messages": len(session.chat_history),
             "lowest_area": lowest_score_key,
-            "suggested_learning": self._get_learning_suggestions(avg_scores)
+            "suggested_learning": self._get_learning_suggestions(avg_scores),
+            "final_feedback": primary_feedback
         }
     
     def _get_learning_suggestions(self, scores: Dict[str, float]) -> List[str]:
@@ -368,19 +470,19 @@ Provide your response as JSON:
         suggestions = []
         
         if scores.get("scalability", 5) < 3:
-            suggestions.append("Study horizontal scaling patterns, load balancing strategies, and database partitioning for URL shorteners")
+            suggestions.append("Study horizontal scaling patterns, load balancing strategies, and database partitioning techniques")
         
         if scores.get("reliability", 5) < 3:
             suggestions.append("Learn about redundancy, failover mechanisms, rate limiting, and distributed system resilience")
         
         if scores.get("architecture", 5) < 3:
-            suggestions.append("Review RESTful API design, database schema for URL mapping, and system organization patterns")
+            suggestions.append("Review RESTful API design, database schema design, and system organization patterns")
         
         if scores.get("core_functionality", 5) < 3:
-            suggestions.append("Focus on URL encoding/decoding mechanisms (hash functions, base62/base64), short URL generation, and redirection logic")
+            suggestions.append("Focus on understanding core system requirements and implementing fundamental functionality correctly")
         
         if scores.get("design_quality", 5) < 3:
-            suggestions.append("Improve diagram clarity, consider edge cases (expired URLs, custom URLs, collisions), and practice explaining trade-offs")
+            suggestions.append("Improve diagram clarity, consider edge cases, and practice explaining trade-offs")
         
         return suggestions if suggestions else ["Continue practicing system design problems"]
 
