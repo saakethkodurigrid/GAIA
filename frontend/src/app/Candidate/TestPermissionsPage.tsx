@@ -5,6 +5,7 @@ import { useVideo } from '../../context/VideoContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
+import { uploadCandidateImage } from '../../api/candidate.api';
 
 const TestPermissionsPage = () => {
   const { user, logout } = useAuth();
@@ -19,6 +20,7 @@ const TestPermissionsPage = () => {
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -158,6 +160,11 @@ const TestPermissionsPage = () => {
     }
   };
 
+  const handleSkipTour = () => {
+    // Navigate directly to test overview page (for debugging)
+    navigate('/test-overview');
+  };
+
   const handleLogout = () => {
     logout();
   };
@@ -274,8 +281,8 @@ const TestPermissionsPage = () => {
             </label>
           </div>
 
-          {/* Join Interview Button */}
-          <div className="flex justify-center">
+          {/* Join Interview Buttons */}
+          <div className="flex justify-center gap-4">
             <button
               onClick={handleJoinInterview}
               disabled={!allPermissionsGranted}
@@ -286,6 +293,12 @@ const TestPermissionsPage = () => {
               }`}
             >
               Start Tour
+            </button>
+            <button
+              onClick={handleSkipTour}
+              className="px-12 py-4 rounded-lg font-semibold text-lg transition-colors bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Skip Tour
             </button>
           </div>
         </div>
@@ -377,22 +390,29 @@ const TestPermissionsPage = () => {
                 </button>
                 <button
                   onClick={async () => {
-                    // TODO: Send photo to backend
-                    // For now, just store it and close the preview
-                    // The photo is already stored in capturedPhoto state
-                    // In the future, you can send it like this:
-                    // await sendPhotoToBackend(capturedPhoto);
-                    // Example API call:
-                    // const formData = new FormData();
-                    // const blob = await fetch(capturedPhoto).then(r => r.blob());
-                    // formData.append('photo', blob, 'photo.png');
-                    // await fetch('/api/upload-photo', { method: 'POST', body: formData });
-                    setCameraPermission('granted');
-                    setShowPhotoPreview(false);
+                    if (!capturedPhoto || !user?.candidateId) {
+                      setError('Photo or candidate ID not available. Please try again.');
+                      return;
+                    }
+
+                    setIsUploading(true);
+                    setError(null);
+
+                    try {
+                      await uploadCandidateImage(user.candidateId, capturedPhoto);
+                      setCameraPermission('granted');
+                      setShowPhotoPreview(false);
+                    } catch (err) {
+                      console.error('Error uploading photo:', err);
+                      setError(err instanceof Error ? err.message : 'Failed to upload photo. Please try again.');
+                    } finally {
+                      setIsUploading(false);
+                    }
                   }}
-                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors"
+                  disabled={isUploading}
+                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Confirm
+                  {isUploading ? 'Uploading...' : 'Confirm'}
                 </button>
               </div>
             </div>

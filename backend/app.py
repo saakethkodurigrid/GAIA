@@ -1,6 +1,21 @@
 """
 Main FastAPI application entry point.
 """
+# Compatibility patch for sentence-transformers with newer huggingface_hub
+# This must be done before any imports that use sentence-transformers
+try:
+    import huggingface_hub
+    # If cached_download doesn't exist, create an alias to hf_hub_download
+    if not hasattr(huggingface_hub, 'cached_download'):
+        if hasattr(huggingface_hub, 'hf_hub_download'):
+            # Create a compatibility wrapper
+            def cached_download(*args, **kwargs):
+                # hf_hub_download has slightly different signature, adapt if needed
+                return huggingface_hub.hf_hub_download(*args, **kwargs)
+            huggingface_hub.cached_download = cached_download
+except (ImportError, AttributeError):
+    pass
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

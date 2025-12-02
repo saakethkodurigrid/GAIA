@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { VideoProvider } from './context/VideoContext';
+import { CheatingDetectionProvider } from './context/CheatingDetectionContext';
 import HomePage from './app/HomePage';
 import MCQPage from './app/Candidate/MCQPage';
 import CodingTestPage from './app/Candidate/CodingTestPage';
@@ -113,9 +114,36 @@ function AppRoutes() {
       <Route path="/tutorial/system-design" element={<TourSystemDesignPage />} />
       
       {/* Original Test Pages */}
-      <Route path="/candidate/mcq" element={<ProtectedRoute><MCQPage /></ProtectedRoute>} />
-      <Route path="/candidate/coding" element={<ProtectedRoute><CodingTestPage /></ProtectedRoute>} />
-      <Route path="/candidate/system-design" element={<ProtectedRoute><SystemDesignPage /></ProtectedRoute>} />
+      <Route
+        path="/candidate/mcq"
+        element={
+          <ProtectedRoute>
+            <CheatingDetectionProvider enabled={true}>
+              <MCQPage />
+            </CheatingDetectionProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/candidate/coding"
+        element={
+          <ProtectedRoute>
+            <CheatingDetectionProvider enabled={true}>
+              <CodingTestPage />
+            </CheatingDetectionProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/candidate/system-design"
+        element={
+          <ProtectedRoute>
+            <CheatingDetectionProvider enabled={true}>
+              <SystemDesignPage />
+            </CheatingDetectionProvider>
+          </ProtectedRoute>
+        }
+      />
       
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

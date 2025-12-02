@@ -96,4 +96,5 @@ class FinalReportResponse(BaseModel):
     total_messages: int
     lowest_area: Optional[str] = None
     suggested_learning: List[str]
+    final_feedback: Optional[str] = None
 

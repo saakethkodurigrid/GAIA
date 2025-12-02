@@ -2,11 +2,69 @@ import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import type { CheatingEvent } from '../../hooks/useCheatingDetection';
 // import { useNavigate } from 'react-router-dom';
+
+const STORAGE_KEY = 'cheating_detection_events';
 
 const TestCompletedPage = () => {
   const { user, logout } = useAuth();
   // const navigate = useNavigate();
+
+  // Load and log cheating detection events
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const events = JSON.parse(stored) as CheatingEvent[];
+        
+        console.log('========================================');
+        console.log('🔍 CHEATING DETECTION LOGS');
+        console.log('========================================');
+        console.log(`Total Events Detected: ${events.length}`);
+        console.log('');
+        
+        if (events.length === 0) {
+          console.log('✅ No cheating events detected during the test.');
+        } else {
+          // Group events by type
+          const eventsByType = events.reduce((acc, event) => {
+            if (!acc[event.type]) {
+              acc[event.type] = [];
+            }
+            acc[event.type].push(event);
+            return acc;
+          }, {} as Record<string, CheatingEvent[]>);
+
+          // Log summary
+          console.log('📊 Event Summary:');
+          Object.entries(eventsByType).forEach(([type, typeEvents]) => {
+            console.log(`  - ${type}: ${typeEvents.length} occurrence(s)`);
+          });
+          console.log('');
+
+          // Log detailed events
+          console.log('📝 Detailed Events:');
+          events.forEach((event, index) => {
+            const date = new Date(event.timestamp);
+            console.log(`\n[${index + 1}] ${event.type.toUpperCase()}`);
+            console.log(`    Timestamp: ${date.toLocaleString()}`);
+            console.log(`    Details:`, event.details);
+          });
+        }
+        
+        console.log('========================================');
+      } else {
+        console.log('========================================');
+        console.log('🔍 CHEATING DETECTION LOGS');
+        console.log('========================================');
+        console.log('✅ No cheating events detected during the test.');
+        console.log('========================================');
+      }
+    } catch (error) {
+      console.error('Error loading cheating detection events:', error);
+    }
+  }, []);
 
   // Prevent back navigation
   useEffect(() => {
