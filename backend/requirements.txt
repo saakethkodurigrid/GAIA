@@ -26,6 +26,8 @@ groq>=0.4.1
 # Vector Database & Embeddings
 sentence-transformers>=2.2.2
 chromadb>=0.4.18
+# Note: huggingface-hub version is managed by sentence-transformers dependency
+# If compatibility issues arise, may need to pin to <0.20.0
 
 # PII & Privacy
 presidio-analyzer>=2.2.33

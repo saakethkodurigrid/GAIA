@@ -9,6 +9,7 @@ const TestScheduledPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [timeRemaining, setTimeRemaining] = useState({
+    days: 0,
     hours: 0,
     minutes: 0,
     seconds: 0,
@@ -66,15 +67,16 @@ const TestScheduledPage = () => {
       const diff = scheduledDate.getTime() - now.getTime();
 
       if (diff <= 0) {
-        setTimeRemaining({ hours: 0, minutes: 0, seconds: 0 });
+        setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
         return;
       }
 
-      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
-      setTimeRemaining({ hours, minutes, seconds });
+      setTimeRemaining({ days, hours, minutes, seconds });
     };
 
     // Update immediately
@@ -127,6 +129,19 @@ const TestScheduledPage = () => {
                   }}
                 >
                   <div className="flex items-center justify-center gap-2">
+                    {/* Days - Only show if more than 24 hours */}
+                    {timeRemaining.days > 0 && (
+                      <>
+                        <div className="flex flex-col items-center">
+                          <span className="text-xl font-bold text-gray-900">
+                            {String(timeRemaining.days).padStart(2, '0')}
+                          </span>
+                          <span className="text-xs text-gray-600 mt-0.5">Days</span>
+                        </div>
+                        <span className="text-lg font-bold text-gray-900 mb-5">:</span>
+                      </>
+                    )}
+
                     {/* Hours */}
                     <div className="flex flex-col items-center">
                       <span className="text-xl font-bold text-gray-900">

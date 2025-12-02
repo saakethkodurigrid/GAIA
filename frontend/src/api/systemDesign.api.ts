@@ -46,7 +46,14 @@ export const createSession = async (request?: Partial<SessionCreateRequest>): Pr
     throw new Error(error.detail || 'Failed to create session');
   }
 
-  return response.json();
+  const data = await response.json();
+  console.log('[createSession] System Design Question from Backend:', {
+    session_id: data.session_id,
+    question_text: data.question_text,
+    question_uuid: data.question_uuid,
+    full_response: data
+  });
+  return data;
 };
 
 export const getQuestionByUuid = async (uuid: string): Promise<QuestionResponse> => {
@@ -62,7 +69,16 @@ export const getQuestionByUuid = async (uuid: string): Promise<QuestionResponse>
     throw new Error(error.detail || 'Failed to fetch question');
   }
 
-  return response.json();
+  const data = await response.json();
+  console.log('[getQuestionByUuid] System Design Question from Backend:', {
+    uuid,
+    question_id: data.question_id,
+    question: data.question,
+    evaluation_criteria: data.evaluation_criteria,
+    tags: data.tags,
+    full_response: data
+  });
+  return data;
 };
 
 // Canvas Update Types
