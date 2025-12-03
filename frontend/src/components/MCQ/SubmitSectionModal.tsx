@@ -3,23 +3,42 @@ import { useMCQ } from '../../context/MCQContext';
 import { submitAssessment } from '../../api/questions.api';
 import { QUESTION_STATUS } from '../../utils/constants';
 import type { SubmitSectionModalProps } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 const SubmitSectionModal = ({ isOpen, onClose, onSubmit }: SubmitSectionModalProps) => {
   const { answers, savedAnswers, questions, getStatusCounts } = useMCQ();
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const counts = getStatusCounts();
 
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       // Use savedAnswers, but also include any currently selected answers that haven't been saved yet
       const finalAnswers = { ...savedAnswers, ...answers };
-      await submitAssessment(finalAnswers);
-      onSubmit(finalAnswers);
+      
+      // Get candidate ID from auth context
+      const candidateId = user?.candidateId;
+      if (!candidateId) {
+        throw new Error('Candidate ID not found. Please log in again.');
+      }
+
+      // Submit to backend
+      const response = await submitAssessment(finalAnswers, questions, candidateId);
+      
+      if (response.success) {
+        // Call the onSubmit callback with the answers
+        onSubmit(finalAnswers);
+      } else {
+        throw new Error(response.message || 'Failed to submit answers');
+      }
     } catch (error) {
       console.error('Error submitting assessment:', error);
+      setSubmitError(error instanceof Error ? error.message : 'Failed to submit assessment');
     } finally {
       setIsSubmitting(false);
     }
@@ -68,6 +87,13 @@ const SubmitSectionModal = ({ isOpen, onClose, onSubmit }: SubmitSectionModalPro
               </li>
             )}
           </ul>
+
+          {/* Error message */}
+          {submitError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {submitError}
+            </div>
+          )}
 
           <p className="text-gray-700 mb-6">Do you want to continue with the submission?</p>
         </div>

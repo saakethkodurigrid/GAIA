@@ -62,7 +62,8 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
 
       // Map backend response to frontend Question format
       const mappedQuestions: Question[] = limitedQuestions.map((q, index) => ({
-        id: index + 1, // Use 1-based index as ID
+        id: index + 1, // Use 1-based index as ID for frontend
+        question_uuid: q.question_uuid, // Preserve UUID from backend for submission
         topic: '', // Backend doesn't provide topic
         question: q.question,
         options: q.options,
@@ -85,13 +86,87 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
   });
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const submitAssessment = async (_answers: Record<number, number>): Promise<{ success: boolean; message: string }> => {
-  // In a real app, this would submit to backend
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({ success: true, message: 'Assessment submitted successfully' });
-    }, 1000);
-  });
+// Backend request/response types for submission
+interface MCQAnswerItem {
+  question_uuid: string;
+  candidate_answer: string; // Option number as string (e.g., "1", "2", "3", "4")
+}
+
+interface SaveMCQAnswerResponse {
+  success: boolean;
+  message: string;
+  saved_count: number;
+  failed_count: number;
+  failed_questions: string[];
+  total_score: number;
+  total_questions: number;
+  correct_answers: number;
+  incorrect_answers: number;
+}
+
+export const submitAssessment = async (
+  answers: Record<number, number>,
+  questions: Question[],
+  candidateId: string
+): Promise<SaveMCQAnswerResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found');
+  }
+
+  if (!candidateId) {
+    throw new Error('Candidate ID is required');
+  }
+
+  // Convert frontend answers format to backend format
+  const answerItems: MCQAnswerItem[] = questions
+    .filter((q) => {
+      // Only include questions that have an answer and a question_uuid
+      const answer = answers[q.id];
+      return answer !== undefined && answer !== null && q.question_uuid;
+    })
+    .map((q) => {
+      const answer = answers[q.id];
+      // Convert option number to string (frontend uses 1-based indexing: 1, 2, 3, 4)
+      return {
+        question_uuid: q.question_uuid!,
+        candidate_answer: String(answer), // Convert to string as backend expects
+      };
+    });
+
+  if (answerItems.length === 0) {
+    throw new Error('No answers to submit');
+  }
+
+  const requestBody = {
+    answers: answerItems,
+  };
+
+  // Log request body being sent to backend
+  console.log('=== MCQ SUBMISSION REQUEST (FRONTEND) ===');
+  console.log('URL:', `${API_BASE_URL}/candidate/${candidateId}/mcq-questions/save-answers`);
+  console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+  console.log('Number of answers:', answerItems.length);
+  console.log('==========================================');
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/mcq-questions/save-answers`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to submit answers' }));
+    throw new Error(error.detail || 'Failed to submit answers');
+  }
+
+  const data: SaveMCQAnswerResponse = await response.json();
+  return data;
 };
 

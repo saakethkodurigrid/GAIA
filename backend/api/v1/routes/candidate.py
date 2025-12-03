@@ -1,6 +1,7 @@
 """
 Candidate API routes for interview-related operations.
 """
+import json
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -100,6 +101,22 @@ async def save_mcq_answers(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. You can only save your own answers."
         )
+    
+    # Log the received request
+    print("=== MCQ SUBMISSION REQUEST (BACKEND ROUTE) ===")
+    print(f"Candidate ID: {candidate_id}")
+    print(f"Number of answers received: {len(request.answers)}")
+    print("Request Body:")
+    print(json.dumps({
+        "answers": [
+            {
+                "question_uuid": item.question_uuid,
+                "candidate_answer": item.candidate_answer
+            }
+            for item in request.answers
+        ]
+    }, indent=2))
+    print("==============================================")
     
     interview_service = InterviewService(db)
     response = interview_service.save_mcq_answers(candidate_id, request)

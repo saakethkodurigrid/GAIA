@@ -1,5 +1,6 @@
 export interface Question {
   id: number;
+  question_uuid?: string; // UUID from backend for submission
   topic: string;
   question: string;
   options: string[];

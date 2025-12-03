@@ -305,7 +305,7 @@ class InterviewService:
         
         For each answer:
         - Compares candidate_answer with correct_answer
-        - Sets score = 1 if correct, 0 if incorrect
+        - Sets score based on difficulty: hard=3, medium=2, easy=1
         - Updates both candidate_answer and score in database
         
         Args:
@@ -322,6 +322,13 @@ class InterviewService:
         correct_answers = 0
         incorrect_answers = 0
         
+        # Define difficulty scoring weights
+        DIFFICULTY_SCORES = {
+            "hard": 3,
+            "medium": 2,
+            "easy": 1
+        }
+        
         try:
             # Process each answer in the list
             for answer_item in request.answers:
@@ -337,32 +344,27 @@ class InterviewService:
                         failed_questions.append(answer_item.question_uuid)
                         continue
                     
-                    # Find which option number the candidate selected
-                    # Candidate sends answer text, we need to match it to an option and get its index
-                    candidate_answer_text = answer_item.candidate_answer.strip() if answer_item.candidate_answer else ""
-                    candidate_option_number = None
-                    
-                    if mcq.options and isinstance(mcq.options, list):
-                        # Match candidate's answer text to one of the options (case-insensitive)
-                        for i, option_text in enumerate(mcq.options, 1):
-                            if option_text and option_text.strip().lower() == candidate_answer_text.lower():
-                                candidate_option_number = i
-                                break
-                    
-                    # If no match found, mark as failed
-                    if candidate_option_number is None:
+                    # Convert candidate_answer from string to int
+                    # Frontend sends option number as string (e.g., "1", "2", "3", "4")
+                    try:
+                        candidate_option_number = int(answer_item.candidate_answer.strip())
+                    except (ValueError, AttributeError):
+                        # Invalid format, mark as failed
                         failed_count += 1
                         failed_questions.append(answer_item.question_uuid)
                         continue
                     
-                    # Store the option number (not the text)
+                    # Store the option number
                     mcq.candidate_answer = candidate_option_number
                     
-                    # Calculate score: 1 if correct, 0 if incorrect
-                    # Compare option numbers
+                    # Get difficulty and calculate score based on difficulty
+                    difficulty = (mcq.difficulty or "medium").lower()
+                    difficulty_score = DIFFICULTY_SCORES.get(difficulty, 1)  # Default to 1 if difficulty is invalid
+                    
+                    # Calculate score: weighted score if correct, 0 if incorrect
                     if candidate_option_number == mcq.correct_answer:
-                        mcq.score = 1
-                        total_score += 1
+                        mcq.score = difficulty_score
+                        total_score += difficulty_score
                         correct_answers += 1
                     else:
                         mcq.score = 0
@@ -379,13 +381,44 @@ class InterviewService:
             # Commit all changes at once
             self.db.commit()
             
+            # Log successful save with evaluation results
+            print("=== MCQ ANSWERS SAVED SUCCESSFULLY (BACKEND SERVICE) ===")
+            print(f"Candidate ID: {candidate_id}")
+            print(f"Total Questions Processed: {saved_count + failed_count}")
+            print(f"Successfully Saved: {saved_count}")
+            print(f"Failed: {failed_count}")
+            print(f"Total Score: {total_score} points")
+            print(f"Correct Answers: {correct_answers}")
+            print(f"Incorrect Answers: {incorrect_answers}")
+            if failed_questions:
+                print(f"Failed Question UUIDs: {failed_questions}")
+            
+            # Log detailed results for each saved question
+            print("\nDetailed Results:")
+            for answer_item in request.answers:
+                if answer_item.question_uuid not in failed_questions:
+                    mcq = self.db.query(InterviewMCQ).filter(
+                        InterviewMCQ.uuid == answer_item.question_uuid,
+                        InterviewMCQ.candidate_id == candidate_id
+                    ).first()
+                    if mcq:
+                        difficulty = (mcq.difficulty or "medium").lower()
+                        is_correct = mcq.candidate_answer == mcq.correct_answer
+                        print(f"  Question UUID: {answer_item.question_uuid}")
+                        print(f"    Candidate Answer: {mcq.candidate_answer}")
+                        print(f"    Correct Answer: {mcq.correct_answer}")
+                        print(f"    Difficulty: {difficulty}")
+                        print(f"    Score: {mcq.score}")
+                        print(f"    Correct: {is_correct}")
+            print("=========================================================")
+            
             # Build response message
             if failed_count == 0:
-                message = f"Successfully saved {saved_count} answer(s). Score: {total_score}/{saved_count} ({correct_answers} correct, {incorrect_answers} incorrect)"
+                message = f"Successfully saved {saved_count} answer(s). Total Score: {total_score} points ({correct_answers} correct, {incorrect_answers} incorrect)"
             elif saved_count == 0:
                 message = f"Failed to save all {failed_count} answer(s)"
             else:
-                message = f"Saved {saved_count} answer(s), {failed_count} failed. Score: {total_score}/{saved_count} ({correct_answers} correct, {incorrect_answers} incorrect)"
+                message = f"Saved {saved_count} answer(s), {failed_count} failed. Total Score: {total_score} points ({correct_answers} correct, {incorrect_answers} incorrect)"
             
             return SaveMCQAnswerResponse(
                 success=failed_count == 0,
