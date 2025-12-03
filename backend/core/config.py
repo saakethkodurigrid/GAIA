@@ -37,8 +37,18 @@ class Settings:
     # Company Domain
     COMPANY_DOMAIN: str = os.getenv('COMPANY_DOMAIN', '')
     
-    # Groq LLM Configuration (for MCQ RAG generation)
+    # LLM Provider Configuration
+    LLM_PROVIDER: str = os.getenv('LLM_PROVIDER', 'anthropic')  # 'groq' or 'anthropic'
+    
+    # Groq LLM Configuration
     GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')
+    GROQ_DEFAULT_MODEL: str = os.getenv('GROQ_DEFAULT_MODEL', 'llama-3.1-8b-instant')
+    
+    # Anthropic Configuration
+    ANTHROPIC_API_KEY: str = os.getenv('ANTHROPIC_API_KEY', '')
+    # Note: Common model names: claude-sonnet-4-20250514, claude-3-5-sonnet-20240620, claude-3-opus-20240229, claude-3-haiku-20240307
+    # claude-3-5-sonnet-20241022 was deprecated and retired
+    ANTHROPIC_DEFAULT_MODEL: str = os.getenv('ANTHROPIC_DEFAULT_MODEL', 'claude-sonnet-4-20250514')
     
     # Azure Blob Storage Configuration
     AZURE_STORAGE_CONNECTION_STRING: str = os.getenv('AZURE_STORAGE_CONNECTION_STRING', '')
@@ -59,7 +69,7 @@ class Settings:
     EMAIL_ENABLED: bool = os.getenv('EMAIL_ENABLED', 'False').lower() == 'true'
     
     # Resume Score Threshold for Auto-Sending Scheduling Invitations
-    RESUME_SCORE_THRESHOLD: float = float(os.getenv('RESUME_SCORE_THRESHOLD', '70.0'))
+    RESUME_SCORE_THRESHOLD: float = float(os.getenv('RESUME_SCORE_THRESHOLD', '30.0'))
     
     # Google OAuth Scopes
     GOOGLE_SCOPES: list = [

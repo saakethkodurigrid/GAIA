@@ -1,10 +1,12 @@
 """
-Evaluation Engine using Groq LLM API
+Evaluation Engine using LLM Provider Abstraction
 """
 import httpx
 import re
 from typing import Dict, Any, List, Optional
 import json
+from llm.factory import LLMProviderFactory
+from llm.models import LLMMessage
 from core.config import settings
 from utils.system_design.models import Session
 from utils.system_design.canvas_parser import CanvasParser
@@ -12,17 +14,20 @@ from utils.system_design.guardrails import guardrails
 
 
 class EvaluationEngine:
-    """Evaluates system designs using Groq LLM API"""
+    """Evaluates system designs using LLM API"""
     
     def __init__(self):
-        self.api_key = settings.GROQ_API_KEY
-        self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model = "llama-3.1-8b-instant"  # Groq model (faster and more reliable)
         self.parser = CanvasParser()
         
-        if not self.api_key:
-            print("WARNING: GROQ_API_KEY not set! Evaluation will not work.")
-            print("Please set GROQ_API_KEY in your environment or .env file")
+        # Use factory to get LLM provider with configured model
+        try:
+            self.llm = LLMProviderFactory.create_provider()
+            self.model = self.llm.model  # Store the actual model being used
+        except ValueError as e:
+            print(f"WARNING: {str(e)}")
+            print("Evaluation will not work. Please set LLM_PROVIDER and API key in your environment or .env file")
+            self.llm = None
+            self.model = None
     
     async def evaluate(
         self,
@@ -34,7 +39,7 @@ class EvaluationEngine:
         """
         Evaluate figure + chat and return scores, feedback, and follow-up
         """
-        if not self.api_key:
+        if not self.llm:
             return {
                 "scores": {
                     "architecture": 3.0,
@@ -43,7 +48,7 @@ class EvaluationEngine:
                     "clarity": 3.0,
                     "consistency": 3.0
                 },
-                "feedback": "API key not configured. Please set GROQ_API_KEY to enable evaluation.",
+                "feedback": "API key not configured. Please set LLM_PROVIDER and API key to enable evaluation.",
                 "follow_up": "Please configure your API key to receive detailed feedback."
             }
         
@@ -248,9 +253,9 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         # Apply guardrails to prompts
         sanitized_system, sanitized_user, prompt_is_safe = guardrails.validate_and_sanitize_prompt(system_prompt, user_prompt)
         
-        # Call Groq API
+        # Call LLM API
         try:
-            response = await self._call_groq(sanitized_system, sanitized_user)
+            response = await self._call_llm(sanitized_system, sanitized_user)
         except ValueError as e:
             # Handle credit/configuration errors specifically
             error_msg = str(e)
@@ -263,11 +268,11 @@ Provide your response as JSON with the EXACT category names from the evaluation 
                     "clarity": 3.0,
                     "consistency": 3.0
                 },
-                "feedback": "⚠️ API error occurred during evaluation. Your design has been saved. Please check your GROQ_API_KEY configuration.",
+                "feedback": "⚠️ API error occurred during evaluation. Your design has been saved. Please check your API configuration.",
                 "follow_up": "Please check your API configuration to enable AI-powered evaluation."
             }
         except Exception as e:
-            print(f"Error calling Groq API: {str(e)}")
+            print(f"Error calling LLM API: {str(e)}")
             import traceback
             traceback.print_exc()
             return {
@@ -284,8 +289,8 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         
         # Parse response
         try:
-            # Extract JSON from response
-            content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            # Extract JSON from response (LLM wrapper returns standardized response)
+            content = response.content or "{}"
             # Try to extract JSON if wrapped in markdown
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
@@ -309,7 +314,8 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         except json.JSONDecodeError as e:
             # Fallback if JSON parsing fails
             print(f"Failed to parse JSON response: {e}")
-            print(f"Response content: {response.get('choices', [{}])[0].get('message', {}).get('content', '')[:500]}")
+            content = response.content or "Evaluation completed."
+            print(f"Response content: {content[:500]}")
             return {
                 "scores": {
                     "architecture": 3.0,
@@ -318,66 +324,39 @@ Provide your response as JSON with the EXACT category names from the evaluation 
                     "clarity": 3.0,
                     "consistency": 3.0
                 },
-                "feedback": response.get("choices", [{}])[0].get("message", {}).get("content", "Evaluation completed.")[:500],
+                "feedback": content[:500],
                 "follow_up": "Can you explain how your system handles high traffic?"
             }
     
-    async def _call_groq(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
-        """Make API call to Groq"""
-        if not self.api_key:
-            raise ValueError("GROQ_API_KEY not set")
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 200  # Reduced to work within credit limits (concise responses)
-        }
+    async def _call_llm(self, system_prompt: str, user_prompt: str):
+        """Make API call to LLM using wrapper"""
+        if not self.llm:
+            raise ValueError("LLM provider not configured")
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                return response.json()
-        except httpx.HTTPStatusError as e:
-            error_response_text = e.response.text if hasattr(e.response, 'text') else str(e.response)
-            print(f"Groq API HTTP error: {e.response.status_code}")
-            print(f"Response body: {error_response_text}")
-            print(f"Request URL: {self.api_url}")
-            print(f"Request model: {self.model}")
+            messages = [
+                LLMMessage(role="system", content=system_prompt),
+                LLMMessage(role="user", content=user_prompt)
+            ]
+            response = await self.llm.chat_completion(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=200  # Reduced to work within credit limits (concise responses)
+            )
+            return response
+        except Exception as e:
+            error_str = str(e).lower()
+            print(f"LLM API error: {str(e)}")
             
-            # Handle common Groq API errors
-            if e.response.status_code == 400:
-                try:
-                    error_data = e.response.json()
-                    error_msg = error_data.get("error", {}).get("message", "Bad request")
-                    print(f"Groq API 400 Bad Request: {error_msg}")
-                    raise ValueError(f"Bad request to Groq API: {error_msg}")
-                except ValueError:
-                    raise
-                except:
-                    raise ValueError(f"Bad request to Groq API: {error_response_text}")
-            elif e.response.status_code == 401:
-                raise ValueError("Invalid GROQ_API_KEY. Please check your API key.")
-            elif e.response.status_code == 429:
+            # Handle common LLM API errors
+            if "400" in error_str or "bad request" in error_str:
+                print(f"LLM API 400 Bad Request: {str(e)}")
+                raise ValueError(f"Bad request to LLM API: {str(e)}")
+            elif "401" in error_str or "unauthorized" in error_str or "invalid api key" in error_str:
+                raise ValueError("Invalid API key. Please check your API key.")
+            elif "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
                 raise ValueError("Rate limit exceeded. Please try again later.")
             
-            raise
-        except Exception as e:
-            print(f"Groq API error: {str(e)}")
             raise
     
     async def generate_final_report(self, session: Session, evaluation_criteria: Optional[str] = None) -> Dict[str, Any]:

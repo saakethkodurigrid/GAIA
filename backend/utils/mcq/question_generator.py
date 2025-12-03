@@ -1,11 +1,15 @@
 """
-Question Generator using Groq LLM
+Question Generator using LLM Provider Abstraction
 Generates MCQ questions based on RAG examples and requirements
 """
 import json
 import time
+import asyncio
+import re
 from typing import List, Dict, Optional, Any
-from groq import Groq
+from collections import defaultdict
+from llm.factory import LLMProviderFactory
+from llm.models import LLMMessage
 from core.config import settings
 from services.mcq_rag_service import rag_system
 from .rag_tool import get_rag_tool_definition, execute_rag_tool_call
@@ -15,21 +19,18 @@ from sentence_transformers import SentenceTransformer
 
 
 class QuestionGenerator:
-    """Generates MCQ questions using Groq LLM with RAG"""
+    """Generates MCQ questions using LLM with RAG"""
     
     def __init__(self, groq_api_key: Optional[str] = None):
         """
         Initialize question generator
         
         Args:
-            groq_api_key: Groq API key (if None, reads from settings)
+            groq_api_key: Groq API key (deprecated, kept for backward compatibility)
         """
-        self.api_key = groq_api_key or settings.GROQ_API_KEY
-        if not self.api_key:
-            raise ValueError("GROQ_API_KEY not found in environment variables. Please set GROQ_API_KEY in your .env file.")
-        
-        self.client = Groq(api_key=self.api_key)
-        self.model = "llama-3.3-70b-versatile"  # or "mixtral-8x7b-32768"
+        # Use factory to get LLM provider with configured model
+        self.llm = LLMProviderFactory.create_provider()
+        self.model = self.llm.model  # Store the actual model being used
         self.embedding_model = None  # For deduplication
     
     def _load_embedding_model(self):
@@ -120,6 +121,9 @@ Tags: {', '.join(question.get('tags', []))}"""
         subtopics_text = "\n".join([f"- {st}" for st in subtopics]) if subtopics else "General topics in the domain"
         skills_text = ", ".join(skills) if skills else "General skills"
         
+        # Format subtopics as JSON array for tool call
+        subtopics_json = json.dumps(subtopics) if subtopics else "[]"
+        
         prompt = f"""You are an expert MCQ question generator for technical assessments.
 
 Your task: Generate {count} NEW multiple-choice questions for a {difficulty} difficulty level ({grade} grade).
@@ -128,10 +132,10 @@ Role: {role}
 Domain: {normalized_domain}
 Difficulty: {difficulty} ({grade} level, requires {'deep understanding' if difficulty == 'hard' else 'moderate understanding' if difficulty == 'medium' else 'basic understanding'})
 
-Candidate Background (PII removed):
+Candidate Background:
 {resume_text}
 
-Job Requirements (PII removed):
+Job Requirements:
 {jd_text}
 
 Relevant Subtopics to Cover:
@@ -142,9 +146,12 @@ Key Skills: {skills_text}
 You have access to a tool called `search_question_database` that lets you search for example questions from our dataset. 
 
 WORKFLOW:
-1. Use the `search_question_database` tool to find example questions for inspiration. You can call it multiple times with different queries to explore different subtopics.
-2. Analyze the example questions to understand the style, difficulty level, and topic coverage.
-3. Generate {count} COMPLETELY NEW questions that:
+1. Use the `search_question_database` tool EXACTLY ONCE with the list of subtopics provided above to get all relevant examples at once.
+   - Pass the subtopics as an array: {{"subtopics": {subtopics_json}, "difficulty": "{difficulty}", "domain": "{normalized_domain}"}}
+   - This will search all subtopics and return combined, deduplicated results
+   - CRITICAL: After making this ONE tool call, you MUST immediately generate questions. Do NOT make any more tool calls.
+2. After receiving the tool results, analyze the example questions to understand the style, difficulty level, and topic coverage.
+3. IMMEDIATELY generate {count} COMPLETELY NEW questions that:
    - Match the {difficulty} difficulty level
    - Cover topics from the relevant subtopics
    - Test knowledge relevant to the candidate's background and job requirements
@@ -156,20 +163,40 @@ IMPORTANT:
 - Use examples only for understanding style and difficulty
 - Generate questions that are relevant to the candidate's experience and the job requirements
 - Ensure questions test practical knowledge at the {difficulty} level
+- Call the search tool ONLY ONCE with all subtopics
 
-Output Format (JSON array of {count} questions):
-{{
-  "question": "Question text here?",
-  "option1": "Option 1",
-  "option2": "Option 2",
-  "option3": "Option 3",
-  "option4": "Option 4",
-  "correct_option": 2,
-  "difficulty": "{difficulty}",
-  "tags": ["Tag1", "Tag2"]
-}}
+Output Format (MUST be a JSON array of {count} question objects):
+[
+  {{
+    "question": "Question text here?",
+    "option1": "Option 1",
+    "option2": "Option 2",
+    "option3": "Option 3",
+    "option4": "Option 4",
+    "correct_option": 2,
+    "difficulty": "{difficulty}",
+    "tags": ["Tag1", "Tag2"]
+  }},
+  {{
+    "question": "Another question text?",
+    "option1": "Option A",
+    "option2": "Option B",
+    "option3": "Option C",
+    "option4": "Option D",
+    "correct_option": 3,
+    "difficulty": "{difficulty}",
+    "tags": ["Tag3"]
+  }}
+]
 
-Start by searching the database for relevant examples, then generate the questions."""
+CRITICAL REQUIREMENTS:
+- Output MUST be a JSON array (starts with [ and ends with ])
+- The array must contain exactly {count} question objects
+- Each question object must have: question, option1, option2, option3, option4, correct_option, difficulty, tags
+- Do NOT wrap the array in markdown code blocks unless absolutely necessary
+- Do NOT return a single object or an object with a "questions" key - return the array directly
+
+IMPORTANT: Search the database ONCE with all subtopics, then IMMEDIATELY generate the questions. Do NOT make multiple tool calls. After the first tool call, you must generate questions, not make more tool calls."""
         
         return prompt
     
@@ -255,11 +282,12 @@ Output only a valid JSON array of {count} question objects. No other text. Ensur
         
         return prompt
     
-    def _generate_questions_agentic(
+    async def _generate_questions_agentic(
         self,
         system_prompt: str,
         difficulty: str,
         domain: str,
+        subtopics: List[str] = None,
         max_iterations: int = 10,
         max_retries: int = 3
     ) -> List[Dict[str, Any]]:
@@ -270,147 +298,294 @@ Output only a valid JSON array of {count} question objects. No other text. Ensur
             system_prompt: System prompt for the LLM
             difficulty: Difficulty level
             domain: Domain name
+            subtopics: List of subtopics to search (optional, for fallback)
             max_iterations: Maximum number of tool call iterations
             max_retries: Maximum retries for API calls
             
         Returns:
             List of generated questions
         """
-        # Get RAG tool definition
+        # Get RAG tool definition in standardized format
         rag_tool = get_rag_tool_definition()
-        tools = [rag_tool]
         
-        # Initialize conversation
+        # Initialize conversation with standardized messages
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Please start by searching the database for relevant example questions, then generate the required questions."}
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(role="user", content="Please start by searching the database for relevant example questions using the subtopics provided, then generate the required questions.")
         ]
         
-        tool_calls_count = 0
-        questions = []
-        
-        for iteration in range(max_iterations):
-            try:
-                # Call Groq API with function calling
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice="auto",  # Let LLM decide when to use tools
-                    temperature=0.7,
-                    top_p=0.9,
-                    max_tokens=4000
+        # Tool executor function
+        def tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+            """Execute tool calls"""
+            print(f"  → Tool executor called: {tool_name}")
+            print(f"  → Tool arguments: {json.dumps(arguments, indent=2)}")
+            
+            if tool_name == "search_question_database":
+                # Normalize domain
+                tool_domain = arguments.get("domain", domain)
+                domain_mapping = {
+                    "genai": "genAI",
+                    "java_backend": "java_backend",
+                    "python_backend": "python_backend",
+                    "java": "java",
+                    "cloud": "cloud"
+                }
+                normalized_domain = domain_mapping.get(tool_domain.lower(), tool_domain)
+                
+                # Check if subtopics are provided (preferred approach)
+                tool_subtopics = arguments.get("subtopics")
+                query_text = arguments.get("query_text")
+                
+                # If no subtopics in arguments but we have them in context, use them
+                if not tool_subtopics and subtopics:
+                    tool_subtopics = subtopics
+                    print(f"  → Using subtopics from context: {len(tool_subtopics)} subtopics")
+                
+                print(f"  → Executing RAG search: domain={normalized_domain}, difficulty={difficulty}, subtopics={len(tool_subtopics) if tool_subtopics else 0}")
+                
+                result = execute_rag_tool_call(
+                    query_text=query_text if not tool_subtopics else None,
+                    subtopics=tool_subtopics,
+                    difficulty=arguments.get("difficulty", difficulty),
+                    domain=normalized_domain,
+                    top_k=arguments.get("top_k", 10)
                 )
                 
-                message = response.choices[0].message
+                print(f"  → RAG search returned {result['count']} questions")
                 
-                # Add assistant message to conversation
-                messages.append(message)
-                
-                # Check if LLM wants to call a tool
-                if message.tool_calls:
-                    # Execute tool calls
-                    for tool_call in message.tool_calls:
-                        tool_calls_count += 1
-                        function_name = tool_call.function.name
-                        function_args = json.loads(tool_call.function.arguments)
-                        
-                        # Execute tool call
-                        if function_name == "search_question_database":
-                            # Normalize domain to match tool schema (genai -> genAI)
-                            tool_domain = function_args.get("domain", domain)
-                            domain_mapping = {
-                                "genai": "genAI",
-                                "java_backend": "java_backend",
-                                "python_backend": "python_backend",
-                                "java": "java",
-                                "cloud": "cloud"
-                            }
-                            normalized_domain = domain_mapping.get(tool_domain.lower(), tool_domain)
-                            
-                            tool_result = execute_rag_tool_call(
-                                query_text=function_args.get("query_text", ""),
-                                difficulty=function_args.get("difficulty", difficulty),
-                                domain=normalized_domain,
-                                top_k=function_args.get("top_k", 10)
-                            )
-                            
-                            # Format tool result for LLM
-                            tool_result_text = f"""Tool call result:
-Found {tool_result['count']} similar questions.
+                # Format result for LLM
+                search_count = len(tool_subtopics) if tool_subtopics and len(tool_subtopics) > 0 else 1
+                tool_result_text = f"""Tool call result:
+Found {result['count']} similar questions across {search_count} search{'es' if search_count > 1 else ''}.
 
 Example questions (for inspiration only, DO NOT duplicate):
 """
-                            for i, q in enumerate(tool_result['questions'][:5], 1):
-                                tool_result_text += f"""
+                for i, q in enumerate(result['questions'][:15], 1):  # Show top 15 examples
+                    tool_result_text += f"""
 {i}. {q['question']}
    Options: {q['options'][0]}, {q['options'][1]}, {q['options'][2]}, {q['options'][3]}
    Correct: Option {q['correct_option']}
    Tags: {', '.join(q.get('tags', []))}
 """
-                            
-                            # Add tool result to conversation
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": tool_result_text
-                            })
-                        else:
-                            # Unknown tool
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": f"Error: Unknown tool {function_name}"
-                            })
+                
+                print(f"  → Tool result length: {len(tool_result_text)} chars")
+                return {"content": tool_result_text}
+            else:
+                error_msg = f"Unknown tool: {tool_name}"
+                print(f"  → ERROR: {error_msg}")
+                return {"error": error_msg}
+        
+        questions = []
+        tool_call_count = 0
+        max_tool_calls = 2  # Limit tool calls to prevent infinite loops
+        
+        for iteration in range(max_iterations):
+            try:
+                print(f"\n  → Iteration {iteration + 1}/{max_iterations}: Calling LLM...")
+                
+                # Print input messages for debugging
+                print(f"  → Input messages ({len(messages)} total, showing last 3):")
+                for i, msg in enumerate(messages[-3:], 1):  # Show last 3 messages
+                    role = msg.role
+                    content_preview = str(msg.content)[:400] if msg.content else "(empty)"
+                    if len(str(msg.content)) > 400:
+                        content_preview += "..."
+                    print(f"    [{i}] {role}: {content_preview}")
+                
+                # Use LLM wrapper with tool execution
+                response = await self.llm.chat_completion_with_tools(
+                    messages=messages,
+                    tools=[rag_tool],
+                    tool_executor=tool_executor,
+                    max_iterations=1,  # We handle iteration manually
+                    temperature=0.7,
+                    top_p=0.9,
+                    max_tokens=4000
+                )
+                
+                # Print response details
+                print(f"  → LLM Response:")
+                print(f"    - Content length: {len(response.content) if response.content else 0}")
+                print(f"    - Tool calls: {len(response.tool_calls) if response.tool_calls else 0}")
+                
+                if response.content:
+                    content_preview = response.content[:1000] if len(response.content) > 1000 else response.content
+                    print(f"    - Content preview: {content_preview}")
+                    if len(response.content) > 1000:
+                        print(f"    - ... (truncated, total {len(response.content)} chars)")
+                    # Also print full content if it's not too long
+                    if len(response.content) <= 2000:
+                        print(f"    - Full content: {response.content}")
+                
+                if response.tool_calls:
+                    for i, tool_call in enumerate(response.tool_calls, 1):
+                        print(f"    - Tool call {i}: {tool_call.name}")
+                        args_str = json.dumps(tool_call.arguments, indent=2)
+                        if len(args_str) > 500:
+                            args_str = args_str[:500] + "..."
+                        print(f"      Arguments: {args_str}")
+                
+                # Check if we got tool calls (this means we need to continue)
+                if response.tool_calls:
+                    tool_call_count += len(response.tool_calls)
+                    print(f"  → Iteration {iteration + 1}: LLM made {len(response.tool_calls)} tool call(s) (total: {tool_call_count})")
                     
-                    # Continue conversation (LLM will process tool results)
+                    # CRITICAL FIX: chat_completion_with_tools executes tools internally but doesn't update our messages list
+                    # We need to manually add the assistant response and tool results to our messages
+                    # so the LLM sees them in the next iteration
+                    
+                    # Add assistant response with tool calls
+                    assistant_content = response.content or ""
+                    print(f"  → Adding assistant response with {len(response.tool_calls)} tool call(s) to messages")
+                    
+                    # For Anthropic, format assistant message with tool_use blocks
+                    assistant_content_blocks = []
+                    if assistant_content:
+                        assistant_content_blocks.append({"type": "text", "text": assistant_content})
+                    for tool_call in response.tool_calls:
+                        assistant_content_blocks.append({
+                            "type": "tool_use",
+                            "id": tool_call.id,
+                            "name": tool_call.name,
+                            "input": tool_call.arguments
+                        })
+                    
+                    messages.append(LLMMessage(
+                        role="assistant",
+                        content=json.dumps(assistant_content_blocks)
+                    ))
+                    
+                    # Add tool results (chat_completion_with_tools already executed them, but we need to add to our messages)
+                    # Re-execute to get results (inefficient but necessary since we don't have access to internal state)
+                    tool_result_blocks = []
+                    for tool_call in response.tool_calls:
+                        print(f"  → Re-executing tool {tool_call.name} to get result for messages...")
+                        tool_result = tool_executor(tool_call.name, tool_call.arguments)
+                        
+                        # Extract content from tool_result
+                        # The tool_executor returns {"content": "..."}, so extract the content string
+                        if isinstance(tool_result, dict):
+                            # If tool_result has a "content" key, use that directly (it's already a string)
+                            if "content" in tool_result:
+                                tool_result_content = str(tool_result["content"])
+                            else:
+                                # No "content" key, stringify the whole dict
+                                tool_result_content = json.dumps(tool_result, indent=2)
+                        else:
+                            # Not a dict, convert to string
+                            tool_result_content = str(tool_result)
+                        
+                        # Create tool_result block according to Anthropic format
+                        tool_result_blocks.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_call.id,
+                            "content": tool_result_content
+                        })
+                    
+                    # Add tool results as user message (Anthropic format)
+                    # CRITICAL: Store as JSON string, but _convert_messages_to_anthropic_format will parse it
+                    # The content should be a list of content blocks, not a JSON string
+                    if tool_result_blocks:
+                        # Store as JSON string - the conversion function will parse it for user messages with tool results
+                        messages.append(LLMMessage(
+                            role="user",
+                            content=json.dumps(tool_result_blocks)
+                        ))
+                        print(f"  → Added {len(tool_result_blocks)} tool result(s) to messages")
+                    
+                    # If we've made too many tool calls, force question generation
+                    if tool_call_count >= max_tool_calls:
+                        print(f"  → Reached max tool calls ({max_tool_calls}), forcing question generation...")
+                        force_message = "You have already searched the database. Now please generate the questions in JSON format as requested. Do not make any more tool calls."
+                        print(f"  → Adding force message: {force_message}")
+                        messages.append(LLMMessage(
+                            role="user",
+                            content=force_message
+                        ))
+                        continue
+                    
+                    # Tool calls were executed and added to messages, continue loop
+                    print(f"  → Updated messages list, now has {len(messages)} messages")
                     continue
                 
                 # No tool calls - LLM should be generating questions
-                content = message.content.strip()
+                content = response.content.strip()
+                
+                print(f"  → Iteration {iteration + 1}: No tool calls, content length: {len(content) if content else 0}")
+                if content:
+                    if len(content) <= 2000:
+                        print(f"  → Full content: {content}")
+                    else:
+                        print(f"  → Full content (first 2000 chars): {content[:2000]}...")
+                        print(f"  → ... (remaining {len(content) - 2000} chars)")
                 
                 if not content:
                     # Empty response, try again
-                    messages.append({
-                        "role": "user",
-                        "content": "Please generate the questions in JSON format as requested."
-                    })
+                    print(f"  → Iteration {iteration + 1}: Empty response, asking LLM to generate questions...")
+                    messages.append(LLMMessage(
+                        role="user",
+                        content="Please generate the questions in JSON format as requested."
+                    ))
                     continue
                 
                 # Try to extract JSON from response
+                original_content = content
                 if "```json" in content:
                     content = content.split("```json")[1].split("```")[0].strip()
                 elif "```" in content:
                     content = content.split("```")[1].split("```")[0].strip()
                 
+                # Try to find JSON array in content (in case LLM adds extra text)
+                json_match = re.search(r'\[[\s\S]*\]', content)
+                if json_match:
+                    content = json_match.group(0)
+                
                 # Try to parse as JSON
                 try:
                     parsed = json.loads(content)
+                    
+                    # Validate it's the expected format
                     if isinstance(parsed, list):
+                        # Perfect - it's an array
                         questions = parsed
+                        print(f"  → Parsed JSON array with {len(questions)} questions")
                     elif isinstance(parsed, dict):
-                        if "questions" in parsed:
+                        # Fallback: check if it has a "questions" key
+                        if "questions" in parsed and isinstance(parsed["questions"], list):
                             questions = parsed["questions"]
+                            print(f"  → Parsed dict with 'questions' key, found {len(questions)} questions")
                         else:
+                            # Single object - wrap it
                             questions = [parsed]
+                            print(f"  → Parsed single object, wrapped in array")
                     else:
-                        # Not valid JSON, ask LLM to retry
-                        messages.append({
-                            "role": "user",
-                            "content": "Please output only a valid JSON array of questions. No other text."
-                        })
+                        # Not valid format
+                        print(f"  → Parsed JSON but got unexpected type: {type(parsed)}")
+                        messages.append(LLMMessage(
+                            role="user",
+                            content="Please output a JSON array of questions (starts with [ and ends with ]). The response must be an array, not a single object or other format."
+                        ))
                         continue
                     
                     # Successfully parsed questions
+                    if questions:
+                        print(f"  → Successfully parsed {len(questions)} questions from LLM response")
+                    else:
+                        print(f"  → Warning: Parsed JSON but got empty questions list")
                     break
                     
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as json_err:
                     # Invalid JSON, ask LLM to retry
-                    messages.append({
-                        "role": "user",
-                        "content": "The response was not valid JSON. Please output only a valid JSON array of questions following the exact format specified."
-                    })
-                    continue
+                    print(f"  → JSON decode error on iteration {iteration + 1}: {json_err}")
+                    if iteration < max_iterations - 1:
+                        messages.append(LLMMessage(
+                            role="user",
+                            content="The response was not valid JSON. Please output only a valid JSON array of questions following the exact format specified."
+                        ))
+                        continue
+                    else:
+                        print(f"  → Max iterations reached, returning empty list")
+                        break
                     
             except Exception as e:
                 # Handle rate limiting and retries
@@ -418,23 +593,27 @@ Example questions (for inspiration only, DO NOT duplicate):
                 if "429" in error_msg or "rate limit" in error_msg:
                     if iteration < max_retries:
                         wait_time = min(2 ** iteration, 60)
-                        print(f"Rate limited. Waiting {wait_time} seconds before retry...")
+                        print(f"  → Rate limited. Waiting {wait_time} seconds before retry...")
                         time.sleep(wait_time)
                         continue
                     else:
                         raise Exception(f"Rate limit exceeded after {max_retries} retries")
                 else:
+                    print(f"  → Error on iteration {iteration + 1}: {e}")
                     raise e
+        
+        if not questions:
+            print(f"  → Warning: _generate_questions_agentic returning empty list after {max_iterations} iterations")
         
         return questions if questions else []
     
-    def _generate_questions_with_groq(
+    async def _generate_questions_with_llm(
         self,
         prompt: str,
         max_retries: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Generate questions using Groq API with rate limiting
+        Generate questions using LLM API with rate limiting
         
         Args:
             prompt: Prompt string
@@ -445,18 +624,17 @@ Example questions (for inspiration only, DO NOT duplicate):
         """
         for attempt in range(max_retries):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
+                messages = [LLMMessage(role="user", content=prompt)]
+                response = await self.llm.chat_completion(
+                    messages=messages,
                     temperature=0.7,
                     top_p=0.9,
                     max_tokens=4000
                 )
                 
-                content = response.choices[0].message.content.strip()
+                content = response.content.strip()
                 
                 # Try to extract JSON from response
-                # Remove markdown code blocks if present
                 if "```json" in content:
                     content = content.split("```json")[1].split("```")[0].strip()
                 elif "```" in content:
@@ -474,14 +652,13 @@ Example questions (for inspiration only, DO NOT duplicate):
             except json.JSONDecodeError as e:
                 if attempt < max_retries - 1:
                     print(f"JSON decode error, retrying... (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(2)  # Wait before retry
+                    time.sleep(2)
                     continue
                 raise ValueError(f"Failed to parse JSON response: {e}")
             except Exception as e:
                 error_str = str(e).lower()
-                # Check if it's a rate limit error
                 if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
-                    wait_time = min(10 * (attempt + 1), 60)  # Exponential backoff, max 60s
+                    wait_time = min(10 * (attempt + 1), 60)
                     print(f"Rate limit hit, waiting {wait_time} seconds before retry (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                     if attempt < max_retries - 1:
@@ -491,7 +668,7 @@ Example questions (for inspiration only, DO NOT duplicate):
                     print(f"API error, waiting {wait_time} seconds before retry (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                     continue
-                raise RuntimeError(f"Groq API error: {e}")
+                raise RuntimeError(f"LLM API error: {e}")
         
         return []
     
@@ -574,7 +751,7 @@ Example questions (for inspiration only, DO NOT duplicate):
         
         return True
     
-    def generate_questions(
+    async def generate_questions(
         self,
         scrubbed_resume_text: str,
         scrubbed_jd_text: str,
@@ -603,65 +780,119 @@ Example questions (for inspiration only, DO NOT duplicate):
         Returns:
             List of generated questions
         """
-        # Calculate difficulty distribution
+        # Step 1: Calculate difficulty distribution
         dist = self._calculate_difficulty_distribution(grade, count)
         
+        # Step 2: Initialize tracking
         all_questions = []
-        all_skills = list(set(resume_skills + jd_skills))  # Skills for RAG queries
+        all_skills = list(set(resume_skills + jd_skills))
+        difficulty_counts = defaultdict(int)  # Track counts per difficulty
+        seen_questions = set()  # For deduplication
         
-        # Generate questions for each difficulty level
+        # Step 3: Pre-create prompts (cache them)
+        prompts_cache = {}
+        for difficulty, num_questions in dist.items():
+            if num_questions > 0:
+                prompts_cache[difficulty] = self._create_agentic_prompt(
+                    role=role,
+                    domain=domain,
+                    difficulty=difficulty,
+                    grade=grade,
+                    subtopics=subtopics,
+                    skills=all_skills,
+                    resume_text=scrubbed_resume_text,
+                    jd_text=scrubbed_jd_text,
+                    count=num_questions
+                )
+        
+        # Step 4: Generate questions for each difficulty level
         for difficulty, num_questions in dist.items():
             if num_questions == 0:
                 continue
             
-            # Add delay between difficulty levels to avoid rate limiting
-            if len(all_questions) > 0:
-                print(f"Waiting 2 seconds before generating {difficulty} questions...")
-                time.sleep(2)
+            if len(all_questions) >= count:
+                break
             
-            # Create agentic prompt (LLM will use RAG tool itself)
-            system_prompt = self._create_agentic_prompt(
-                role=role,
-                domain=domain,
-                difficulty=difficulty,
-                grade=grade,
-                subtopics=subtopics,
-                skills=all_skills,
-                resume_text=scrubbed_resume_text,
-                jd_text=scrubbed_jd_text,
-                count=num_questions
-            )
+            remaining_for_difficulty = num_questions - difficulty_counts[difficulty]
+            if remaining_for_difficulty <= 0:
+                continue
             
-            # Generate questions using agentic approach
             try:
-                print(f"Generating {num_questions} {difficulty} questions using agentic approach (LLM will search RAG database)...")
+                print(f"Generating {remaining_for_difficulty} {difficulty} questions using agentic approach...")
                 
-                generated = self._generate_questions_agentic(
+                # Use cached prompt
+                system_prompt = prompts_cache[difficulty]
+                
+                generated = await self._generate_questions_agentic(
                     system_prompt=system_prompt,
                     difficulty=difficulty,
-                    domain=domain
+                    domain=domain,
+                    subtopics=subtopics
                 )
                 
-                # Validate and filter
+                # Log what we got from LLM
+                print(f"  → Received {len(generated)} questions from LLM for {difficulty}")
+                
+                # Validate, deduplicate, and add questions
+                validated_count = 0
+                duplicate_count = 0
+                invalid_count = 0
+                
                 for q in generated:
+                    if len(all_questions) >= count:
+                        break
+                    
+                    if difficulty_counts[difficulty] >= num_questions:
+                        break
+                    
+                    # Deduplication check
+                    question_text = q.get("question", "").strip().lower()
+                    if not question_text:
+                        invalid_count += 1
+                        continue
+                    
+                    if question_text in seen_questions:
+                        duplicate_count += 1
+                        continue
+                    
                     if self._validate_question(q):
-                        # Ensure difficulty matches
                         q["difficulty"] = difficulty
-                        # Add question_id
                         q["question_id"] = f"GEN_{len(all_questions) + 1:03d}"
                         all_questions.append(q)
-                        
-                        if len(all_questions) >= count:
-                            break
+                        seen_questions.add(question_text)
+                        difficulty_counts[difficulty] += 1
+                        validated_count += 1
+                    else:
+                        invalid_count += 1
                 
-                # If we need more questions, generate additional ones
-                while len(all_questions) < count and len([q for q in all_questions if q.get("difficulty", "").lower() == difficulty]) < num_questions:
-                    # Add delay before additional requests
-                    time.sleep(2)
-                    print(f"Generating 1 additional {difficulty} question...")
+                # Log filtering results
+                print(f"  → Added {validated_count} valid questions, {duplicate_count} duplicates, {invalid_count} invalid")
+                print(f"  → Current {difficulty} count: {difficulty_counts[difficulty]}/{num_questions}")
+                
+                # Retry logic with better approach
+                max_retries = 3
+                retry_count = 0
+                
+                while (len(all_questions) < count and 
+                       difficulty_counts[difficulty] < num_questions and 
+                       retry_count < max_retries):
                     
-                    # Create prompt for single question
-                    single_prompt = self._create_agentic_prompt(
+                    remaining = min(
+                        num_questions - difficulty_counts[difficulty],
+                        count - len(all_questions)
+                    )
+                    
+                    if remaining <= 0:
+                        break
+                    
+                    # Use async sleep instead of blocking sleep
+                    await asyncio.sleep(1)  # Reduced from 2 seconds
+                    retry_count += 1
+                    
+                    print(f"Generating {remaining} additional {difficulty} question(s) (retry {retry_count}/{max_retries})...")
+                    
+                    # Create prompt for remaining questions (not just 1)
+                    retry_prompt = self._create_agentic_prompt(
                         role=role,
                         domain=domain,
                         difficulty=difficulty,
@@ -670,36 +901,82 @@ Example questions (for inspiration only, DO NOT duplicate):
                         skills=all_skills,
                         resume_text=scrubbed_resume_text,
                         jd_text=scrubbed_jd_text,
-                        count=1
+                        count=remaining  # Generate remaining amount, not just 1
                     )
                     
-                    # Generate additional question
-                    additional = self._generate_questions_agentic(
-                        system_prompt=single_prompt,
-                        difficulty=difficulty,
-                        domain=domain
-                    )
-                    
-                    for q in additional:
-                        if self._validate_question(q):
-                            q["difficulty"] = difficulty
-                            q["question_id"] = f"GEN_{len(all_questions) + 1:03d}"
-                            all_questions.append(q)
-                            
+                    try:
+                        additional = await self._generate_questions_agentic(
+                            system_prompt=retry_prompt,
+                            difficulty=difficulty,
+                            domain=domain,
+                            subtopics=subtopics
+                        )
+                        
+                        print(f"  → Retry {retry_count}: Received {len(additional)} questions from LLM")
+                        
+                        retry_validated = 0
+                        retry_duplicate = 0
+                        retry_invalid = 0
+                        
+                        for q in additional:
                             if len(all_questions) >= count:
                                 break
                             
-                            if len([q for q in all_questions if q.get("difficulty", "").lower() == difficulty]) >= num_questions:
+                            if difficulty_counts[difficulty] >= num_questions:
                                 break
-                    
-                    if len(all_questions) >= count:
-                        break
+                            
+                            # Deduplication
+                            question_text = q.get("question", "").strip().lower()
+                            if not question_text:
+                                retry_invalid += 1
+                                continue
+                            
+                            if question_text in seen_questions:
+                                retry_duplicate += 1
+                                continue
+                            
+                            if self._validate_question(q):
+                                q["difficulty"] = difficulty
+                                q["question_id"] = f"GEN_{len(all_questions) + 1:03d}"
+                                all_questions.append(q)
+                                seen_questions.add(question_text)
+                                difficulty_counts[difficulty] += 1
+                                retry_validated += 1
+                            else:
+                                retry_invalid += 1
+                        
+                        print(f"  → Retry {retry_count}: Added {retry_validated} valid, {retry_duplicate} duplicates, {retry_invalid} invalid")
+                        print(f"  → Current {difficulty} count: {difficulty_counts[difficulty]}/{num_questions}")
+                        
+                        # If we got enough questions, exit retry loop
+                        if difficulty_counts[difficulty] >= num_questions:
+                            break
+                            
+                    except Exception as retry_error:
+                        print(f"Error in retry {retry_count} for {difficulty} questions: {retry_error}")
+                        # Continue to next retry
+                        continue
                     
             except Exception as e:
                 print(f"Error generating {difficulty} questions: {e}")
+                import traceback
+                traceback.print_exc()  # Better error logging
                 continue
         
-        return all_questions[:count]
+        # Step 5: Final validation and return
+        final_questions = all_questions[:count]
+        
+        # Log summary
+        print(f"\n=== Question Generation Summary ===")
+        print(f"Total requested: {count}")
+        print(f"Total generated: {len(final_questions)}")
+        for diff in ["hard", "medium", "easy"]:
+            actual = len([q for q in final_questions if q.get("difficulty") == diff])
+            expected = dist.get(diff, 0)
+            print(f"{diff.capitalize()}: {actual}/{expected}")
+        print("=" * 40)
+        
+        return final_questions
 
 
 # Global instance (will be initialized with API key)

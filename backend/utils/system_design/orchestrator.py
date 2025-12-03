@@ -1,10 +1,11 @@
 """
 Conversation Orchestrator - determines when and how the AI should respond
 """
-import httpx
 import time
 from typing import Dict, Any, List, Optional, Tuple
 import json
+from llm.factory import LLMProviderFactory
+from llm.models import LLMMessage
 from core.config import settings
 from utils.system_design.models import Session, ChatMessage
 from utils.system_design.canvas_parser import CanvasParser
@@ -15,14 +16,17 @@ class ConversationOrchestrator:
     """Manages conversation flow and AI response triggers"""
     
     def __init__(self):
-        self.api_key = settings.GROQ_API_KEY
-        self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model = "llama-3.1-8b-instant"  # Groq model (faster and more reliable)
         self.parser = CanvasParser()
         
-        if not self.api_key:
-            print("WARNING: GROQ_API_KEY not set! LLM responses will not work.")
-            print("Please set GROQ_API_KEY in your environment or .env file")
+        # Use factory to get LLM provider with configured model
+        try:
+            self.llm = LLMProviderFactory.create_provider()
+            self.model = self.llm.model  # Store the actual model being used
+        except ValueError as e:
+            print(f"WARNING: {str(e)}")
+            print("LLM responses will not work. Please set LLM_PROVIDER and API key in your environment or .env file")
+            self.llm = None
+            self.model = None
     
     def should_respond(self, message: str, session: Session) -> bool:
         """
@@ -148,70 +152,43 @@ Remember: You are helping them discover answers through questions, not providing
         # Apply guardrails to prompts
         sanitized_system, sanitized_user, prompt_is_safe = guardrails.validate_and_sanitize_prompt(system_prompt, user_prompt)
         
-        # Call Groq API
-        if not self.api_key:
-            return "I'm here to help, but the API key is not configured. Please set GROQ_API_KEY in your environment."
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": sanitized_system},
-                {"role": "user", "content": sanitized_user}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 200  # Reduced to work within credit limits
-        }
+        # Call LLM API
+        if not self.llm:
+            return "I'm here to help, but the API key is not configured. Please set LLM_PROVIDER and API key in your environment."
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=15.0
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "I understand. Please continue.")
-                print(f"Groq API response: {content[:100]}...")  # Log first 100 chars
-                return content
-        except httpx.HTTPStatusError as e:
-            error_response_text = e.response.text if hasattr(e.response, 'text') else str(e.response)
-            print(f"Groq API HTTP error: {e.response.status_code}")
-            print(f"Response body: {error_response_text}")
-            print(f"Request URL: {self.api_url}")
-            print(f"Request payload: {payload}")
+            messages = [
+                LLMMessage(role="system", content=sanitized_system),
+                LLMMessage(role="user", content=sanitized_user)
+            ]
+            response = await self.llm.chat_completion(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=200  # Reduced to work within credit limits
+            )
             
-            if e.response.status_code == 400:
-                # Bad request - likely model or format issue
-                try:
-                    error_data = e.response.json()
-                    error_msg = error_data.get("error", {}).get("message", "Bad request")
-                    print(f"Groq API 400 Bad Request: {error_msg}")
-                except:
-                    print(f"Groq API 400 Bad Request: {error_response_text}")
-                return "I'm having trouble processing that request. Could you rephrase your question? I'm here to help guide you through the system design."
-            elif e.response.status_code == 401:
-                # Invalid API key
-                print(f"Groq API 401 Unauthorized: Invalid API key")
-                return "I'm here to help with your system design. However, there's a configuration issue. Please check your GROQ_API_KEY setting."
-            elif e.response.status_code == 429:
-                # Rate limit
-                print(f"Groq API 429 Rate Limit: Too many requests")
-                return "I'm here to help, but I'm receiving too many requests right now. Could you wait a moment and try again?"
-            else:
-                print(f"Groq API HTTP error: {e.response.status_code} - {error_response_text}")
-                return "I'm having a bit of trouble right now. Could you try asking your question again? I'm here to help guide you through the system design."
+            content = response.content or "I understand. Please continue."
+            print(f"LLM API response: {content[:100]}...")  # Log first 100 chars
+            return content
+            
         except Exception as e:
-            print(f"Groq API error: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return "I'm having trouble generating a response right now. Could you try rephrasing your question? I'm here to help guide you through the system design."
+            error_str = str(e).lower()
+            print(f"LLM API error: {str(e)}")
+            
+            # Handle specific error types
+            if "401" in error_str or "unauthorized" in error_str or "invalid api key" in error_str:
+                print(f"LLM API 401 Unauthorized: Invalid API key")
+                return "I'm here to help with your system design. However, there's a configuration issue. Please check your API key setting."
+            elif "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+                print(f"LLM API 429 Rate Limit: Too many requests")
+                return "I'm here to help, but I'm receiving too many requests right now. Could you wait a moment and try again?"
+            elif "400" in error_str or "bad request" in error_str:
+                print(f"LLM API 400 Bad Request: {str(e)}")
+                return "I'm having trouble processing that request. Could you rephrase your question? I'm here to help guide you through the system design."
+            else:
+                import traceback
+                traceback.print_exc()
+                return "I'm having trouble generating a response right now. Could you try rephrasing your question? I'm here to help guide you through the system design."
     
     def detect_significant_change(
         self,
@@ -550,45 +527,30 @@ Write a natural, curious question (1-2 sentences) asking about this discrepancy.
         return None
     
     async def _call_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """Helper method to call Groq API for prompts"""
-        if not self.api_key:
+        """Helper method to call LLM API for prompts"""
+        if not self.llm:
             return None
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 100  # Reduced for prompts to work within credit limits
-        }
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=10.0
-                )
-                response.raise_for_status()
-                result = response.json()
-                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                print(f"Groq API 401 Unauthorized: Invalid API key")
-            elif e.response.status_code == 429:
-                print(f"Groq API 429 Rate Limit: Too many requests")
-            else:
-                print(f"Groq API HTTP error {e.response.status_code}: {str(e)}")
-            return None
+            messages = [
+                LLMMessage(role="system", content=system_prompt),
+                LLMMessage(role="user", content=user_prompt)
+            ]
+            response = await self.llm.chat_completion(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=100  # Reduced for prompts to work within credit limits
+            )
+            
+            return response.content or ""
+            
         except Exception as e:
-            print(f"Error calling API for prompt: {str(e)}")
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str:
+                print(f"LLM API 401 Unauthorized: Invalid API key")
+            elif "429" in error_str or "rate limit" in error_str:
+                print(f"LLM API 429 Rate Limit: Too many requests")
+            else:
+                print(f"LLM API error: {str(e)}")
             return None
 

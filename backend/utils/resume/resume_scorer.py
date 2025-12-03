@@ -4,10 +4,11 @@ Calculates resume score based on match with job description using LLM.
 Uses scrubbed resume (no PII) for scoring.
 """
 from typing import Dict, Optional
-from groq import Groq
 import json
 import logging
 import re
+from llm.factory import LLMProviderFactory
+from llm.models import LLMMessage
 from core.config import settings
 from utils.mcq.resume_parser import resume_parser
 
@@ -18,16 +19,19 @@ class ResumeScorer:
     """Calculates resume scores based on JD match using LLM."""
     
     def __init__(self):
-        """Initialize resume scorer with Groq client."""
-        self.api_key = settings.GROQ_API_KEY
-        if not self.api_key:
-            logger.warning("GROQ_API_KEY not found. Resume scoring will use fallback method.")
-            self.client = None
-        else:
-            self.client = Groq(api_key=self.api_key)
-        self.model = "llama-3.3-70b-versatile"  # or "llama-3.1-8b-instant" for faster responses
+        """Initialize resume scorer with LLM provider."""
+        # Use configured provider with its default model from settings
+        # This ensures consistency with the rest of the application
+        try:
+            self.llm = LLMProviderFactory.create_provider()
+            self.model = self.llm.model  # Store the actual model being used
+            logger.info(f"Resume scorer initialized with provider: {settings.LLM_PROVIDER}, model: {self.model}")
+        except ValueError as e:
+            logger.warning(f"{str(e)}. Resume scoring will use fallback method.")
+            self.llm = None
+            self.model = None
     
-    def calculate_score(self, scrubbed_resume: str, job_description: str) -> float:
+    async def calculate_score(self, scrubbed_resume: str, job_description: str) -> float:
         """
         Calculate resume score (0-100) based on match with job description using LLM.
         
@@ -44,9 +48,9 @@ class ResumeScorer:
             return 0.0
         
         # Try LLM-based scoring first
-        if self.client:
+        if self.llm:
             try:
-                llm_score = self._calculate_with_llm(scrubbed_resume, job_description)
+                llm_score = await self._calculate_with_llm(scrubbed_resume, job_description)
                 if llm_score is not None:
                     # Ensure score is between 0-100
                     return max(0.0, min(100.0, llm_score))
@@ -56,7 +60,7 @@ class ResumeScorer:
         # Fallback to rule-based method
         return self._calculate_with_rules(scrubbed_resume, job_description)
     
-    def _calculate_with_llm(
+    async def _calculate_with_llm(
         self, 
         scrubbed_resume: str, 
         job_description: str
@@ -130,24 +134,21 @@ The score should be a single number that holistically represents the candidate's
 Respond with ONLY the JSON object, no additional text."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a precise recruiter evaluation assistant. Always respond with valid JSON only. Provide a single combined score (0-100) that considers all factors: skills, experience years comparison, role relevance, and other relevant factors."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+            messages = [
+                LLMMessage(
+                    role="system",
+                    content="You are a precise recruiter evaluation assistant. Always respond with valid JSON only. Provide a single combined score (0-100) that considers all factors: skills, experience years comparison, role relevance, and other relevant factors."
+                ),
+                LLMMessage(role="user", content=prompt)
+            ]
+            
+            response = await self.llm.chat_completion(
+                messages=messages,
                 temperature=0.3,  # Low temperature for consistency
-                max_tokens=200,
-                response_format={"type": "json_object"}  # Force JSON response if supported
+                max_tokens=200
             )
             
-            content = response.choices[0].message.content.strip()
+            content = response.content.strip()
             
             # Extract JSON if wrapped in code blocks
             if "```json" in content:

@@ -11,6 +11,7 @@ from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+from core.config import settings
 from utils.system_design.models import Session as SessionModel, CanvasVersion, ChatMessage, Evaluation
 from utils.system_design.question_service import QuestionService
 from utils.system_design.evaluator import EvaluationEngine
@@ -509,7 +510,7 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
                 )
                 
                 if ai_response and "API Error" in ai_response:
-                    ai_response = "I'm here to help with your system design. However, there was an issue with the API. Please check your GROQ_API_KEY configuration."
+                    ai_response = f"I'm here to help with your system design. However, there was an issue with the API. Please check your {settings.LLM_PROVIDER.upper()}_API_KEY configuration."
                 
                 ai_msg = ChatMessage(
                     role="assistant",
@@ -524,7 +525,7 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
                 )
             except Exception as e:
                 print(f"Error generating AI response: {str(e)}")
-                error_response = "I encountered an issue generating a response. Please check your GROQ_API_KEY configuration or try again later."
+                error_response = f"I encountered an issue generating a response. Please check your {settings.LLM_PROVIDER.upper()}_API_KEY configuration or try again later."
                 ai_msg = ChatMessage(
                     role="assistant",
                     content=error_response,

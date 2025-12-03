@@ -1,6 +1,6 @@
 """
 MCQ Generation Service
-Handles MCQ question generation using RAG and Groq LLM
+Handles MCQ question generation using RAG and LLM
 """
 import logging
 import uuid
@@ -39,7 +39,7 @@ class MCQGenerationService:
                 # Don't raise error, try to continue - RAG might already be initialized
                 self._rag_initialized = True
     
-    def generate_questions(self, request: GenerateMCQRequest) -> Dict[str, Any]:
+    async def generate_questions(self, request: GenerateMCQRequest) -> Dict[str, Any]:
         """
         Generate MCQ questions based on resume, JD, and grade
         
@@ -75,7 +75,7 @@ class MCQGenerationService:
             # Step 4: Use dynamic LLM-based mapping for domain
             logger.info("Using LLM to dynamically map role to domain...")
             dynamic_mapper = get_dynamic_mapper()
-            domain = dynamic_mapper.map_role_to_domain(
+            domain = await dynamic_mapper.map_role_to_domain(
                 role=role,
                 jd_text=scrubbed_jd,
                 resume_text=scrubbed_resume
@@ -89,7 +89,7 @@ class MCQGenerationService:
             
             # Step 5: Use dynamic LLM-based subtopic identification
             logger.info("Using LLM to identify relevant subtopics...")
-            subtopics = dynamic_mapper.identify_relevant_subtopics(
+            subtopics = await dynamic_mapper.identify_relevant_subtopics(
                 domain=domain,
                 jd_text=scrubbed_jd,
                 resume_text=scrubbed_resume
@@ -112,7 +112,7 @@ class MCQGenerationService:
             logger.info(f"Generating questions for role: {role}, domain: {domain}, grade: {request.grade}")
             generator = get_question_generator()
             
-            questions = generator.generate_questions(
+            questions = await generator.generate_questions(
                 scrubbed_resume_text=scrubbed_resume,
                 scrubbed_jd_text=scrubbed_jd,
                 resume_skills=resume_data.get("technologies", []),

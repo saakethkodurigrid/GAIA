@@ -143,7 +143,7 @@ async def schedule_test(
             - 403: If user is not a candidate
     """
     interview_service = InterviewService(db)
-    response = interview_service.save_test_schedule(current_candidate.candidate_id, request)
+    response = await interview_service.save_test_schedule(current_candidate.candidate_id, request)
     
     if not response.success:
         raise HTTPException(

@@ -362,7 +362,7 @@ async def add_candidates_batch(
     
     # Process batch
     batch_service = CandidateBatchService(db)
-    result = batch_service.process_batch_candidates(
+    result = await batch_service.process_batch_candidates(
         job_id=job.job_id,  # Use UUID from fetched job object
         files=files,
         recruiter_email=current_user.email_id

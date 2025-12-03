@@ -10,7 +10,7 @@ from core.config import settings
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    echo=settings.DEBUG  # Set to True for SQL query logging in debug mode
+    echo=False  # Disable SQL query logging to reduce log noise
 )
 
 # Create session factory

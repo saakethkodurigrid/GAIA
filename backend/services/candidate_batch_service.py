@@ -89,7 +89,7 @@ class CandidateBatchService:
         
         return pii_data
     
-    def process_batch_candidates(
+    async def process_batch_candidates(
         self,
         job_id: str,
         files: List[UploadFile],
@@ -173,14 +173,14 @@ class CandidateBatchService:
                     scrubbed_resume = pii_scrubber.scrub_pii(scrubbed_resume)
                 
                 # Step 4: Calculate resume score (using SCRUBBED resume, NO PII)
-                resume_score = resume_scorer.calculate_score(
+                resume_score = await resume_scorer.calculate_score(
                     scrubbed_resume=scrubbed_resume,  # NO PII
                     job_description=job.job_description
                 )
                 
                 # Determine initial status based on resume score
-                # Threshold: 70 (candidates with score >= 70 are shortlisted)
-                initial_status = 'shortlisted' if resume_score >= 70.0 else 'rejected'
+                # Uses RESUME_SCORE_THRESHOLD from config (candidates with score >= threshold are shortlisted)
+                initial_status = 'shortlisted' if resume_score >= settings.RESUME_SCORE_THRESHOLD else 'rejected'
                 
                 # Step 5: Create candidate record
                 candidate_id = str(uuid.uuid4())

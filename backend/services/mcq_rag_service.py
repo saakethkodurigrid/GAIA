@@ -84,7 +84,8 @@ class RAGSystem:
     
     def initialize_vector_store(self, force_recreate: bool = False):
         """
-        Initialize ChromaDB vector store with questions
+        Initialize ChromaDB vector store with questions.
+        Only encodes embeddings if collection is empty or force_recreate is True.
         
         Args:
             force_recreate: If True, recreate the collection even if it exists
@@ -92,10 +93,7 @@ class RAGSystem:
         if self._initialized and not force_recreate:
             return
         
-        # Load embedding model
-        self._load_embedding_model()
-        
-        # Initialize ChromaDB client
+        # Initialize ChromaDB client FIRST (before loading model)
         self.client = chromadb.PersistentClient(
             path=self.db_path,
             settings=Settings(anonymized_telemetry=False)
@@ -110,14 +108,31 @@ class RAGSystem:
             except:
                 pass
         
+        # Check if collection exists and has data BEFORE loading model
+        collection_exists = False
+        collection_has_data = False
+        
         try:
             self.collection = self.client.get_collection(collection_name)
-            # Check if collection is empty
-            if self.collection.count() > 0 and not force_recreate:
-                self._initialized = True
-                return
+            collection_exists = True
+            count = self.collection.count()
+            collection_has_data = count > 0
         except:
-            # Collection doesn't exist, create it
+            # Collection doesn't exist, will create it below
+            collection_exists = False
+            collection_has_data = False
+        
+        # If collection exists and has data, we're done - no encoding needed!
+        if collection_exists and collection_has_data and not force_recreate:
+            self._initialized = True
+            return
+        
+        # Only now do we need to load the model and encode
+        # This only happens if collection is empty or being recreated
+        self._load_embedding_model()
+        
+        # Create collection if it doesn't exist
+        if not collection_exists:
             self.collection = self.client.create_collection(
                 name=collection_name,
                 metadata={"description": "MCQ Questions for RAG"}
@@ -130,9 +145,9 @@ class RAGSystem:
         
         print(f"Found {len(questions)} questions. Creating embeddings...")
         
-        # Prepare data for ChromaDB
+        # Prepare all texts for batch encoding
+        embedding_texts = []
         documents = []
-        embeddings = []
         ids = []
         metadatas = []
         
@@ -143,9 +158,7 @@ class RAGSystem:
             
             # Create embedding text
             embedding_text = self._create_embedding_text(question)
-            
-            # Generate embedding
-            embedding = self.embedding_model.encode(embedding_text).tolist()
+            embedding_texts.append(embedding_text)
             
             # Prepare metadata
             domain = self._determine_domain(question_id)
@@ -163,9 +176,17 @@ class RAGSystem:
             }
             
             documents.append(embedding_text)
-            embeddings.append(embedding)
             ids.append(question_id)
             metadatas.append(metadata)
+        
+        # Batch encode ALL embeddings at once (much faster, no progress bars)
+        print("Encoding all questions in batch...")
+        embeddings = self.embedding_model.encode(
+            embedding_texts, 
+            show_progress_bar=False,
+            batch_size=32,
+            convert_to_numpy=True
+        ).tolist()
         
         # Batch add to ChromaDB (in chunks to avoid memory issues)
         batch_size = 100
@@ -208,8 +229,14 @@ class RAGSystem:
         if not self._initialized:
             raise RuntimeError("Vector store not initialized. Call initialize_vector_store() first.")
         
-        # Generate query embedding
-        query_embedding = self.embedding_model.encode(query_text).tolist()
+        # Load model lazily only when needed for query encoding
+        self._load_embedding_model()
+        
+        # Generate query embedding (single query, no progress bar needed)
+        query_embedding = self.embedding_model.encode(
+            query_text, 
+            show_progress_bar=False
+        ).tolist()
         
         # Build where clause for filtering
         # ChromaDB requires $and operator when multiple conditions are present

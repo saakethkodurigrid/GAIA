@@ -414,7 +414,7 @@ class InterviewService:
                 incorrect_answers=incorrect_answers
             )
     
-    def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+    async def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
         """
         Save test schedule for a candidate and assign system design question and generate MCQ questions.
         
@@ -577,7 +577,7 @@ class InterviewService:
                     )
                     print(f"MCQ request: {mcq_request}")
                     # Generate questions
-                    generation_result = mcq_service.generate_questions(mcq_request)
+                    generation_result = await mcq_service.generate_questions(mcq_request)
                     questions = generation_result.get("questions", [])
                     
                     if questions:

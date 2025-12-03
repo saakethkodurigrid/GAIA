@@ -3,8 +3,10 @@ Dynamic Domain and Subtopic Mapping using LLM
 Handles any role name and intelligently maps to domains/subtopics
 """
 from typing import List, Dict, Optional
-from groq import Groq
 import json
+import re
+from llm.factory import LLMProviderFactory
+from llm.models import LLMMessage
 from core.config import settings
 from .domain_mapper import domain_mapper
 
@@ -13,13 +15,15 @@ class DynamicMapper:
     """Uses LLM to dynamically map roles and identify subtopics"""
     
     def __init__(self):
-        """Initialize dynamic mapper with Groq client"""
-        if not settings.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY not found in environment variables. Please set GROQ_API_KEY in your .env file.")
-        
-        self.client = Groq(api_key=settings.GROQ_API_KEY)
-        self.model = "llama-3.3-70b-versatile"
+        """Initialize dynamic mapper with LLM provider"""
         self.domain_mapper = domain_mapper
+        
+        # Use factory to get LLM provider with configured model
+        try:
+            self.llm = LLMProviderFactory.create_provider()
+            self.model = self.llm.model  # Store the actual model being used
+        except ValueError as e:
+            raise ValueError(f"{str(e)}. Please set LLM_PROVIDER and API key in your .env file.")
         
         # Available domains (for LLM reference)
         self.available_domains = {
@@ -30,7 +34,7 @@ class DynamicMapper:
             "cloud": "DevOps, Docker, Kubernetes, Terraform, CI/CD, Cloud Platforms, SRE, Infrastructure"
         }
     
-    def map_role_to_domain(
+    async def map_role_to_domain(
         self, 
         role: str, 
         jd_text: str, 
@@ -77,14 +81,14 @@ If the role doesn't clearly fit any domain, respond with "unknown".
 Domain:"""
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+            messages = [LLMMessage(role="user", content=prompt)]
+            response = await self.llm.chat_completion(
+                messages=messages,
                 temperature=0.3,  # Low temperature for consistency
                 max_tokens=50
             )
             
-            domain = response.choices[0].message.content.strip().lower()
+            domain = response.content.strip().lower()
             
             # Clean up response (remove any extra text)
             domain = domain.split()[0] if domain.split() else domain
@@ -126,7 +130,7 @@ Domain:"""
             # Fallback to keyword matching
             return self.domain_mapper.get_domain_for_role(role)
     
-    def identify_relevant_subtopics(
+    async def identify_relevant_subtopics(
         self,
         domain: str,
         jd_text: str,
@@ -179,20 +183,49 @@ Only include subtopics that are clearly mentioned or strongly implied in the JD/
 JSON array:"""
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
+            messages = [
+                LLMMessage(role="system", content="You are a technical assessment assistant. Always respond with valid JSON only. Return a JSON array of numbers representing relevant subtopic indices."),
+                LLMMessage(role="user", content=prompt)
+            ]
+            response = await self.llm.chat_completion(
+                messages=messages,
                 temperature=0.4,
                 max_tokens=200
             )
             
-            content = response.choices[0].message.content.strip()
+            # Check if response has content
+            if not response or not response.content:
+                print("Error in LLM subtopic identification: Empty response from LLM, using fallback")
+                return self.domain_mapper.get_relevant_subtopics(
+                    jd_text, resume_text, domain
+                )
+            
+            content = response.content.strip()
+            
+            # Check if content is empty after stripping
+            if not content:
+                print("Error in LLM subtopic identification: Empty content after stripping, using fallback")
+                return self.domain_mapper.get_relevant_subtopics(
+                    jd_text, resume_text, domain
+                )
             
             # Extract JSON
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
+            
+            # Try to find JSON array in content if not already extracted
+            json_match = re.search(r'\[[\d\s,]+\]', content)
+            if json_match:
+                content = json_match.group(0)
+            
+            # Check again if content is empty
+            if not content:
+                print(f"Error in LLM subtopic identification: Could not extract JSON from response: {response.content[:200]}, using fallback")
+                return self.domain_mapper.get_relevant_subtopics(
+                    jd_text, resume_text, domain
+                )
             
             # Parse indices
             indices = json.loads(content)
@@ -204,9 +237,13 @@ JSON array:"""
             # Map indices to subtopics (indices are 1-based)
             relevant = []
             for i in indices:
-                idx = int(i) - 1  # Convert to 0-based
-                if 0 <= idx < len(all_subtopics):
-                    relevant.append(all_subtopics[idx])
+                try:
+                    idx = int(i) - 1  # Convert to 0-based
+                    if 0 <= idx < len(all_subtopics):
+                        relevant.append(all_subtopics[idx])
+                except (ValueError, TypeError):
+                    # Skip invalid indices
+                    continue
             
             # Remove duplicates while preserving order
             seen = set()
@@ -219,10 +256,28 @@ JSON array:"""
             # Limit to 12
             final_subtopics = unique_relevant[:12]
             
+            # If we got no valid subtopics, use fallback
+            if not final_subtopics:
+                print(f"Error in LLM subtopic identification: No valid subtopics extracted from response: {content[:200]}, using fallback")
+                return self.domain_mapper.get_relevant_subtopics(
+                    jd_text, resume_text, domain
+                )
+            
             return final_subtopics
             
+        except json.JSONDecodeError as e:
+            print(f"Error in LLM subtopic identification: JSON decode error: {e}")
+            if 'response' in locals() and response and response.content:
+                print(f"Response content: {response.content[:200]}")
+            print("Using fallback")
+            # Fallback to keyword matching
+            return self.domain_mapper.get_relevant_subtopics(
+                jd_text, resume_text, domain
+            )
         except Exception as e:
             print(f"Error in LLM subtopic identification: {e}, using fallback")
+            if 'response' in locals() and response and response.content:
+                print(f"Response content: {response.content[:200] if response.content else 'None'}")
             # Fallback to keyword matching
             return self.domain_mapper.get_relevant_subtopics(
                 jd_text, resume_text, domain
