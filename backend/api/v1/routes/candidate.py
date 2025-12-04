@@ -11,7 +11,18 @@ from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 from schemas.admin import AssignedQuestionResponse
+from schemas.test_session import (
+    StartTestRequest,
+    StartTestResponse,
+    HeartbeatRequest,
+    HeartbeatResponse,
+    CompleteTestRequest,
+    CompleteTestResponse,
+    TestStatusResponse,
+    TabCloseCompletionRequest
+)
 from services.question_assignment_service import QuestionAssignmentService
+from services.test_session_service import TestSessionService
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -239,4 +250,274 @@ async def get_assigned_question(
         )
     
     return AssignedQuestionResponse(**question_details)
+
+
+@router.post("/{candidate_id}/test/start", response_model=StartTestResponse)
+async def start_test(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: StartTestRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Start a test session for a candidate.
+    
+    Creates or resumes a test session, records test start time, and updates
+    candidate status to 'in progress'. Returns session details and remaining time.
+    
+    Only the authenticated candidate can start their own test.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: StartTestRequest with optional duration_minutes
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        StartTestResponse with session details and remaining time
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or error occurs
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to start another candidate's test
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only start your own test."
+        )
+    
+    test_session_service = TestSessionService(db)
+    response = test_session_service.create_test_session(candidate_id, request.duration_minutes)
+    
+    if not response.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
+
+
+@router.post("/{candidate_id}/test/heartbeat", response_model=HeartbeatResponse)
+async def update_heartbeat(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: HeartbeatRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Update heartbeat timestamp for a test session.
+    
+    This lightweight endpoint updates the last_heartbeat and last_activity
+    timestamps to track candidate activity. Returns server timestamp for timer sync.
+    
+    Only the authenticated candidate can update their own heartbeat.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: HeartbeatRequest with optional client_timestamp
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        HeartbeatResponse with server timestamp and remaining time
+        
+    Raises:
+        HTTPException: 
+            - 400: If no active test session found
+            - 401: If authentication fails
+            - 403: If user is not a candidate
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only update your own heartbeat."
+        )
+    
+    test_session_service = TestSessionService(db)
+    response = test_session_service.update_heartbeat(candidate_id)
+    
+    if not response.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
+
+
+@router.post("/{candidate_id}/test/complete", response_model=CompleteTestResponse)
+async def complete_test(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: CompleteTestRequest = ...,
+    completion_method: str = "manual",
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete a test session and save all answers.
+    
+    This endpoint saves all candidate answers (MCQ, Coding, System Design),
+    marks the test session as completed, and updates candidate status.
+    The endpoint is idempotent - safe to call multiple times.
+    
+    Only the authenticated candidate can complete their own test.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: CompleteTestRequest with all answers
+        completion_method: How test was completed ('manual', 'tab_close', 'timer_expired', etc.)
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        CompleteTestResponse with completion confirmation
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or error occurs
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to complete another candidate's test
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only complete your own test."
+        )
+    
+    # Validate completion_method
+    valid_methods = ['manual', 'tab_close', 'timer_expired', 'heartbeat_timeout', 'auto']
+    if completion_method not in valid_methods:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid completion_method. Must be one of: {', '.join(valid_methods)}"
+        )
+    
+    test_session_service = TestSessionService(db)
+    response = test_session_service.complete_test_session(candidate_id, completion_method, request)
+    
+    if not response.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
+
+
+@router.post("/{candidate_id}/test/complete-tab-close", response_model=CompleteTestResponse)
+async def complete_test_tab_close(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: TabCloseCompletionRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete test session on tab close (optimized for sendBeacon).
+    
+    This endpoint is specifically designed for tab closure detection.
+    It accepts a simplified request format optimized for sendBeacon API.
+    Automatically sets completion_method to 'tab_close'.
+    
+    Only the authenticated candidate can complete their own test.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: TabCloseCompletionRequest with answers in simplified format
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        CompleteTestResponse with completion confirmation
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or error occurs
+            - 401: If authentication fails
+            - 403: If user is not a candidate
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only complete your own test."
+        )
+    
+    # Convert TabCloseCompletionRequest to CompleteTestRequest format
+    # Convert simplified MCQ answers format to SaveMCQAnswerRequest
+    mcq_request = None
+    if request.mcq_answers:
+        from schemas.mcq import MCQAnswerItem
+        mcq_items = [
+            MCQAnswerItem(
+                question_uuid=item.get("question_uuid", ""),
+                candidate_answer=item.get("candidate_answer", "")
+            )
+            for item in request.mcq_answers
+        ]
+        from schemas.mcq import SaveMCQAnswerRequest
+        mcq_request = SaveMCQAnswerRequest(answers=mcq_items)
+    
+    complete_request = CompleteTestRequest(
+        mcq_answers=mcq_request,
+        coding_answers=request.coding_answers,
+        system_design_data=request.system_design_data,
+        sections_completed=request.sections_completed
+    )
+    
+    test_session_service = TestSessionService(db)
+    response = test_session_service.complete_test_session(candidate_id, "tab_close", complete_request)
+    
+    if not response.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response.message
+        )
+    
+    return response
+
+
+@router.get("/{candidate_id}/test/status", response_model=TestStatusResponse)
+async def get_test_status(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current test status for a candidate.
+    
+    Returns test session status, remaining time, sections completed,
+    and last activity timestamp. Used for page reload/recovery.
+    
+    Only the authenticated candidate can view their own test status.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        TestStatusResponse with current test status
+        
+    Raises:
+        HTTPException: 
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's status
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view your own test status."
+        )
+    
+    test_session_service = TestSessionService(db)
+    response = test_session_service.get_test_status(candidate_id)
+    
+    return response
 
