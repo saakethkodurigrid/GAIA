@@ -539,54 +539,6 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         
         return ChatMessageResponse(user_message=user_msg.model_dump(), ai_response=None)
     
-    async def check_proactive_prompts(self, session_id: str, candidate_id: Optional[str] = None) -> ProactivePromptResponse:
-        """Check if any proactive prompts should be triggered."""
-        session = self.get_session(session_id, candidate_id)
-        
-        current_time = time.time()
-        
-        # Adaptive polling: early return if user inactive > 60 seconds
-        # But allow checks for non-idle-dependent prompts (evaluation, mismatch, milestones)
-        if session.last_activity_time:
-            idle_time = current_time - session.last_activity_time
-            # Only skip if very inactive (> 60s) - this allows other prompt types to still trigger
-            if idle_time > 60:
-                # User inactive, but still check evaluation/milestone prompts
-                # Skip only event-driven prompts which require recent activity
-                pass  # Continue to check other prompt types
-        
-        # Track poll time to prevent duplicate checks
-        if session.last_poll_time:
-            time_since_last_poll = current_time - session.last_poll_time
-            if time_since_last_poll < 1:  # Less than 1 second since last poll
-                return ProactivePromptResponse(has_prompt=False, prompt=None)
-        
-        session.last_poll_time = current_time
-        
-        prompt = await self.orchestrator.check_proactive_prompts(session)
-        
-        if prompt:
-            # Check if this prompt was already added to chat history
-            recent_messages = session.chat_history[-5:] if len(session.chat_history) >= 5 else session.chat_history
-            prompt_already_exists = any(
-                msg.role == "assistant" and msg.content == prompt 
-                for msg in recent_messages
-            )
-            
-            if not prompt_already_exists:
-                # Add prompt as AI message to chat history
-                ai_msg = ChatMessage(
-                    role="assistant",
-                    content=prompt,
-                    timestamp=None
-                )
-                session.chat_history.append(ai_msg)
-                return ProactivePromptResponse(has_prompt=True, prompt=prompt)
-            else:
-                return ProactivePromptResponse(has_prompt=False, prompt=None)
-        
-        return ProactivePromptResponse(has_prompt=False, prompt=None)
-    
     def get_chat_history(self, session_id: str, candidate_id: Optional[str] = None) -> ChatHistoryResponse:
         """Get full chat history for a session."""
         session = self.get_session(session_id, candidate_id)
