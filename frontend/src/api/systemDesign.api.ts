@@ -397,12 +397,6 @@ export interface AssignedQuestionResponse {
   candidate_id: string;
   question_uuid: string;
   question: string;
-  evaluation_criteria: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tags?: Record<string, any> | null;
-  score?: number | null;
-  diagram?: string | null;
-  test_completed: boolean;
 }
 
 // Get Assigned Question API (from candidate endpoint)

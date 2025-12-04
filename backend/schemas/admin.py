@@ -92,11 +92,6 @@ class AssignedQuestionResponse(BaseModel):
     candidate_id: str
     question_uuid: str
     question: str
-    evaluation_criteria: str
-    tags: Optional[Dict[str, Any]] = None
-    score: Optional[int] = None
-    diagram: Optional[str] = None
-    test_completed: bool
 
 
 class AssignQuestionResponse(BaseModel):
@@ -104,6 +99,12 @@ class AssignQuestionResponse(BaseModel):
     success: bool
     message: str
     question_uuid: Optional[str] = None
+
+
+class CandidateBatchItemRequest(BaseModel):
+    """Request schema for individual candidate in batch."""
+    name: str = Field(..., min_length=1, max_length=255, description="Candidate name")
+    email: EmailStr = Field(..., description="Candidate email address")
 
 
 class CandidateBatchItemResponse(BaseModel):

@@ -3,8 +3,9 @@ Admin API routes for managing recruiters and admins.
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form
 from typing import List
+import json
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_admin
@@ -19,6 +20,7 @@ from schemas.admin import (
     ListInterviewsResponse,
     AddCandidatesBatchResponse,
     CandidateBatchItemResponse,
+    CandidateBatchItemRequest,
     FailedFileResponse,
     ResumesListResponse,
     ResumeCandidateResponse,
@@ -284,29 +286,30 @@ async def list_today_interviews(
 @router.post("/jobs/{job_id}/candidates/batch", response_model=AddCandidatesBatchResponse)
 async def add_candidates_batch(
     job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
+    candidates_data: str = Form(..., description="JSON array of candidate objects with name and email"),
     files: List[UploadFile] = File(..., description="Resume files (PDF or DOCX, max 10 files)"),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Add candidates in batch (up to 10) to a job from resume files.
+    Add candidates in batch (up to 10) to a job.
     
-    This endpoint processes PDF/DOCX resume files:
-    1. Extracts text from files
-    2. Extracts PII (name, email, phone, location) for candidate record fields only
+    This endpoint processes candidate data with resume files:
+    1. Accepts candidate name, email, and resume file for each candidate
+    2. Extracts text from resume files
     3. Scrubs PII from resume text (for storage and scoring)
     4. Calculates resume score using scrubbed resume (NO PII)
-    5. Creates candidate records with scrubbed resume
+    5. Creates candidate records with provided name/email and scrubbed resume
     6. Assigns candidates to the specified job
     
-    PII Details:
-    - PII is extracted ONLY for candidate record fields (name, email, phone, location)
-    - PII is NOT used in resume scoring
-    - PII is NOT stored in candidate.resume column (only scrubbed text is stored)
+    Request Format:
+    - candidates_data: JSON string array of objects: [{"name": "John Doe", "email": "john@example.com"}, ...]
+    - files: List of resume files matching the order of candidates_data
     
     Args:
         job_id: Job reference number (e.g., JD-783901) of the job to assign candidates to
-        files: List of resume files (PDF or DOCX, maximum 10 files)
+        candidates_data: JSON string array of candidate objects with name and email
+        files: List of resume files (PDF or DOCX, maximum 10 files) matching candidates_data order
         current_user: Current recruiter/admin user (verified by dependency)
         db: Database session
         
@@ -315,23 +318,58 @@ async def add_candidates_batch(
         
     Raises:
         HTTPException: 
-            - 400: If validation fails, too many files, or processing errors
+            - 400: If validation fails, too many candidates, or processing errors
             - 401: If authentication fails
             - 403: If user is not a recruiter or admin
             - 404: If job not found
     """
-    # Validate file count
-    if len(files) > 10:
+    # Parse candidates data
+    try:
+        candidates_list = json.loads(candidates_data)
+        if not isinstance(candidates_list, list):
+            raise ValueError("candidates_data must be a JSON array")
+    except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Maximum 10 files allowed. Received {len(files)} files."
+            detail=f"Invalid JSON format in candidates_data: {str(e)}"
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
     
-    if len(files) == 0:
+    # Validate candidate count
+    if len(candidates_list) > 10:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one file is required"
+            detail=f"Maximum 10 candidates allowed. Received {len(candidates_list)} candidates."
         )
+    
+    if len(candidates_list) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one candidate is required"
+        )
+    
+    # Validate files match candidates count
+    if len(files) != len(candidates_list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
+        )
+    
+    # Validate and parse candidate data
+    validated_candidates = []
+    for idx, candidate in enumerate(candidates_list):
+        try:
+            validated_candidate = CandidateBatchItemRequest(**candidate)
+            validated_candidates.append(validated_candidate)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid candidate data at index {idx}: {str(e)}"
+            )
     
     # Validate file types
     allowed_extensions = {'pdf', 'docx', 'doc'}
@@ -360,11 +398,20 @@ async def add_candidates_batch(
             detail=str(e)
         )
     
+    # Prepare candidate data with files
+    candidate_data_list = []
+    for candidate, file in zip(validated_candidates, files):
+        candidate_data_list.append({
+            "name": candidate.name,
+            "email": candidate.email,
+            "file": file
+        })
+    
     # Process batch
     batch_service = CandidateBatchService(db)
     result = await batch_service.process_batch_candidates(
         job_id=job.job_id,  # Use UUID from fetched job object
-        files=files,
+        candidate_data_list=candidate_data_list,
         recruiter_email=current_user.email_id
     )
     

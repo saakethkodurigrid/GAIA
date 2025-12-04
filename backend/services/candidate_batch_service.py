@@ -92,34 +92,34 @@ class CandidateBatchService:
     async def process_batch_candidates(
         self,
         job_id: str,
-        files: List[UploadFile],
+        candidate_data_list: List[Dict[str, Any]],
         recruiter_email: str
     ) -> Dict[str, Any]:
         """
-        Process batch of candidate resumes (up to 10 files).
+        Process batch of candidates (up to 10) with provided name, email, and resume files.
         
         Flow:
-        1. Extract text from PDF/DOCX files
-        2. Extract PII details (for candidate fields only)
-        3. Scrub PII from resume text
+        1. Extract text from PDF/DOCX resume files
+        2. Use provided name and email (no PII extraction needed)
+        3. Scrub PII from resume text (for storage and scoring)
         4. Calculate resume score (using scrubbed resume)
-        5. Create candidate records
+        5. Create candidate records with provided name/email
         6. Assign candidates to job
         
         Args:
             job_id: Job UUID
-            files: List of UploadFile objects (PDF/DOCX)
+            candidate_data_list: List of dicts with keys: name, email, file (UploadFile)
             recruiter_email: Email of recruiter/admin
             
         Returns:
             Dictionary with processing results
         """
-        # Validate file count
-        if len(files) > 10:
+        # Validate candidate count
+        if len(candidate_data_list) > 10:
             return {
                 "success": False,
-                "message": f"Maximum 10 files allowed. Received {len(files)} files.",
-                "total_files": len(files),
+                "message": f"Maximum 10 candidates allowed. Received {len(candidate_data_list)} candidates.",
+                "total_files": len(candidate_data_list),
                 "successful": 0,
                 "failed": 0,
                 "candidates": [],
@@ -132,7 +132,7 @@ class CandidateBatchService:
             return {
                 "success": False,
                 "message": f"Job with ID {job_id} not found",
-                "total_files": len(files),
+                "total_files": len(candidate_data_list),
                 "successful": 0,
                 "failed": 0,
                 "candidates": [],
@@ -142,8 +142,12 @@ class CandidateBatchService:
         successful_candidates = []
         failed_files = []
         
-        # Process each file
-        for file in files:
+        # Process each candidate
+        for candidate_data in candidate_data_list:
+            name = candidate_data["name"]
+            email = candidate_data["email"]
+            file = candidate_data["file"]
+            
             try:
                 # Step 1: Extract text from file
                 original_text = file_extractor.extract_text(file)
@@ -154,17 +158,7 @@ class CandidateBatchService:
                     })
                     continue
                 
-                # Step 2: Extract PII details (ONLY for candidate record fields)
-                pii_data = self.extract_pii_for_candidate_fields(original_text)
-                
-                # Validate required fields
-                if not pii_data.get("name"):
-                    pii_data["name"] = f"Unknown_{uuid.uuid4().hex[:8]}"
-                if not pii_data.get("email"):
-                    # Generate placeholder email if not found
-                    pii_data["email"] = f"candidate_{uuid.uuid4().hex[:8]}@placeholder.com"
-                
-                # Step 3: Scrub PII from resume text (for processing and storage)
+                # Step 2: Scrub PII from resume text (for processing and storage)
                 scrubbed_resume = pii_scrubber.scrub_pii(original_text)
                 
                 # Validate no PII remains
@@ -172,7 +166,7 @@ class CandidateBatchService:
                     logger.warning(f"PII still detected in scrubbed resume for {file.filename}. Re-scrubbing...")
                     scrubbed_resume = pii_scrubber.scrub_pii(scrubbed_resume)
                 
-                # Step 4: Calculate resume score (using SCRUBBED resume, NO PII)
+                # Step 3: Calculate resume score (using SCRUBBED resume, NO PII)
                 resume_score = await resume_scorer.calculate_score(
                     scrubbed_resume=scrubbed_resume,  # NO PII
                     job_description=job.job_description
@@ -182,7 +176,7 @@ class CandidateBatchService:
                 # Uses RESUME_SCORE_THRESHOLD from config (candidates with score >= threshold are shortlisted)
                 initial_status = 'shortlisted' if resume_score >= settings.RESUME_SCORE_THRESHOLD else 'rejected'
                 
-                # Step 5: Create candidate record
+                # Step 4: Create candidate record
                 candidate_id = str(uuid.uuid4())
                 
                 # Check if candidate with this email is already assigned to THIS SPECIFIC JOB
@@ -191,23 +185,23 @@ class CandidateBatchService:
                     Candidate,
                     RecruiterAdminCandidate.candidate_id == Candidate.candidate_id
                 ).filter(
-                    Candidate.email_id == pii_data["email"].lower(),
+                    Candidate.email_id == email.lower(),
                     RecruiterAdminCandidate.job_id == job_id
                 ).first()
                 
                 if existing_assignment:
                     failed_files.append({
                         "filename": file.filename or "unknown",
-                        "error": f"Candidate with email {pii_data['email']} is already assigned to this job"
+                        "error": f"Candidate with email {email} is already assigned to this job"
                     })
                     continue
                 
                 new_candidate = Candidate(
                     candidate_id=candidate_id,
-                    name=pii_data["name"],  # From PII extraction
-                    email_id=pii_data["email"].lower(),  # From PII extraction
-                    phone_number=pii_data.get("phone"),  # From PII extraction (optional)
-                    location=pii_data.get("location"),  # From PII extraction (optional)
+                    name=name,  # From provided data
+                    email_id=email.lower(),  # From provided data
+                    phone_number=None,  # Not provided, can be updated later
+                    location=None,  # Not provided, can be updated later
                     resume=scrubbed_resume,  # NO PII, scrubbed version
                     resume_score=resume_score,  # Calculated from scrubbed resume
                     role_id=0,  # Candidate role
@@ -216,7 +210,7 @@ class CandidateBatchService:
                 
                 self.db.add(new_candidate)
                 
-                # Step 6: Assign candidate to job
+                # Step 5: Assign candidate to job
                 assignment = RecruiterAdminCandidate(
                     recruiter_admin_email=recruiter_email.lower(),
                     candidate_id=candidate_id,
@@ -227,7 +221,7 @@ class CandidateBatchService:
                 self.db.add(assignment)
                 self.db.commit()
                 
-                # Step 7: Send scheduling invitation email AUTOMATICALLY if candidate is shortlisted
+                # Step 6: Send scheduling invitation email AUTOMATICALLY if candidate is shortlisted
                 if initial_status == 'shortlisted' and resume_score >= settings.RESUME_SCORE_THRESHOLD:
                     try:
                         # Get job role for email
@@ -243,8 +237,8 @@ class CandidateBatchService:
                             try:
                                 asyncio.run(
                                     email_service.send_scheduling_invitation_email(
-                                        candidate_email=pii_data["email"].lower(),
-                                        candidate_name=pii_data["name"],
+                                        candidate_email=email.lower(),
+                                        candidate_name=name,
                                         candidate_id=candidate_id,
                                         job_role=job_role,
                                         resume_score=resume_score
@@ -260,12 +254,12 @@ class CandidateBatchService:
                         logger.info(f"Scheduling invitation email queued for candidate {candidate_id}")
                     except Exception as e:
                         # Don't fail candidate creation if email fails
-                        logger.error(f"Failed to queue scheduling invitation email to {pii_data['email']}: {str(e)}")
+                        logger.error(f"Failed to queue scheduling invitation email to {email}: {str(e)}")
                 
                 successful_candidates.append({
                     "candidate_id": candidate_id,
-                    "name": pii_data["name"],
-                    "email_id": pii_data["email"],
+                    "name": name,
+                    "email_id": email,
                     "status": initial_status,  # 'shortlisted' or 'rejected'
                     "resume_score": round(resume_score, 2),
                     "processing_status": "success",
@@ -281,7 +275,7 @@ class CandidateBatchService:
                 continue
             except Exception as e:
                 self.db.rollback()
-                logger.error(f"Error processing file {file.filename}: {str(e)}")
+                logger.error(f"Error processing candidate {name} ({email}): {str(e)}")
                 failed_files.append({
                     "filename": file.filename or "unknown",
                     "error": f"Processing error: {str(e)}"
@@ -289,11 +283,11 @@ class CandidateBatchService:
                 continue
         
         # Build response
-        total_files = len(files)
+        total_files = len(candidate_data_list)
         successful_count = len(successful_candidates)
         failed_count = len(failed_files)
         
-        message = f"Processed {total_files} file(s). {successful_count} successful, {failed_count} failed."
+        message = f"Processed {total_files} candidate(s). {successful_count} successful, {failed_count} failed."
         
         return {
             "success": failed_count == 0,

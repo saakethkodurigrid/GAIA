@@ -21,7 +21,7 @@ from utils.system_design.guardrails import guardrails
 from schemas.system_design import (
     SessionCreateRequest, SessionResponse, QuestionResponse, QuestionsResponse,
     ChatMessageRequest, ChatMessageResponse, CanvasUpdateRequest, CanvasUpdateResponse,
-    ProactivePromptResponse, ChatHistoryResponse, FinalReportResponse
+    ChatHistoryResponse, FinalReportResponse
 )
 
 

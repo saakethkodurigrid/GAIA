@@ -75,12 +75,6 @@ class CanvasUpdateResponse(BaseModel):
     evaluation_message: Optional[str] = None
 
 
-class ProactivePromptResponse(BaseModel):
-    """Response schema for proactive prompt check."""
-    has_prompt: bool
-    prompt: Optional[str] = None
-
-
 class ChatHistoryResponse(BaseModel):
     """Response schema for chat history."""
     messages: List[Dict[str, Any]]

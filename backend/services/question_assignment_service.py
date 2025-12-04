@@ -269,24 +269,10 @@ class QuestionAssignmentService:
             if not question:
                 return None
             
-            import json
-            tags_data = json.loads(question.tags) if isinstance(question.tags, str) else question.tags
-            
-            # Convert list to dictionary format if needed
-            if isinstance(tags_data, list):
-                tags_data = {tag: True for tag in tags_data}
-            elif not isinstance(tags_data, dict):
-                tags_data = None
-            
             return {
                 "candidate_id": candidate_id,
                 "question_uuid": assignment.question_uuid,
-                "question": question.question,
-                "evaluation_criteria": question.evaluation_criteria,
-                "tags": tags_data,
-                "score": assignment.score,
-                "diagram": assignment.diagram,
-                "test_completed": assignment.score is not None
+                "question": question.question
             }
             
         except Exception as e:

@@ -1,11 +1,7 @@
 """
 System Design API routes for interview-related operations.
 """
-import asyncio
-import json
-import time
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_candidate
@@ -14,7 +10,7 @@ from services.system_design_service import SystemDesignService
 from schemas.system_design import (
     SessionCreateRequest, SessionResponse,
     ChatMessageRequest, ChatMessageResponse, CanvasUpdateRequest, CanvasUpdateResponse,
-    ProactivePromptResponse, ChatHistoryResponse, FinalReportResponse
+    ChatHistoryResponse, FinalReportResponse
 )
 
 router = APIRouter(prefix="/system-design", tags=["System Design"])
@@ -142,46 +138,6 @@ async def send_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error sending message: {str(e)}"
-        )
-
-
-@router.get("/sessions/{session_id}/check-prompts", response_model=ProactivePromptResponse)
-async def check_proactive_prompts(
-    session_id: str = Path(..., description="Session ID"),
-    current_candidate: Candidate = Depends(get_current_candidate),
-    db: Session = Depends(get_db)
-):
-    """
-    Check if any proactive prompts should be triggered.
-    Frontend should poll this endpoint periodically (every 5-10 seconds).
-    Consider using /prompts-stream endpoint for better performance.
-    
-    Args:
-        session_id: Session ID
-        current_candidate: Authenticated candidate (from dependency)
-        db: Database session
-        
-    Returns:
-        ProactivePromptResponse with prompt if available
-    """
-    try:
-        service = SystemDesignService(db)
-        
-        # Verify session belongs to candidate
-        session = service.get_session(session_id, current_candidate.candidate_id)
-        if session.candidate_id != current_candidate.candidate_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Session does not belong to this candidate."
-            )
-        
-        return await service.check_proactive_prompts(session_id, current_candidate.candidate_id)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error checking prompts: {str(e)}"
         )
 
 
