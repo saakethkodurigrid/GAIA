@@ -174,7 +174,14 @@ export interface ProactivePromptResponse {
   prompt?: string | null;
 }
 
-// Check Proactive Prompts API
+export interface SSEPromptEvent {
+  has_prompt: boolean;
+  prompt?: string | null;
+  closed?: boolean;
+  error?: string;
+}
+
+// Check Proactive Prompts API (kept for backward compatibility, but prefer SSE)
 export const checkProactivePrompts = async (sessionId: string): Promise<ProactivePromptResponse> => {
   const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/check-prompts`, {
     method: 'GET',
@@ -189,6 +196,121 @@ export const checkProactivePrompts = async (sessionId: string): Promise<Proactiv
   }
 
   return response.json();
+};
+
+// SSE Stream for Proactive Prompts
+// Returns an AbortController to allow cleanup
+export const createProactivePromptsStream = (
+  sessionId: string,
+  onMessage: (event: SSEPromptEvent) => void,
+  onError?: (error: Error) => void,
+  onClose?: () => void
+): AbortController => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('No authentication token available');
+  }
+
+  const abortController = new AbortController();
+
+  const url = `${API_BASE_URL}/system-design/sessions/${sessionId}/prompts-stream`;
+
+  // Use fetch with ReadableStream to support custom headers (EventSource doesn't support headers)
+  fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'text/event-stream',
+    },
+    signal: abortController.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body reader available');
+      }
+
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          onClose?.();
+          break;
+        }
+
+        // Decode the chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages (separated by \n\n)
+        const messages = buffer.split('\n\n');
+        buffer = messages.pop() || ''; // Keep incomplete message in buffer
+
+        for (const message of messages) {
+          if (message.trim() === '') continue;
+
+          // Parse SSE format: "data: {...}" (handle multi-line data fields)
+          const lines = message.split('\n');
+          let dataContent = '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              // If we already have content, append with newline (multi-line data)
+              if (dataContent) {
+                dataContent += '\n' + line.substring(6);
+              } else {
+                dataContent = line.substring(6);
+              }
+            } else if (line.startsWith(':')) {
+              // Comment line, ignore
+              continue;
+            } else if (line.trim() === '') {
+              // Empty line, ignore
+              continue;
+            }
+          }
+
+          if (dataContent) {
+            try {
+              const data: SSEPromptEvent = JSON.parse(dataContent);
+              onMessage(data);
+
+              // Handle stream closure
+              if (data.closed) {
+                abortController.abort();
+                onClose?.();
+                return;
+              }
+
+              // Handle errors from stream
+              if (data.error) {
+                onError?.(new Error(data.error));
+              }
+            } catch (error) {
+              console.error('Error parsing SSE message:', error, 'Content:', dataContent);
+              onError?.(error as Error);
+            }
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      if (error.name === 'AbortError') {
+        // Clean abort, don't treat as error
+        return;
+      }
+      console.error('SSE connection error:', error);
+      onError?.(error);
+    });
+
+  return abortController;
 };
 
 // Chat History Types

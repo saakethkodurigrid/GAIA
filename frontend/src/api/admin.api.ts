@@ -109,46 +109,76 @@ export const listJobs = async (): Promise<ListJobsResponse> => {
   return response.json();
 };
 
+export interface CandidateEntry {
+  name: string;
+  email: string;
+  file: File;
+}
+
 /**
- * Upload multiple resume files (batch) for a job
+ * Upload multiple resume files (batch) for a job with candidate information
  */
 export const uploadCandidatesBatch = async (
   jobId: string,
-  files: File[]
+  candidates: CandidateEntry[]
 ): Promise<AddCandidatesBatchResponse> => {
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  // Validate file count
-  if (files.length === 0) {
-    throw new Error('At least one file is required');
+  // Validate candidate count
+  if (candidates.length === 0) {
+    throw new Error('At least one candidate is required');
   }
 
-  if (files.length > 10) {
-    throw new Error('Maximum 10 files allowed');
+  if (candidates.length > 10) {
+    throw new Error('Maximum 10 candidates allowed');
   }
 
-  // Validate file types
+  // Validate file types and required fields
   const allowedExtensions = ['pdf', 'docx', 'doc'];
   const invalidFiles: string[] = [];
+  const missingFields: string[] = [];
   
-  files.forEach((file) => {
-    const extension = file.name.toLowerCase().split('.').pop() || '';
-    if (!allowedExtensions.includes(extension)) {
-      invalidFiles.push(file.name);
+  candidates.forEach((candidate, index) => {
+    // Validate name
+    if (!candidate.name || candidate.name.trim() === '') {
+      missingFields.push(`Candidate ${index + 1}: Name is required`);
+    }
+    
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!candidate.email || !emailRegex.test(candidate.email)) {
+      missingFields.push(`Candidate ${index + 1}: Valid email is required`);
+    }
+    
+    // Validate file
+    if (!candidate.file) {
+      missingFields.push(`Candidate ${index + 1}: Resume file is required`);
+    } else {
+      const extension = candidate.file.name.toLowerCase().split('.').pop() || '';
+      if (!allowedExtensions.includes(extension)) {
+        invalidFiles.push(candidate.file.name);
+      }
     }
   });
+
+  if (missingFields.length > 0) {
+    throw new Error(`Missing required fields: ${missingFields.join('; ')}`);
+  }
 
   if (invalidFiles.length > 0) {
     throw new Error(`Invalid file types. Only PDF and DOCX are allowed. Invalid files: ${invalidFiles.join(', ')}`);
   }
 
-  // Create FormData
+  // Create FormData with files and candidate data
   const formData = new FormData();
-  files.forEach((file) => {
-    formData.append('files', file);
+  
+  candidates.forEach((candidate, index) => {
+    formData.append('files', candidate.file);
+    formData.append(`candidate_${index}_name`, candidate.name.trim());
+    formData.append(`candidate_${index}_email`, candidate.email.trim().toLowerCase());
   });
 
   const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch`, {

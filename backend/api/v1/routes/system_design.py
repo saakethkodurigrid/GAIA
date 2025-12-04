@@ -333,8 +333,8 @@ async def stream_proactive_prompts(
         
         try:
             while True:
-                # Check for new prompts every 2-3 seconds
-                await asyncio.sleep(2)
+                # Check for new prompts every 1 second for faster response
+                await asyncio.sleep(1)
                 
                 # Only check if enough time has passed since last activity
                 current_time = time.time()

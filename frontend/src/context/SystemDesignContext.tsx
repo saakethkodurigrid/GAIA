@@ -9,6 +9,7 @@ import {
   getAssignedQuestion,
   getChatHistory,
   checkProactivePrompts,
+  createProactivePromptsStream,
   endSession
 } from '../api/systemDesign.api';
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
@@ -32,6 +33,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionCreatedRef = useRef(false);
   const proactivePromptIntervalRef = useRef<number | null>(null);
+  const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
 
   // Create session and load question on mount
   useEffect(() => {
@@ -180,48 +183,145 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     initializeSession();
   }, [user?.candidateId]);
 
-  // Poll for proactive prompts
+  // SSE connection for proactive prompts
   useEffect(() => {
     if (!sessionId) return;
 
-    // Check for prompts every 5 seconds
-    const checkPrompts = async () => {
-      try {
-        const promptResponse = await checkProactivePrompts(sessionId);
-        if (promptResponse.has_prompt && promptResponse.prompt) {
-          // Add proactive prompt as assistant message
-          const proactiveMessage: ChatMessage = {
-            id: `proactive-${Date.now()}`,
-            role: 'assistant',
-            content: promptResponse.prompt,
-            timestamp: new Date(),
-          };
-          
-          // Check if this prompt was already shown
-          setChatMessages((prev) => {
-            const exists = prev.some(
-              (msg) => msg.role === 'assistant' && msg.content === promptResponse.prompt
-            );
-            if (!exists) {
-              return [...prev, proactiveMessage];
-            }
-            return prev;
-          });
-        }
-      } catch (error) {
-        console.error('Error checking proactive prompts:', error);
+    // Cleanup function
+    const cleanup = () => {
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
     };
 
-    // Initial check
-    checkPrompts();
+    // Function to handle SSE messages
+    const handleSSEMessage = (event: { has_prompt: boolean; prompt?: string | null; closed?: boolean; error?: string }) => {
+      if (event.has_prompt && event.prompt) {
+        // Add proactive prompt as assistant message
+        const proactiveMessage: ChatMessage = {
+          id: `proactive-${Date.now()}`,
+          role: 'assistant',
+          content: event.prompt,
+          timestamp: new Date(),
+        };
+        
+        // Check if this prompt was already shown
+        setChatMessages((prev) => {
+          const exists = prev.some(
+            (msg) => msg.role === 'assistant' && msg.content === event.prompt
+          );
+          if (!exists) {
+            return [...prev, proactiveMessage];
+          }
+          return prev;
+        });
+      }
 
-    // Set up interval
-    proactivePromptIntervalRef.current = window.setInterval(checkPrompts, 5000);
+      // Handle stream closure
+      if (event.closed) {
+        console.log('SSE stream closed by server (no activity)');
+        cleanup();
+      }
+
+      // Handle errors from stream
+      if (event.error) {
+        console.error('SSE stream error:', event.error);
+      }
+    };
+
+    // Function to handle SSE errors
+    const handleSSEError = (error: Error) => {
+      console.error('SSE connection error:', error);
+      
+      // Cleanup current connection
+      cleanup();
+
+      // Attempt to reconnect after 3 seconds
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        if (sessionId) {
+          console.log('Attempting to reconnect SSE stream...');
+          try {
+            sseAbortControllerRef.current = createProactivePromptsStream(
+              sessionId,
+              handleSSEMessage,
+              handleSSEError,
+              () => {
+                console.log('SSE stream closed');
+                cleanup();
+              }
+            );
+          } catch (err) {
+            console.error('Failed to reconnect SSE stream:', err);
+            // Try again after another 3 seconds
+            reconnectTimeoutRef.current = window.setTimeout(() => {
+              if (sessionId) {
+                try {
+                  sseAbortControllerRef.current = createProactivePromptsStream(
+                    sessionId,
+                    handleSSEMessage,
+                    handleSSEError,
+                    () => {
+                      console.log('SSE stream closed');
+                      cleanup();
+                    }
+                  );
+                } catch (reconnectErr) {
+                  console.error('Failed to reconnect SSE stream after retry:', reconnectErr);
+                }
+              }
+            }, 3000);
+          }
+        }
+      }, 3000);
+    };
+
+    // Function to handle SSE close
+    const handleSSEClose = () => {
+      console.log('SSE stream closed');
+      cleanup();
+    };
+
+    // Create SSE connection
+    try {
+      console.log('Setting up SSE connection for proactive prompts...');
+      sseAbortControllerRef.current = createProactivePromptsStream(
+        sessionId,
+        handleSSEMessage,
+        handleSSEError,
+        handleSSEClose
+      );
+    } catch (error) {
+      console.error('Failed to create SSE stream:', error);
+      // Fallback to polling if SSE fails
+      console.log('Falling back to polling for proactive prompts...');
+      const checkPrompts = async () => {
+        try {
+          const promptResponse = await checkProactivePrompts(sessionId);
+          if (promptResponse.has_prompt && promptResponse.prompt) {
+            handleSSEMessage(promptResponse);
+          }
+        } catch (err) {
+          console.error('Error checking proactive prompts (fallback):', err);
+        }
+      };
+
+      // Initial check
+      checkPrompts();
+
+      // Set up interval as fallback
+      proactivePromptIntervalRef.current = window.setInterval(checkPrompts, 5000);
+    }
 
     return () => {
+      cleanup();
       if (proactivePromptIntervalRef.current) {
         clearInterval(proactivePromptIntervalRef.current);
+        proactivePromptIntervalRef.current = null;
       }
     };
   }, [sessionId]);

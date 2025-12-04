@@ -546,11 +546,14 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         current_time = time.time()
         
         # Adaptive polling: early return if user inactive > 60 seconds
+        # But allow checks for non-idle-dependent prompts (evaluation, mismatch, milestones)
         if session.last_activity_time:
             idle_time = current_time - session.last_activity_time
+            # Only skip if very inactive (> 60s) - this allows other prompt types to still trigger
             if idle_time > 60:
-                # User inactive, skip processing
-                return ProactivePromptResponse(has_prompt=False, prompt=None)
+                # User inactive, but still check evaluation/milestone prompts
+                # Skip only event-driven prompts which require recent activity
+                pass  # Continue to check other prompt types
         
         # Track poll time to prevent duplicate checks
         if session.last_poll_time:

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse } from '../api/admin.api';
+import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry } from '../api/admin.api';
 
 const JobDetailsPage = () => {
   const { user, logout } = useAuth();
@@ -17,7 +17,10 @@ const JobDetailsPage = () => {
   
   const [activeTab, setActiveTab] = useState<'resumes' | 'scheduled' | 'completed'>('resumes');
   const [showJobDescriptionModal, setShowJobDescriptionModal] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [candidates, setCandidates] = useState<Array<Omit<CandidateEntry, 'file'> & { file: File | null }>>([
+    { name: '', email: '', file: null }
+  ]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -30,7 +33,7 @@ const JobDetailsPage = () => {
   const [completedInterviews, setCompletedInterviews] = useState<CompletedInterviewCandidateResponse[]>([]);
   const [isLoadingCompletedInterviews, setIsLoadingCompletedInterviews] = useState(false);
   const [completedInterviewsError, setCompletedInterviewsError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleLogout = () => {
     logout();
@@ -219,60 +222,87 @@ const JobDetailsPage = () => {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    
-    // Validate file types
-    const allowedExtensions = ['pdf', 'docx', 'doc'];
-    const validFiles: File[] = [];
-    const invalidFiles: string[] = [];
-    
-    files.forEach((file) => {
-      const extension = file.name.toLowerCase().split('.').pop() || '';
-      if (allowedExtensions.includes(extension)) {
-        validFiles.push(file);
-      } else {
-        invalidFiles.push(file.name);
-      }
-    });
+  const handleUploadClick = () => {
+    setShowUploadModal(true);
+    setCandidates([{ name: '', email: '', file: null }]);
+    setUploadError(null);
+    fileInputRefs.current = [null];
+  };
 
-    if (invalidFiles.length > 0) {
-      setUploadError(`Invalid file types. Only PDF and DOCX are allowed. Invalid files: ${invalidFiles.join(', ')}`);
-      setTimeout(() => setUploadError(null), 5000);
+  const handleAddCandidate = () => {
+    if (candidates.length < 10) {
+      setCandidates([...candidates, { name: '', email: '', file: null }]);
+      fileInputRefs.current.push(null);
     }
+  };
 
-    if (validFiles.length > 0) {
-      // Check total file count (max 10)
-      const totalFiles = selectedFiles.length + validFiles.length;
-      if (totalFiles > 10) {
-        setUploadError(`Maximum 10 files allowed. You have ${selectedFiles.length} selected and trying to add ${validFiles.length} more.`);
+  const handleRemoveCandidate = (index: number) => {
+    if (candidates.length > 1) {
+      setCandidates(candidates.filter((_, i) => i !== index));
+      // Clean up file input ref
+      fileInputRefs.current = fileInputRefs.current.filter((_, i) => i !== index);
+    }
+  };
+
+  const handleCandidateNameChange = (index: number, name: string) => {
+    const updated = [...candidates];
+    updated[index].name = name;
+    setCandidates(updated);
+  };
+
+  const handleCandidateEmailChange = (index: number, email: string) => {
+    const updated = [...candidates];
+    updated[index].email = email;
+    setCandidates(updated);
+  };
+
+  const handleCandidateFileChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const allowedExtensions = ['pdf', 'docx', 'doc'];
+      const extension = file.name.toLowerCase().split('.').pop() || '';
+      
+      if (!allowedExtensions.includes(extension)) {
+        setUploadError(`Invalid file type for candidate ${index + 1}. Only PDF and DOCX are allowed.`);
         setTimeout(() => setUploadError(null), 5000);
         return;
       }
-      
-      setSelectedFiles((prev) => [...prev, ...validFiles]);
+
+      const updated = [...candidates];
+      updated[index].file = file;
+      setCandidates(updated);
       setUploadError(null);
     }
+  };
 
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleModalSubmit = async () => {
+    // Validate all candidates and filter out invalid ones
+    const validCandidates: CandidateEntry[] = [];
+    for (const candidate of candidates) {
+      if (candidate.name.trim() && candidate.email.trim() && candidate.file !== null) {
+        validCandidates.push({
+          name: candidate.name.trim(),
+          email: candidate.email.trim(),
+          file: candidate.file
+        });
+      }
     }
-  };
-
-  const handleRemoveFile = (index: number) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) {
-      setUploadError('Please select at least one file to upload');
+    
+    if (validCandidates.length === 0) {
+      setUploadError('Please add at least one candidate with name, email, and resume file.');
       setTimeout(() => setUploadError(null), 5000);
       return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    for (let i = 0; i < validCandidates.length; i++) {
+      if (!emailRegex.test(validCandidates[i].email)) {
+        setUploadError(`Invalid email format for candidate ${i + 1}.`);
+        setTimeout(() => setUploadError(null), 5000);
+        return;
+      }
     }
 
     // Validate jobId is in the format JD-XXXXXX (e.g., JD-783901)
@@ -288,19 +318,21 @@ const JobDetailsPage = () => {
     setUploadSuccess(null);
 
     try {
-      const response = await uploadCandidatesBatch(jobId, selectedFiles);
+      const response = await uploadCandidatesBatch(jobId, validCandidates);
       
       if (response.success) {
-        let successMsg = `Successfully uploaded ${response.successful} resume(s)`;
+        let successMsg = `Successfully uploaded ${response.successful} candidate(s)`;
         
         // Add details about failed files if any
         if (response.failed > 0 && response.failed_files && response.failed_files.length > 0) {
           const failedFileNames = response.failed_files.map(f => f.filename).join(', ');
-          successMsg += `. ${response.failed} file(s) failed: ${failedFileNames}`;
+          successMsg += `. ${response.failed} candidate(s) failed: ${failedFileNames}`;
         }
         
         setUploadSuccess(successMsg);
-        setSelectedFiles([]);
+        setShowUploadModal(false);
+        setCandidates([{ name: '', email: '', file: null }]);
+        fileInputRefs.current = [];
         
         // Refresh resumes list after successful upload
         await fetchResumes();
@@ -311,22 +343,31 @@ const JobDetailsPage = () => {
         }, 7000);
       } else {
         // Handle partial success or complete failure
-        let errorMsg = response.message || 'Failed to upload resumes';
+        let errorMsg = response.message || 'Failed to upload candidates';
         
         if (response.failed_files && response.failed_files.length > 0) {
           const failedDetails = response.failed_files.map(f => `${f.filename}: ${f.error}`).join('; ');
-          errorMsg += `. Failed files: ${failedDetails}`;
+          errorMsg += `. Failed candidates: ${failedDetails}`;
         }
         
         setUploadError(errorMsg);
         setTimeout(() => setUploadError(null), 8000);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to upload resumes. Please try again.';
+      const errorMessage = err instanceof Error ? err.message : 'Failed to upload candidates. Please try again.';
       setUploadError(errorMessage);
       setTimeout(() => setUploadError(null), 5000);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleModalClose = () => {
+    if (!isUploading) {
+      setShowUploadModal(false);
+      setCandidates([{ name: '', email: '', file: null }]);
+      setUploadError(null);
+      fileInputRefs.current = [];
     }
   };
 
@@ -426,14 +467,6 @@ const JobDetailsPage = () => {
                       <h2 className="text-xl font-bold text-gray-900">Uploaded Resumes</h2>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept=".pdf,.docx,.doc"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
                       <button
                         onClick={handleUploadClick}
                         disabled={isUploading}
@@ -444,75 +477,8 @@ const JobDetailsPage = () => {
                         </svg>
                         Upload Resume
                       </button>
-                      {selectedFiles.length > 0 && (
-                        <button
-                          onClick={handleUpload}
-                          disabled={isUploading}
-                          className="bg-green-500 text-white px-4 py-2 rounded-lg font-semibold text-base hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isUploading ? (
-                            <>
-                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Uploading...
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              Upload {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}
-                            </>
-                          )}
-                        </button>
-                      )}
                     </div>
                   </div>
-
-                  {/* Selected Files List */}
-                  {selectedFiles.length > 0 && (
-                    <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-semibold text-gray-700">
-                          Selected Files ({selectedFiles.length}/10)
-                        </h3>
-                        <button
-                          onClick={() => setSelectedFiles([])}
-                          className="text-sm text-red-600 hover:text-red-800"
-                        >
-                          Clear All
-                        </button>
-                      </div>
-                      <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {selectedFiles.map((file, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between p-2 bg-white rounded border border-gray-200"
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <svg className="w-5 h-5 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                              <span className="text-xs text-gray-500 flex-shrink-0">
-                                ({(file.size / 1024).toFixed(1)} KB)
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveFile(index)}
-                              className="ml-2 text-red-600 hover:text-red-800 flex-shrink-0"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Upload Messages */}
                   {uploadError && (
@@ -768,6 +734,176 @@ const JobDetailsPage = () => {
                     No job description available.
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Candidates Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative border-2 border-gray-200">
+            {/* Close Button */}
+            <button
+              onClick={handleModalClose}
+              disabled={isUploading}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors z-10 disabled:opacity-50"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Add Candidates</h2>
+              <p className="text-sm text-gray-600 mb-6">Add up to 10 candidates with their name, email, and resume file.</p>
+
+              {/* Error Message */}
+              {uploadError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  {uploadError}
+                </div>
+              )}
+
+              {/* Candidates List */}
+              <div className="space-y-4 mb-6">
+                {candidates.map((candidate, index) => (
+                  <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base font-semibold text-gray-700">Candidate {index + 1}</h3>
+                      {candidates.length > 1 && (
+                        <button
+                          onClick={() => handleRemoveCandidate(index)}
+                          disabled={isUploading}
+                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                      {/* Name Input */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={candidate.name}
+                          onChange={(e) => handleCandidateNameChange(index, e.target.value)}
+                          disabled={isUploading}
+                          placeholder="Enter candidate name"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        />
+                      </div>
+
+                      {/* Email Input */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Email <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={candidate.email}
+                          onChange={(e) => handleCandidateEmailChange(index, e.target.value)}
+                          disabled={isUploading}
+                          placeholder="Enter candidate email"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+
+                    {/* File Input */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Resume File <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          ref={(el) => {
+                            fileInputRefs.current[index] = el;
+                          }}
+                          type="file"
+                          accept=".pdf,.docx,.doc"
+                          onChange={(e) => handleCandidateFileChange(index, e)}
+                          disabled={isUploading}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRefs.current[index]?.click()}
+                          disabled={isUploading}
+                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {candidate.file ? 'Change File' : 'Select File'}
+                        </button>
+                        {candidate.file && (
+                          <span className="text-sm text-gray-600 flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            {candidate.file.name}
+                            <span className="text-xs text-gray-500">
+                              ({(candidate.file.size / 1024).toFixed(1)} KB)
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add More Button */}
+              {candidates.length < 10 && (
+                <button
+                  onClick={handleAddCandidate}
+                  disabled={isUploading}
+                  className="mb-6 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Another Candidate ({candidates.length}/10)
+                </button>
+              )}
+
+              {/* Submit Button */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleModalClose}
+                  disabled={isUploading}
+                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleModalSubmit}
+                  disabled={isUploading}
+                  className="px-6 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Submit
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

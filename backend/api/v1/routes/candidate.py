@@ -2,6 +2,7 @@
 Candidate API routes for interview-related operations.
 """
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -12,6 +13,8 @@ from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswe
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 from schemas.admin import AssignedQuestionResponse
 from services.question_assignment_service import QuestionAssignmentService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -159,16 +162,31 @@ async def schedule_test(
             - 401: If authentication fails
             - 403: If user is not a candidate
     """
-    interview_service = InterviewService(db)
-    response = await interview_service.save_test_schedule(current_candidate.candidate_id, request)
-    
-    if not response.success:
+    try:
+        logger.info(f"Schedule test request received for candidate {current_candidate.candidate_id}")
+        logger.info(f"Request scheduled_date: {request.scheduled_date}, type: {type(request.scheduled_date)}")
+        logger.info(f"Current candidate status: {current_candidate.status}")
+        
+        interview_service = InterviewService(db)
+        response = await interview_service.save_test_schedule(current_candidate.candidate_id, request)
+        
+        if not response.success:
+            logger.warning(f"Schedule test failed for candidate {current_candidate.candidate_id}: {response.message}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=response.message
+            )
+        
+        logger.info(f"Schedule test successful for candidate {current_candidate.candidate_id}")
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in schedule_test: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=response.message
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
-    
-    return response
 
 
 @router.get("/{candidate_id}/assigned-question", response_model=AssignedQuestionResponse)
