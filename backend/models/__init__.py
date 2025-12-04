@@ -12,6 +12,7 @@ from models.interview_mcq import InterviewMCQ
 from models.interview_coding import InterviewCoding
 from models.interview_system_design import InterviewSystemDesign
 from models.interview_analysis_table import InterviewAnalysisTable
+from models.test_session import TestSession
 
 __all__ = [
     'Role',
@@ -24,7 +25,8 @@ __all__ = [
     'InterviewMCQ',
     'InterviewCoding',
     'InterviewSystemDesign',
-    'InterviewAnalysisTable'
+    'InterviewAnalysisTable',
+    'TestSession'
 ]
 
 
