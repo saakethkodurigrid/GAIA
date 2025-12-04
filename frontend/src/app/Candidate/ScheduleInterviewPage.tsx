@@ -119,9 +119,22 @@ const ScheduleInterviewPage = () => {
         return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+05:30`;
       };
 
-      // Navigate immediately with the scheduled date
+      // Log what we're sending to backend
+      console.log('=== Scheduling Interview - Data Being Sent ===');
+      console.log('Selected Date:', selectedDate);
+      console.log('Selected Time:', selectedTime);
+      console.log('Parsed hour24:', hour24);
+      console.log('Parsed minutes:', parseInt(minutes, 10));
+      console.log('scheduledDateTime (Date object):', scheduledDateTime);
+      console.log('scheduledDateTime ISO string:', scheduledDateTime.toISOString());
+      console.log('scheduledDateTime Local string:', scheduledDateTime.toString());
+      console.log('scheduledDateTime Local time:', scheduledDateTime.toLocaleString());
+      console.log('IST formatted string:', toISTString(scheduledDateTime));
+      console.log('==============================================');
+
+      // Navigate to confirmation page with the scheduled date
       // Backend will process MCQ generation in background
-      navigate('/test/scheduled', {
+      navigate('/interview/confirmed', {
         state: {
           scheduledDate: toISTString(scheduledDateTime),
         },

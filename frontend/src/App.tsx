@@ -17,6 +17,7 @@ import JobDetailsPage from './pages/JobDetailsPage';
 import TestScheduledPage from './app/Candidate/TestScheduledPage';
 import TestInstructionsPage from './app/Candidate/TestInstructionsPage';
 import ScheduleInterviewPage from './app/Candidate/ScheduleInterviewPage';
+import InterviewScheduledConfirmationPage from './app/Candidate/InterviewScheduledConfirmationPage';
 
 import TestPermissionsPage from './app/Candidate/TestPermissionsPage';
 import TestOverviewPage from './app/Candidate/TestOverviewPage';
@@ -101,6 +102,7 @@ function AppRoutes() {
       <Route path="/recruiter" element={<ProtectedRoute><Recruiter /></ProtectedRoute>} />
       <Route path="/recruiter/job-details" element={<ProtectedRoute><JobDetailsPage /></ProtectedRoute>} />
       <Route path="/schedule" element={<ProtectedRoute><ScheduleInterviewPage /></ProtectedRoute>} />
+      <Route path="/interview/confirmed" element={<ProtectedRoute><InterviewScheduledConfirmationPage /></ProtectedRoute>} />
       <Route path="/test/scheduled" element={<ProtectedRoute><TestScheduledPage /></ProtectedRoute>} />
       <Route path="/test/instructions" element={<ProtectedRoute><TestInstructionsPage /></ProtectedRoute>} />
       <Route path="/test/ready" element={<ProtectedRoute><TestReadyPage /></ProtectedRoute>} />

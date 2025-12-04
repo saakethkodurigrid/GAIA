@@ -37,6 +37,19 @@ export const scheduleTest = async (
 ): Promise<ScheduleTestResponse> => {
   // Convert date to IST format string
   const scheduledDateISO = toISTString(scheduledDate);
+  
+  // Log what's being sent to backend
+  console.log('=== API Call: scheduleTest ===');
+  console.log('Input Date object:', scheduledDate);
+  console.log('Input Date ISO:', scheduledDate.toISOString());
+  console.log('Input Date Local:', scheduledDate.toString());
+  console.log('Converted IST string:', scheduledDateISO);
+  console.log('Request body:', JSON.stringify({
+    scheduled_date: scheduledDateISO,
+  }));
+  console.log('API Endpoint:', `${API_BASE_URL}/candidate/schedule-test`);
+  console.log('================================');
+  
   // const candidateId = localStorage.getItem('candidate_id') || '';
   // if (!candidateId) {
   //   throw new Error('Candidate ID not found. Please login again.');

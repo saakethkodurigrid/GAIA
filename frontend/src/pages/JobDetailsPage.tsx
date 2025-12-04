@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { uploadCandidatesBatch, getResumesList, type ResumeCandidateResponse } from '../api/admin.api';
+import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse } from '../api/admin.api';
 
 const JobDetailsPage = () => {
   const { user, logout } = useAuth();
@@ -24,6 +24,12 @@ const JobDetailsPage = () => {
   const [resumes, setResumes] = useState<ResumeCandidateResponse[]>([]);
   const [isLoadingResumes, setIsLoadingResumes] = useState(false);
   const [resumesError, setResumesError] = useState<string | null>(null);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterviewCandidateResponse[]>([]);
+  const [isLoadingScheduledInterviews, setIsLoadingScheduledInterviews] = useState(false);
+  const [scheduledInterviewsError, setScheduledInterviewsError] = useState<string | null>(null);
+  const [completedInterviews, setCompletedInterviews] = useState<CompletedInterviewCandidateResponse[]>([]);
+  const [isLoadingCompletedInterviews, setIsLoadingCompletedInterviews] = useState(false);
+  const [completedInterviewsError, setCompletedInterviewsError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogout = () => {
@@ -59,17 +65,91 @@ const JobDetailsPage = () => {
     }
   };
 
+  // Fetch scheduled interviews list
+  const fetchScheduledInterviews = async () => {
+    // Validate jobId is in the format JD-XXXXXX (e.g., JD-783901)
+    const jobIdPattern = /^JD-\d{6}$/;
+    if (!jobIdPattern.test(jobId)) {
+      // If not a valid job ID format, don't fetch (might be mock data)
+      setScheduledInterviews([]);
+      return;
+    }
+
+    setIsLoadingScheduledInterviews(true);
+    setScheduledInterviewsError(null);
+
+    try {
+      const response = await getScheduledInterviews(jobId);
+      if (response.success) {
+        setScheduledInterviews(response.candidates);
+      } else {
+        setScheduledInterviewsError(response.message || 'Failed to fetch scheduled interviews');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch scheduled interviews. Please try again.';
+      setScheduledInterviewsError(errorMessage);
+      setScheduledInterviews([]);
+    } finally {
+      setIsLoadingScheduledInterviews(false);
+    }
+  };
+
   // Fetch resumes on mount and when jobId changes
   useEffect(() => {
     fetchResumes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  // Fetch completed interviews list
+  const fetchCompletedInterviews = async () => {
+    // Validate jobId is in the format JD-XXXXXX (e.g., JD-783901)
+    const jobIdPattern = /^JD-\d{6}$/;
+    if (!jobIdPattern.test(jobId)) {
+      // If not a valid job ID format, don't fetch (might be mock data)
+      setCompletedInterviews([]);
+      return;
+    }
+
+    setIsLoadingCompletedInterviews(true);
+    setCompletedInterviewsError(null);
+
+    try {
+      const response = await getCompletedInterviews(jobId);
+      if (response.success) {
+        setCompletedInterviews(response.candidates);
+      } else {
+        setCompletedInterviewsError(response.message || 'Failed to fetch completed interviews');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch completed interviews. Please try again.';
+      setCompletedInterviewsError(errorMessage);
+      setCompletedInterviews([]);
+    } finally {
+      setIsLoadingCompletedInterviews(false);
+    }
+  };
+
+  // Fetch scheduled interviews when scheduled tab is active
+  useEffect(() => {
+    if (activeTab === 'scheduled') {
+      fetchScheduledInterviews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, jobId]);
+
+  // Fetch completed interviews when completed tab is active
+  useEffect(() => {
+    if (activeTab === 'completed') {
+      fetchCompletedInterviews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, jobId]);
+
   const getStatusColor = (status: string) => {
     const statusLower = status.toLowerCase();
     switch (statusLower) {
       case 'shortlisted':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-green-100 text-green-800 border-green-200';
       case 'rejected':
         return 'bg-red-100 text-red-800 border-red-200';
       default:
@@ -84,6 +164,59 @@ const JobDetailsPage = () => {
 
   const getScoreColor = (score: number) => {
     return score >= 60 ? 'text-green-600' : 'text-red-600';
+  };
+
+  const getInterviewStatusColor = (status: string) => {
+    const statusLower = status.toLowerCase();
+    switch (statusLower) {
+      case 'shortlisted':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'scheduled':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'in progress':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'completed':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'selected':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'not selected':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const formatInterviewDate = (dateString: string | null) => {
+    if (!dateString) return 'Not scheduled';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const formatInterviewScore = (score: number | null) => {
+    if (score === null) return 'N/A';
+    return score.toFixed(1);
+  };
+
+  const getCompletedStatusColor = (status: string) => {
+    const statusLower = status.toLowerCase();
+    switch (statusLower) {
+      case 'selected':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'not selected':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -452,14 +585,150 @@ const JobDetailsPage = () => {
             )}
 
             {activeTab === 'scheduled' && (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-base">Scheduled Interviews content will appear here</p>
+              <div>
+                {/* Scheduled Interviews Section */}
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900">Scheduled Interviews</h2>
+                  </div>
+
+                  {/* Error Message */}
+                  {scheduledInterviewsError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                      {scheduledInterviewsError}
+                    </div>
+                  )}
+
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    {isLoadingScheduledInterviews ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                        <p className="mt-4 text-base">Loading scheduled interviews...</p>
+                      </div>
+                    ) : scheduledInterviews.length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <p className="text-base">No scheduled interviews found.</p>
+                      </div>
+                    ) : (
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">ID</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Candidate Name</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Email</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Interview Date</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scheduledInterviews.map((interview) => (
+                            <tr key={interview.candidate_id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-3 px-4 text-base text-gray-900">{interview.candidate_id.substring(0, 8)}...</td>
+                              <td className="py-3 px-4 text-base text-gray-900">{interview.name}</td>
+                              <td className="py-3 px-4 text-base text-gray-600">{interview.email_id}</td>
+                              <td className="py-3 px-4 text-base text-gray-700">{formatInterviewDate(interview.interview_date)}</td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getInterviewStatusColor(interview.interview_status)}`}>
+                                  {formatStatus(interview.interview_status)}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
             {activeTab === 'completed' && (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-base">Completed Interviews content will appear here</p>
+              <div>
+                {/* Completed Interviews Section */}
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900">Completed Interviews</h2>
+                  </div>
+
+                  {/* Error Message */}
+                  {completedInterviewsError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                      {completedInterviewsError}
+                    </div>
+                  )}
+
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    {isLoadingCompletedInterviews ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                        <p className="mt-4 text-base">Loading completed interviews...</p>
+                      </div>
+                    ) : completedInterviews.length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <p className="text-base">No completed interviews found.</p>
+                      </div>
+                    ) : (
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200">
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">ID</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Candidate Name</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Email</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Interview Score</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Status</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Report</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {completedInterviews.map((interview) => (
+                            <tr key={interview.candidate_id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-3 px-4 text-base text-gray-900">{interview.candidate_id.substring(0, 8)}...</td>
+                              <td className="py-3 px-4 text-base text-gray-900">{interview.name}</td>
+                              <td className="py-3 px-4 text-base text-gray-600">{interview.email_id}</td>
+                              <td className={`py-3 px-4 text-base font-medium ${interview.interview_score !== null && interview.interview_score >= 60 ? 'text-green-600' : 'text-gray-600'}`}>
+                                {formatInterviewScore(interview.interview_score)}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getCompletedStatusColor(interview.status)}`}>
+                                  {formatStatus(interview.status)}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                {interview.report_link ? (
+                                  <a
+                                    href={interview.report_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                                  >
+                                    View Report
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                ) : (
+                                  <span className="text-gray-400 text-sm">Not available</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>

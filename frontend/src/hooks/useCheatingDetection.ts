@@ -91,11 +91,11 @@ export const useCheatingDetection = (videoStream: MediaStream | null, enabled: b
         await tf.ready();
 
         // Create face detector with lightweight model
-        // Using MediaPipeFaceDetector with short range model for better performance
+        // Using MediaPipeFaceDetector with TensorFlow.js runtime (more reliable than mediapipe runtime)
         const detector = await faceDetection.createDetector(
           faceDetection.SupportedModels.MediaPipeFaceDetector,
           {
-            runtime: 'mediapipe',
+            runtime: 'tfjs',
             modelType: 'short',
           }
         );
@@ -219,6 +219,16 @@ export const useCheatingDetection = (videoStream: MediaStream | null, enabled: b
 
         const faceCount = faces.length;
         const hasMultipleFaces = faceCount > 1;
+
+        // Console log face detection results
+        console.log(`[Face Detection] Faces detected: ${faceCount}`, {
+          faceCount,
+          hasMultipleFaces,
+          faces: faces.map((face, idx) => ({
+            index: idx,
+            boundingBox: face.box,
+          })),
+        });
 
         // Update status
         setStatus((prev) => ({

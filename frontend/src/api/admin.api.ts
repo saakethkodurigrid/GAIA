@@ -250,3 +250,84 @@ export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => 
   return response.json();
 };
 
+export interface ScheduledInterviewCandidateResponse {
+  candidate_id: string;
+  name: string;
+  email_id: string;
+  interview_status: string; // 'shortlisted', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'
+  interview_date: string | null; // ISO format datetime string
+}
+
+export interface ScheduledInterviewsListResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  candidates: ScheduledInterviewCandidateResponse[];
+}
+
+/**
+ * Get list of scheduled interviews for a job
+ */
+export const getScheduledInterviews = async (jobId: string): Promise<ScheduledInterviewsListResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/scheduled-interviews`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch scheduled interviews' }));
+    throw new Error(error.detail || 'Failed to fetch scheduled interviews');
+  }
+
+  return response.json();
+};
+
+export interface CompletedInterviewCandidateResponse {
+  candidate_id: string;
+  name: string;
+  email_id: string;
+  interview_score: number | null;
+  status: string; // 'selected' or 'not selected'
+  report_link: string | null;
+}
+
+export interface CompletedInterviewsListResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  candidates: CompletedInterviewCandidateResponse[];
+}
+
+/**
+ * Get list of completed interviews for a job
+ */
+export const getCompletedInterviews = async (jobId: string): Promise<CompletedInterviewsListResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/completed-interviews`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch completed interviews' }));
+    throw new Error(error.detail || 'Failed to fetch completed interviews');
+  }
+
+  return response.json();
+};
+

@@ -6,6 +6,7 @@ const ClarifyingChat = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -14,6 +15,15 @@ const ClarifyingChat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [chatMessages]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`;
+    }
+  }, [inputMessage]);
 
   const handleSend = async () => {
     if (!inputMessage.trim() || isSending) return;
@@ -26,7 +36,7 @@ const ClarifyingChat = () => {
     setIsSending(false);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -90,25 +100,27 @@ const ClarifyingChat = () => {
 
       {/* Input */}
       <form 
-        className="px-4 py-4 border-t border-gray-200 bg-white flex gap-2.5"
+        className="px-4 py-4 border-t border-gray-200 bg-white flex gap-2.5 items-end"
         onSubmit={(e) => {
           e.preventDefault();
           handleSend();
         }}
       >
-        <input
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyPress}
           placeholder="Ask a question..."
           disabled={isSending}
-          className="flex-1 px-3 py-3 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          rows={1}
+          className="flex-1 px-3 py-3 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed resize-none overflow-y-auto min-h-[44px] max-h-[150px]"
+          style={{ height: 'auto' }}
         />
         <button
           type="submit"
           disabled={!inputMessage.trim() || isSending}
-          className="px-6 py-3 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className="px-6 py-3 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed self-end"
         >
           Send
         </button>

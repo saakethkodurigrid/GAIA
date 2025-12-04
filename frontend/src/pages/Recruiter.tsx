@@ -24,7 +24,6 @@ interface ScheduledInterview {
 const Recruiter = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [selectedDate, setSelectedDate] = useState(new Date()); // Today
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,16 +90,41 @@ const Recruiter = () => {
     }
 
     // Parse scheduled_date and format time
+    // Extract time directly from the ISO string to preserve IST timezone
     let timeString = 'TBD';
     if (interview.scheduled_date) {
       try {
-        const date = new Date(interview.scheduled_date);
-        const hours = date.getHours();
-        const minutes = date.getMinutes();
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const displayHours = hours % 12 || 12;
-        const displayMinutes = minutes.toString().padStart(2, '0');
-        timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+        console.log('--- Parsing scheduled_date in mapInterviewToScheduled ---');
+        console.log('Input scheduled_date string:', interview.scheduled_date);
+        
+        // Parse the ISO string - it should be in format like "2024-01-15T12:30:00+05:30"
+        // Extract the time part directly from the string to avoid timezone conversion
+        const dateMatch = interview.scheduled_date.match(/T(\d{2}):(\d{2}):(\d{2})/);
+        if (dateMatch) {
+          const hours = parseInt(dateMatch[1], 10);
+          const minutes = parseInt(dateMatch[2], 10);
+          console.log('Extracted hours from string:', hours);
+          console.log('Extracted minutes from string:', minutes);
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12;
+          const displayMinutes = minutes.toString().padStart(2, '0');
+          timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+          console.log('Formatted time string (from regex):', timeString);
+        } else {
+          console.log('Regex match failed, using Date parsing fallback');
+          // Fallback to Date parsing if format is different
+          const date = new Date(interview.scheduled_date);
+          console.log('Date object from parsing:', date);
+          const hours = date.getHours();
+          const minutes = date.getMinutes();
+          console.log('Date.getHours() (local):', hours);
+          console.log('Date.getMinutes() (local):', minutes);
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12;
+          const displayMinutes = minutes.toString().padStart(2, '0');
+          timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+          console.log('Formatted time string (from Date):', timeString);
+        }
       } catch (e) {
         console.error('Error parsing date:', e);
       }
@@ -113,10 +137,8 @@ const Recruiter = () => {
       time: timeString,
     };
     
-    console.log('Mapping interview:', {
-      original: interview,
-      mapped: mappedInterview
-    });
+    console.log('Final mapped interview object:', mappedInterview);
+    console.log('--- End of mapInterviewToScheduled ---');
     
     return mappedInterview;
   };
@@ -127,12 +149,43 @@ const Recruiter = () => {
       setIsLoadingInterviews(true);
       setInterviewsError(null);
       try {
+        console.log('=== Fetching Today\'s Interviews ===');
         const response = await listTodayInterviews();
-        console.log('API Response from /admin/list-interviews/today:', response);
+        console.log('Full API Response:', JSON.stringify(response, null, 2));
+        console.log('Response success:', response.success);
+        console.log('Response count:', response.count);
+        console.log('Response message:', response.message);
+        
         if (response.success && response.interviews) {
-          console.log('Interviews array:', response.interviews);
+          console.log('Number of interviews:', response.interviews.length);
+          console.log('Raw interviews array:', response.interviews);
+          
+          // Log each interview's scheduled_date in detail
+          response.interviews.forEach((interview, index) => {
+            console.log(`--- Interview ${index + 1} ---`);
+            console.log('Candidate:', interview.candidate_name);
+            console.log('Job Role:', interview.job_role);
+            console.log('Status:', interview.status);
+            console.log('Raw scheduled_date from backend:', interview.scheduled_date);
+            console.log('scheduled_date type:', typeof interview.scheduled_date);
+            
+            if (interview.scheduled_date) {
+              // Try parsing it to see what JavaScript sees
+              const parsedDate = new Date(interview.scheduled_date);
+              console.log('Parsed as Date object:', parsedDate);
+              console.log('Date ISO string:', parsedDate.toISOString());
+              console.log('Date Local string:', parsedDate.toString());
+              console.log('Date Local time:', parsedDate.toLocaleString());
+              console.log('Date getHours() (local):', parsedDate.getHours());
+              console.log('Date getMinutes() (local):', parsedDate.getMinutes());
+              console.log('Date UTC hours:', parsedDate.getUTCHours());
+              console.log('Date UTC minutes:', parsedDate.getUTCMinutes());
+            }
+          });
+          
           const mappedInterviews: ScheduledInterview[] = response.interviews.map(mapInterviewToScheduled);
-          console.log('Mapped interviews:', mappedInterviews);
+          console.log('Final mapped interviews:', mappedInterviews);
+          console.log('===================================');
           setScheduledInterviews(mappedInterviews);
         } else {
           setInterviewsError(response.message || 'Failed to load interviews');
@@ -148,26 +201,6 @@ const Recruiter = () => {
 
     fetchInterviews();
   }, []);
-
-  const formatDate = (date: Date) => {
-    const today = new Date();
-    const isToday = date.toDateString() === today.toDateString();
-    if (isToday) {
-      return 'Today';
-    }
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-  };
-
-  const navigateDate = (direction: 'prev' | 'next') => {
-    const newDate = new Date(selectedDate);
-    if (direction === 'prev') {
-      newDate.setDate(newDate.getDate() - 1);
-    } else {
-      newDate.setDate(newDate.getDate() + 1);
-    }
-    setSelectedDate(newDate);
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -424,30 +457,7 @@ const Recruiter = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900">Scheduled Interviews</h2>
-              </div>
-
-              {/* Date Navigation */}
-              <div className="flex items-center justify-center gap-4 mb-6 flex-shrink-0">
-                <button
-                  onClick={() => navigateDate('prev')}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <span className="text-lg font-semibold text-gray-900">
-                  {formatDate(selectedDate)}
-                </span>
-                <button
-                  onClick={() => navigateDate('next')}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
+                <h2 className="text-xl font-bold text-gray-900">Scheduled Interviews for today</h2>
               </div>
 
               {/* Interviews List */}

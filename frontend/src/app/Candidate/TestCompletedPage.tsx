@@ -1,15 +1,15 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import type { CheatingEvent } from '../../hooks/useCheatingDetection';
-// import { useNavigate } from 'react-router-dom';
 
 const STORAGE_KEY = 'cheating_detection_events';
 
 const TestCompletedPage = () => {
   const { user, logout } = useAuth();
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
 
   // Load and log cheating detection events
   useEffect(() => {
@@ -87,8 +87,12 @@ const TestCompletedPage = () => {
     logout();
   };
 
+  const handleClose = () => {
+    navigate('/auth/login');
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] relative overflow-y-auto overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
       {/* Header */}
       <Header 
         showUserInfo={true} 
@@ -99,7 +103,7 @@ const TestCompletedPage = () => {
       />
 
       {/* Main Content */}
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem-5rem)] py-8 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center py-8 pb-8">
         {/* Success Icon */}
         <div className="mb-6">
           <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
@@ -183,7 +187,7 @@ const TestCompletedPage = () => {
           </div>
 
           {/* Need Help Section */}
-          <div className="text-center">
+          <div className="text-center mb-6">
             <p className="text-sm text-gray-600">
               Need help? If you have any questions or concerns, please reach out to our support team at{' '}
               <a 
@@ -193,6 +197,16 @@ const TestCompletedPage = () => {
                 support@company.com
               </a>
             </p>
+          </div>
+
+          {/* Close Button */}
+          <div className="flex justify-center">
+            <button
+              onClick={handleClose}
+              className="bg-gray-700 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-gray-800 transition-colors shadow-md"
+            >
+              Close
+            </button>
           </div>
         </div>
 

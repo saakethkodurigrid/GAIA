@@ -13,24 +13,25 @@ const SystemDesignPageContent = () => {
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
   const handleSubmit = async () => {
+    // Mark System Design section as submitted in localStorage immediately
     try {
-      await submitSolution();
-      // Mark System Design section as submitted in localStorage
-      try {
-        const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
-        const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
-        const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
-        submitted.systemDesign = true;
-        localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
-      } catch (error) {
-        console.error('Error marking System Design as submitted:', error);
-      }
-      // Navigate back to test overview page after successful submission
-      navigate('/test-overview');
+      const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+      const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+      const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+      submitted.systemDesign = true;
+      localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
     } catch (error) {
-      console.error('Failed to submit solution:', error);
-      // You could show an error message to the user here
+      console.error('Error marking System Design as submitted:', error);
     }
+    
+    // Navigate immediately to test overview without waiting for evaluation
+    navigate('/test-overview');
+    
+    // Submit solution in the background (fire-and-forget)
+    submitSolution().catch((error) => {
+      console.error('Failed to submit solution:', error);
+      // Error is logged but doesn't block navigation
+    });
   };
   // Monitor fullscreen exit with 5 second countdown
   const { showViolation, countdown, handleRedirect } = useFullscreenWarning({

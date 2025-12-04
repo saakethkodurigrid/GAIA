@@ -20,7 +20,6 @@ const TestPermissionsPage = () => {
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -389,30 +388,31 @@ const TestPermissionsPage = () => {
                   Retake
                 </button>
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     if (!capturedPhoto || !user?.candidateId) {
                       setError('Photo or candidate ID not available. Please try again.');
                       return;
                     }
 
-                    setIsUploading(true);
+                    // Immediately update UI state - don't wait for API
+                    setCameraPermission('granted');
+                    setShowPhotoPreview(false);
                     setError(null);
 
-                    try {
-                      await uploadCandidateImage(user.candidateId, capturedPhoto);
-                      setCameraPermission('granted');
-                      setShowPhotoPreview(false);
-                    } catch (err) {
-                      console.error('Error uploading photo:', err);
-                      setError(err instanceof Error ? err.message : 'Failed to upload photo. Please try again.');
-                    } finally {
-                      setIsUploading(false);
-                    }
+                    // Upload photo in the background (fire-and-forget)
+                    uploadCandidateImage(user.candidateId, capturedPhoto)
+                      .then(() => {
+                        console.log('Photo uploaded successfully');
+                      })
+                      .catch((err) => {
+                        console.error('Error uploading photo (background):', err);
+                        // Optionally show a non-blocking error notification here
+                        // For now, we just log it since the user has already moved on
+                      });
                   }}
-                  disabled={isUploading}
-                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors"
                 >
-                  {isUploading ? 'Uploading...' : 'Confirm'}
+                  Confirm
                 </button>
               </div>
             </div>
