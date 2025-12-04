@@ -17,7 +17,6 @@ from schemas.test_session import (
     CompleteTestRequest
 )
 from schemas.mcq import SaveMCQAnswerRequest
-from services.interview_service import InterviewService
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +287,8 @@ class TestSessionService:
             
             # Save MCQ answers if provided
             if request.mcq_answers and request.mcq_answers.answers:
+                # Lazy import to avoid circular dependency
+                from services.interview_service import InterviewService
                 interview_service = InterviewService(self.db)
                 mcq_response = interview_service.save_mcq_answers(candidate_id, request.mcq_answers)
                 if not mcq_response.success:

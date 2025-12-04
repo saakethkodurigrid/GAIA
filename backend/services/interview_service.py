@@ -12,7 +12,6 @@ from models.candidate import Candidate
 from models.recruiter_admin_candidate import RecruiterAdminCandidate
 from models.job import Job
 from models.interview_mcq import InterviewMCQ
-from services.test_session_service import TestSessionService
 from schemas.admin import ListInterviewsResponse, InterviewResponse
 from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse, GenerateMCQRequest
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
@@ -384,6 +383,8 @@ class InterviewService:
             
             # Update test session last_activity if session exists
             try:
+                # Lazy import to avoid circular dependency
+                from services.test_session_service import TestSessionService
                 test_session_service = TestSessionService(self.db)
                 test_session_service.update_last_activity(candidate_id)
             except Exception as e:
