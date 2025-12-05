@@ -3,12 +3,10 @@ import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { 
   createSession, 
-  getQuestionByUuid, 
   sendChatMessage, 
   updateCanvas,
   getAssignedQuestion,
   getChatHistory,
-  checkProactivePrompts,
   createProactivePromptsStream,
   endSession
 } from '../api/systemDesign.api';
@@ -89,43 +87,14 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
               : [],
           };
         } else if (sessionResponse.question_text) {
-          // Primary: Use question_text from session (always available)
-          // Try to fetch additional details by UUID if available, but don't fail if it doesn't exist
-          if (sessionResponse.question_uuid) {
-            try {
-              console.log('Fetching additional question details with UUID:', sessionResponse.question_uuid);
-              const questionResponse = await getQuestionByUuid(sessionResponse.question_uuid);
-              
-              // Use fetched question details if available
-              problemData = {
-                id: 1,
-                title: questionResponse.question_id || 'System Design Problem',
-                description: questionResponse.question || sessionResponse.question_text,
-                requirements: questionResponse.evaluation_criteria
-                  ? questionResponse.evaluation_criteria.split('\n').filter(line => line.trim())
-                  : [],
-              };
-              console.log('Question details fetched successfully');
-            } catch (error: any) {
-              // UUID fetch failed (404 or other error), use session question_text
-              console.warn('Could not fetch question by UUID, using question_text from session:', error.message);
-              problemData = {
-                id: 1,
-                title: 'System Design Problem',
-                description: sessionResponse.question_text,
-                requirements: [],
-              };
-            }
-          } else {
-            // No UUID, just use question_text from session
-            console.log('Using question_text from session (no UUID available)');
-            problemData = {
-              id: 1,
-              title: 'System Design Problem',
-              description: sessionResponse.question_text,
-              requirements: [],
-            };
-          }
+          // Use question_text from session (always available)
+          console.log('Using question_text from session');
+          problemData = {
+            id: 1,
+            title: 'System Design Problem',
+            description: sessionResponse.question_text,
+            requirements: [],
+          };
         } else {
           // Last resort: Use hardcoded fallback
           console.warn('No question_text in session response, using fallback');
@@ -201,7 +170,12 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
     // Function to handle SSE messages
     const handleSSEMessage = (event: { has_prompt: boolean; prompt?: string | null; closed?: boolean; error?: string }) => {
+      // Debug: Log all SSE events
+      console.log('[SSE] Received event:', event);
+      
       if (event.has_prompt && event.prompt) {
+        console.log('[SSE] ✅ Proactive prompt received:', event.prompt);
+        
         // Add proactive prompt as assistant message
         const proactiveMessage: ChatMessage = {
           id: `proactive-${Date.now()}`,
@@ -216,10 +190,16 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             (msg) => msg.role === 'assistant' && msg.content === event.prompt
           );
           if (!exists) {
+            console.log('[SSE] ✅ Adding prompt to chat messages. Total messages:', prev.length + 1);
             return [...prev, proactiveMessage];
+          } else {
+            console.log('[SSE] ⚠️ Prompt already exists, skipping duplicate');
+            return prev;
           }
-          return prev;
         });
+      } else if (event.has_prompt === false) {
+        // Heartbeat - no prompt available
+        console.log('[SSE] Heartbeat: No prompt available');
       }
 
       // Handle stream closure
@@ -288,33 +268,19 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
     // Create SSE connection
     try {
-      console.log('Setting up SSE connection for proactive prompts...');
+      console.log('[SSE] 🔌 Setting up SSE connection for proactive prompts...');
+      console.log('[SSE] 🔌 Session ID:', sessionId);
       sseAbortControllerRef.current = createProactivePromptsStream(
         sessionId,
         handleSSEMessage,
         handleSSEError,
         handleSSEClose
       );
+      console.log('[SSE] ✅ SSE connection established successfully');
     } catch (error) {
-      console.error('Failed to create SSE stream:', error);
-      // Fallback to polling if SSE fails
-      console.log('Falling back to polling for proactive prompts...');
-      const checkPrompts = async () => {
-        try {
-          const promptResponse = await checkProactivePrompts(sessionId);
-          if (promptResponse.has_prompt && promptResponse.prompt) {
-            handleSSEMessage(promptResponse);
-          }
-        } catch (err) {
-          console.error('Error checking proactive prompts (fallback):', err);
-        }
-      };
-
-      // Initial check
-      checkPrompts();
-
-      // Set up interval as fallback
-      proactivePromptIntervalRef.current = window.setInterval(checkPrompts, 5000);
+      console.error('[SSE] ❌ Failed to create SSE stream:', error);
+      // SSE is the only method available - no fallback polling endpoint exists
+      // The stream will automatically reconnect if the connection is lost
     }
 
     return () => {

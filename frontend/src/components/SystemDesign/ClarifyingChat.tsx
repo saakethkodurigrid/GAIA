@@ -16,6 +16,16 @@ const ClarifyingChat = () => {
     scrollToBottom();
   }, [chatMessages]);
 
+  // Debug: Log chat messages updates
+  useEffect(() => {
+    console.log('[Chat] 📝 Chat messages updated. Count:', chatMessages.length);
+    console.log('[Chat] 📝 Messages:', chatMessages.map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content.substring(0, 50) + (m.content.length > 50 ? '...' : '')
+    })));
+  }, [chatMessages]);
+
   // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;

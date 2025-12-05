@@ -92,3 +92,9 @@ class FinalReportResponse(BaseModel):
     suggested_learning: List[str]
     final_feedback: Optional[str] = None
 
+
+class ProactivePromptResponse(BaseModel):
+    """Response schema for proactive prompt check."""
+    has_prompt: bool
+    prompt: Optional[str] = None
+

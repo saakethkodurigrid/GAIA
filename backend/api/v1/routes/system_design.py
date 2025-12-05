@@ -1,7 +1,11 @@
 """
 System Design API routes for interview-related operations.
 """
+import asyncio
+import json
+import time
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_candidate

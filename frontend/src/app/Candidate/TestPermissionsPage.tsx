@@ -160,7 +160,14 @@ const TestPermissionsPage = () => {
   };
 
   const handleSkipTour = () => {
-    // Navigate directly to test overview page (for debugging)
+    // Clear any stale fullscreen warning state from localStorage
+    // This prevents automatic redirect to /test/completed when landing on test-overview
+    try {
+      localStorage.removeItem('fullscreenWarning');
+    } catch (error) {
+      console.error('Error clearing fullscreen warning state:', error);
+    }
+    // Navigate directly to test overview page
     navigate('/test-overview');
   };
 

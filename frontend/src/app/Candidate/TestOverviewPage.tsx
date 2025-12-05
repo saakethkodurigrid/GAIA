@@ -54,6 +54,16 @@ const TestOverviewPage = () => {
     return () => window.removeEventListener('focus', checkSubmittedSections);
   }, []);
 
+  // Clear any stale fullscreen warning state when landing on overview page
+  // This prevents automatic redirect to /test/completed from previous sessions
+  useEffect(() => {
+    try {
+      localStorage.removeItem('fullscreenWarning');
+    } catch (error) {
+      console.error('Error clearing fullscreen warning state:', error);
+    }
+  }, []);
+
   // Monitor fullscreen exit with 5 second countdown
   const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
     onFinalAttempt: () => {

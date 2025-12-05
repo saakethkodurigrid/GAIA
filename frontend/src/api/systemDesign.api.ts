@@ -56,30 +56,8 @@ export const createSession = async (request?: Partial<SessionCreateRequest>): Pr
   return data;
 };
 
-export const getQuestionByUuid = async (uuid: string): Promise<QuestionResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/questions/${uuid}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${getAuthToken() || ''}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch question' }));
-    throw new Error(error.detail || 'Failed to fetch question');
-  }
-
-  const data = await response.json();
-  console.log('[getQuestionByUuid] System Design Question from Backend:', {
-    uuid,
-    question_id: data.question_id,
-    question: data.question,
-    evaluation_criteria: data.evaluation_criteria,
-    tags: data.tags,
-    full_response: data
-  });
-  return data;
-};
+// Removed getQuestionByUuid - endpoint does not exist in backend
+// Use question_text from createSession response instead
 
 // Canvas Update Types
 export interface CanvasData {
@@ -181,22 +159,8 @@ export interface SSEPromptEvent {
   error?: string;
 }
 
-// Check Proactive Prompts API (kept for backward compatibility, but prefer SSE)
-export const checkProactivePrompts = async (sessionId: string): Promise<ProactivePromptResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/check-prompts`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${getAuthToken() || ''}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to check prompts' }));
-    throw new Error(error.detail || 'Failed to check prompts');
-  }
-
-  return response.json();
-};
+// Removed checkProactivePrompts - endpoint does not exist in backend
+// Use createProactivePromptsStream for SSE streaming instead
 
 // SSE Stream for Proactive Prompts
 // Returns an AbortController to allow cleanup

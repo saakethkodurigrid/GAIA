@@ -21,7 +21,7 @@ from utils.system_design.guardrails import guardrails
 from schemas.system_design import (
     SessionCreateRequest, SessionResponse, QuestionResponse, QuestionsResponse,
     ChatMessageRequest, ChatMessageResponse, CanvasUpdateRequest, CanvasUpdateResponse,
-    ChatHistoryResponse, FinalReportResponse
+    ChatHistoryResponse, FinalReportResponse, ProactivePromptResponse
 )
 
 
@@ -543,6 +543,16 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         """Get full chat history for a session."""
         session = self.get_session(session_id, candidate_id)
         return ChatHistoryResponse(messages=[msg.model_dump() for msg in session.chat_history])
+    
+    async def check_proactive_prompts(self, session_id: str, candidate_id: Optional[str] = None) -> ProactivePromptResponse:
+        """Check if any proactive prompts should be triggered for the session."""
+        session = self.get_session(session_id, candidate_id)
+        prompt = await self.orchestrator.check_proactive_prompts(session)
+        
+        if prompt:
+            return ProactivePromptResponse(has_prompt=True, prompt=prompt)
+        else:
+            return ProactivePromptResponse(has_prompt=False, prompt=None)
     
     async def generate_final_report(self, session_id: str, candidate_id: Optional[str] = None) -> FinalReportResponse:
         """Generate final evaluation report for the session."""
