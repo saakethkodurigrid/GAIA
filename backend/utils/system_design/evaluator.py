@@ -133,8 +133,15 @@ Your role is to provide a thorough, fair, and constructive evaluation STRICTLY b
 
 CRITICAL: You MUST evaluate using ONLY the categories and criteria specified below. Do NOT use generic categories.
 
-EVALUATION CRITERIA (MANDATORY - Use these exact categories):
+EVALUATION CRITERIA (MANDATORY - Use these exact categories for evaluation, but DO NOT include them in your response):
 {evaluation_criteria}
+
+CRITICAL OUTPUT RESTRICTIONS:
+- DO NOT include the evaluation criteria text in your feedback or response
+- DO NOT repeat or quote the evaluation criteria in your JSON response
+- Only provide scores, feedback, and follow-up questions
+- The feedback should be natural, conversational text - NOT a list of criteria
+- Reference the criteria implicitly in your evaluation, but do not quote them
 
 EVALUATION INSTRUCTIONS:
 1. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
@@ -246,8 +253,8 @@ Provide your response as JSON with the EXACT category names from the evaluation 
   "scores": {{
     {scores_example_str}
   }},
-  "feedback": "Provide comprehensive feedback addressing each category from the evaluation criteria. Reference specific components from the diagram. Be constructive and encouraging.",
-  "follow_up": "Ask a thoughtful follow-up question related to the evaluation criteria that helps the candidate improve their design."
+  "feedback": "Provide natural, conversational feedback (3-5 sentences) that references specific components from the diagram. Be constructive and encouraging. DO NOT list or quote the evaluation criteria - just provide your assessment naturally.",
+  "follow_up": "Ask a thoughtful follow-up question that helps the candidate improve their design. Do not reference the evaluation criteria explicitly."
 }}"""
 
         # Apply guardrails to prompts
@@ -291,15 +298,110 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         try:
             # Extract JSON from response (LLM wrapper returns standardized response)
             content = response.content or "{}"
-            # Try to extract JSON if wrapped in markdown
+            
+            # Try to extract JSON if wrapped in markdown code blocks
             if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
+                # Extract content between ```json and ```
+                parts = content.split("```json")
+                if len(parts) > 1:
+                    json_part = parts[1].split("```")[0].strip()
+                    content = json_part
             elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
+                # Try generic code block extraction
+                parts = content.split("```")
+                if len(parts) > 1:
+                    # Take the first code block that looks like JSON
+                    for i in range(1, len(parts), 2):
+                        potential_json = parts[i].strip()
+                        if potential_json.startswith("{") or potential_json.startswith("["):
+                            content = potential_json
+                            break
             
-            evaluation = json.loads(content)
+            # Clean up any remaining markdown or extra text
+            # Remove any text before the first {
+            if "{" in content:
+                content = content[content.index("{"):]
             
-            # Ensure all required fields
+            # Try to extract complete JSON by matching braces
+            # This handles truncated responses better
+            brace_count = 0
+            json_end = -1
+            for i, char in enumerate(content):
+                if char == "{":
+                    brace_count += 1
+                elif char == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        json_end = i
+                        break
+            
+            if json_end >= 0:
+                # Found complete JSON object
+                content = content[:json_end + 1]
+            else:
+                # JSON might be truncated, try to fix it
+                # Add closing braces if needed
+                while brace_count > 0:
+                    content += "}"
+                    brace_count -= 1
+                # Ensure proper closing
+                if not content.rstrip().endswith("}"):
+                    # Try to extract what we can
+                    # Find the last complete field
+                    if '"feedback"' in content:
+                        # Try to extract up to feedback field
+                        feedback_start = content.find('"feedback"')
+                        if feedback_start > 0:
+                            # Find the value after feedback
+                            value_start = content.find(':', feedback_start)
+                            if value_start > 0:
+                                # Try to find the end of the feedback string
+                                quote_start = content.find('"', value_start)
+                                if quote_start > 0:
+                                    quote_end = content.find('"', quote_start + 1)
+                                    if quote_end > 0:
+                                        # We have at least the feedback field, close the JSON
+                                        content = content[:quote_end + 1] + '}'
+            
+            try:
+                evaluation = json.loads(content)
+            except json.JSONDecodeError as parse_error:
+                # If still failing, try to extract fields manually
+                print(f"JSON parse error after cleanup: {parse_error}")
+                print(f"Content length: {len(content)}, Content preview: {content[:200]}...")
+                
+                # Try to extract scores and feedback using regex as fallback
+                scores_match = re.search(r'"scores"\s*:\s*\{([^}]+)\}', content)
+                feedback_match = re.search(r'"feedback"\s*:\s*"([^"]+)"', content)
+                follow_up_match = re.search(r'"follow_up"\s*:\s*"([^"]+)"', content)
+                
+                evaluation = {}
+                if scores_match:
+                    # Try to parse scores
+                    scores_text = "{" + scores_match.group(1) + "}"
+                    try:
+                        evaluation["scores"] = json.loads(scores_text)
+                    except:
+                        evaluation["scores"] = {
+                            "core_functionality": 1.0,
+                            "system_architecture": 1.0,
+                            "scalability": 1.0,
+                            "reliability_and_performance": 1.0,
+                            "design_quality": 1.0
+                        }
+                else:
+                    evaluation["scores"] = {
+                        "core_functionality": 1.0,
+                        "system_architecture": 1.0,
+                        "scalability": 1.0,
+                        "reliability_and_performance": 1.0,
+                        "design_quality": 1.0
+                    }
+                
+                evaluation["feedback"] = feedback_match.group(1) if feedback_match else "Evaluation completed. Please continue working on your design."
+                evaluation["follow_up"] = follow_up_match.group(1) if follow_up_match else "Can you explain how your system handles high traffic?"
+            
+            # Ensure all required fields and clean up feedback
             if "scores" not in evaluation:
                 evaluation["scores"] = {
                     "architecture": 3.0,
@@ -308,6 +410,22 @@ Provide your response as JSON with the EXACT category names from the evaluation 
                     "clarity": 3.0,
                     "consistency": 3.0
                 }
+            
+            # Clean feedback field - remove any JSON code blocks or raw JSON
+            if "feedback" in evaluation and isinstance(evaluation["feedback"], str):
+                feedback = evaluation["feedback"]
+                # Remove any JSON code blocks from feedback
+                if "```json" in feedback:
+                    feedback = feedback.split("```json")[0].strip()
+                elif "```" in feedback:
+                    feedback = feedback.split("```")[0].strip()
+                # Remove any raw JSON objects from feedback
+                if feedback.startswith("{") and "}" in feedback:
+                    # Try to extract text after JSON
+                    json_end = feedback.rindex("}")
+                    if json_end < len(feedback) - 1:
+                        feedback = feedback[json_end + 1:].strip()
+                evaluation["feedback"] = feedback
             
             return evaluation
             
@@ -341,7 +459,7 @@ Provide your response as JSON with the EXACT category names from the evaluation 
             response = await self.llm.chat_completion(
                 messages=messages,
                 temperature=0.7,
-                max_tokens=200  # Reduced to work within credit limits (concise responses)
+                max_tokens=2000  # Increased to allow complete evaluation responses with scores, feedback, and follow-up
             )
             return response
         except Exception as e:

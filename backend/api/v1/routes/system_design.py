@@ -293,13 +293,30 @@ async def stream_proactive_prompts(
         
         try:
             while True:
-                # Check for new prompts every 1 second for faster response
-                await asyncio.sleep(1)
+                # Check for new prompts every 3 seconds (reduced from 1s to reduce logging noise)
+                await asyncio.sleep(3)
                 
-                # Only check if enough time has passed since last activity
+                # Refresh session to get latest activity time
+                session = service.get_session(session_id, current_candidate.candidate_id)
+                
+                # Update last_activity_time to current time since SSE connection is active
+                # This prevents premature closure when user is still on the page
                 current_time = time.time()
-                if session.last_activity_time and (current_time - session.last_activity_time) > 300:
-                    # No activity for 5 minutes, stop checking
+                session.last_activity_time = current_time
+                
+                # Only close if there's been no user interaction (canvas/chat) for 30 minutes
+                # The SSE connection itself counts as activity, so we use a longer timeout
+                # Check last_drawing_activity_time or chat activity instead
+                last_user_activity = None
+                if session.last_drawing_activity_time:
+                    last_user_activity = session.last_drawing_activity_time
+                elif session.chat_history:
+                    # Use timestamp of last chat message if available
+                    last_user_activity = session.last_activity_time
+                
+                # Only close if no user interaction for 30 minutes (1800 seconds)
+                if last_user_activity and (current_time - last_user_activity) > 1800:
+                    # No user activity for 30 minutes, stop checking
                     yield f"data: {json.dumps({'has_prompt': False, 'closed': True})}\n\n"
                     break
                 

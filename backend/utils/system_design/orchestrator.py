@@ -247,8 +247,6 @@ Remember: You are helping them discover answers through questions, not providing
         """
         current_time = time.time()
         
-        print(f"[TRIGGER CHECK] Starting proactive prompt check at {current_time}")
-        
         # Update last activity if needed
         if session.last_activity_time is None:
             session.last_activity_time = current_time
@@ -280,45 +278,29 @@ Remember: You are helping them discover answers through questions, not providing
         if session.current_canvas and session.previous_canvas:
             # Check if there's a significant difference between previous_canvas and current_canvas
             is_significant = self.detect_significant_change(session.previous_canvas, session.current_canvas)
-            print(f"[DEBUG] Event-Driven check: has_canvas=True, is_significant={is_significant}, last_drawing={session.last_drawing_activity_time}")
-            print(f"[DEBUG] Event-Driven: previous_canvas components={self.parser.parse(session.previous_canvas)['component_count'] if session.previous_canvas else 0}, current_canvas components={self.parser.parse(session.current_canvas)['component_count'] if session.current_canvas else 0}")
             
             if is_significant:
                 # Check if user has been idle for 3 seconds AFTER the significant change
                 # last_drawing_activity_time was set when the significant change was detected
                 if session.last_drawing_activity_time:
                     idle_time = current_time - session.last_drawing_activity_time
-                    print(f"[DEBUG] Event-Driven: significant change detected, idle_time={idle_time:.1f}s since change (need >=3s)")
                     
                     if idle_time >= 3:  # 3 seconds idle after significant change (reduced from 10s for faster response)
                         # Use a more specific prompt key based on the change timestamp
                         prompt_key = f"canvas_change_{int(session.last_drawing_activity_time)}"
-                        print(f"[DEBUG] Event-Driven: idle_time OK, prompt_key={prompt_key}, in_history={prompt_key in session.prompt_history}")
                         
                         if prompt_key not in session.prompt_history:
                             prompt = await self._generate_figure_aware_prompt(session)
-                            print(f"[DEBUG] Event-Driven: generated prompt: {prompt[:50] if prompt else 'None'}...")
                             if prompt:
                                 session.prompt_history.append(prompt_key)
                                 session.last_prompt_time = current_time
                                 # Clear previous_canvas after triggering to allow detection of next significant change
                                 import copy
                                 session.previous_canvas = copy.deepcopy(session.current_canvas) if session.current_canvas else None
-                                print(f"[DEBUG] Reset previous_canvas after trigger (now has {self.parser.parse(session.previous_canvas)['component_count'] if session.previous_canvas else 0} components)")
                                 print(f"[TRIGGER] Event-Driven prompt triggered: {idle_time:.1f}s after significant change")
                                 return prompt
-                            else:
-                                print(f"[DEBUG] Event-Driven: prompt generation returned None")
-                        else:
-                            print(f"[DEBUG] Event-Driven: prompt already sent for this change")
-                    else:
-                        print(f"[DEBUG] Event-Driven: idle_time too short ({idle_time:.1f}s < 3s)")
-                else:
-                    print(f"[DEBUG] Event-Driven: last_drawing_activity_time not set, cannot check idle time")
-            else:
-                print(f"[DEBUG] Event-Driven: no significant change detected between previous and current canvas")
-        else:
-            print(f"[DEBUG] Event-Driven check: current_canvas={session.current_canvas is not None}, previous_canvas={session.previous_canvas is not None}")
+                # No need to log when conditions aren't met - reduces noise
+        # No canvas data available - skip logging to reduce noise
         
         return None
     

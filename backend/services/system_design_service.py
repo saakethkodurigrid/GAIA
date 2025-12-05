@@ -156,16 +156,40 @@ class SystemDesignService:
     def get_session(self, session_id: str, candidate_id: Optional[str] = None) -> SessionModel:
         """Get session by ID, creating if it doesn't exist."""
         if session_id not in sessions:
-            # Recreate session with default question if it was lost
+            # Recreate session if it was lost from memory
             # Note: candidate_id should be provided to recreate properly
             if not candidate_id:
                 raise ValueError(f"Session {session_id} not found and candidate_id required to recreate")
             
+            # Try to get the assigned question for this candidate
+            question_text = "Design a URL shortener like bit.ly"  # Fallback default
+            question_id = "Q1"
+            question_uuid = None
+            
+            try:
+                from services.question_assignment_service import QuestionAssignmentService
+                assignment_service = QuestionAssignmentService(self.db)
+                assigned_question_uuid = assignment_service.get_assigned_question(candidate_id)
+                
+                if assigned_question_uuid:
+                    question = self.question_service.get_question_by_id(assigned_question_uuid)
+                    if question:
+                        question_uuid = question.uuid
+                        question_id = question.uuid
+                        question_text = question.question
+                        logger.info(f"[SESSION RECREATE] ✅ Restored question from assignment: {question_text[:100]}...")
+                    else:
+                        logger.warning(f"[SESSION RECREATE] ⚠️  Assigned question {assigned_question_uuid} not found, using default")
+                else:
+                    logger.warning(f"[SESSION RECREATE] ⚠️  No assigned question found for candidate {candidate_id}, using default")
+            except Exception as e:
+                logger.error(f"[SESSION RECREATE] Error fetching assigned question: {e}, using default")
+            
             session = SessionModel(
                 session_id=session_id,
                 candidate_id=candidate_id,
-                question_id="Q1",
-                question_text="Design a URL shortener like bit.ly",
+                question_id=question_id,
+                question_text=question_text,
                 canvas_versions=[],
                 chat_history=[],
                 evaluations=[],
@@ -179,7 +203,13 @@ class SystemDesignService:
                 milestones={},
                 last_canvas_hash=None
             )
+            
+            # Store question_uuid if available
+            if question_uuid:
+                session.question_id = question_uuid
+            
             sessions[session_id] = session
+            logger.info(f"[SESSION RECREATE] Recreated session {session_id} with question: {question_text[:100]}...")
         
         return sessions[session_id]
     
@@ -381,15 +411,15 @@ class SystemDesignService:
             )
             session.evaluations.append(eval_obj)
             
-            # Format evaluation response and add to chat history
+            # Format evaluation response and add to chat history (natural, conversational format)
             scores_str = ", ".join([f"{k}: {v:.1f}" for k, v in evaluation.get("scores", {}).items()])
-            evaluation_message = f"""Evaluation Results:
+            feedback_text = evaluation.get('feedback', 'No feedback available')
+            follow_up_text = evaluation.get('follow_up', 'Continue refining your design.')
+            evaluation_message = f"""{feedback_text}
 
-Scores: {scores_str}
+**Scores:** {scores_str}
 
-Feedback: {evaluation.get('feedback', 'No feedback available')}
-
-Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.')}"""
+**Follow-up:** {follow_up_text}"""
             
             # Add evaluation to chat history
             eval_chat_msg = ChatMessage(
@@ -441,12 +471,6 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         )
         
         if should_respond:
-            # Check if user is asking to evaluate
-            message_lower = sanitized_message.lower()
-            is_evaluation_request = any(keyword in message_lower for keyword in [
-                "evaluate", "evaluation", "review", "feedback", "assess", "analyze"
-            ])
-            
             # Get latest canvas - prefer canvas from request, then session, then last version
             if request.canvas_data:
                 latest_canvas = request.canvas_data.model_dump()
@@ -455,52 +479,7 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
                 if not latest_canvas and session.canvas_versions:
                     latest_canvas = session.canvas_versions[-1].data
             
-            # If user asks to evaluate and canvas exists, trigger full evaluation
-            if is_evaluation_request and latest_canvas:
-                latest_chat = session.chat_history[-10:] if session.chat_history else []
-                chat_text = "\n".join([msg.content for msg in latest_chat])
-                
-                # Always fetch evaluation criteria from database using question_id
-                evaluation_criteria = None
-                if session.question_id:
-                    question = self.question_service.get_question_by_id(session.question_id)
-                    if question:
-                        evaluation_criteria = question.evaluation_criteria
-                        logger.info(f"[CHAT EVALUATION] Using evaluation_criteria from question {session.question_id}")
-                    else:
-                        logger.warning(f"[CHAT EVALUATION] Question {session.question_id} not found in database")
-                
-                evaluation = await self.evaluator.evaluate(
-                    canvas_json=latest_canvas,
-                    chat_text=chat_text,
-                    question_text=session.question_text,
-                    evaluation_criteria=evaluation_criteria
-                )
-                
-                # Format evaluation response
-                scores_str = ", ".join([f"{k}: {v:.1f}" for k, v in evaluation.get("scores", {}).items()])
-                ai_response = f"""Evaluation Results:
-
-Scores: {scores_str}
-
-Feedback: {evaluation.get('feedback', 'No feedback available')}
-
-Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.')}"""
-                
-                ai_msg = ChatMessage(
-                    role="assistant",
-                    content=ai_response,
-                    timestamp=None
-                )
-                session.chat_history.append(ai_msg)
-                
-                return ChatMessageResponse(
-                    user_message=user_msg.model_dump(),
-                    ai_response=ai_response,
-                    evaluation=evaluation
-                )
-            
-            # Generate regular AI response
+            # Generate regular AI response (evaluation is only triggered via explicit actions like canvas submission)
             try:
                 ai_response = await self.orchestrator.generate_response(
                     message=sanitized_message,
@@ -550,6 +529,10 @@ Follow-up Question: {evaluation.get('follow_up', 'Continue refining your design.
         prompt = await self.orchestrator.check_proactive_prompts(session)
         
         if prompt:
+            # Update last prompt time to prevent duplicate prompts
+            session.last_prompt_time = time.time()
+            # Add to prompt history
+            session.prompt_history.append(prompt)
             return ProactivePromptResponse(has_prompt=True, prompt=prompt)
         else:
             return ProactivePromptResponse(has_prompt=False, prompt=None)
