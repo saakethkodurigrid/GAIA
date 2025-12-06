@@ -50,3 +50,7 @@ setuptools>=65.0.0
 
 # Security & Guardrails
 nemoguardrails>=0.5.0
+
+# Redis & Background Jobs
+redis>=5.0.0
+apscheduler>=3.10.0

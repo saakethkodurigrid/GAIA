@@ -55,6 +55,109 @@ app.include_router(candidate_router, prefix="/api/v1")
 app.include_router(system_design_router, prefix="/api/v1")
 app.include_router(blob_storage_router, prefix="/api/v1")
 
+# Background scheduler for test cleanup and Redis sync
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from core.database import get_db
+from services.test_cleanup_service import TestCleanupService
+from services.redis_sync_service import RedisSyncService
+from sqlalchemy.orm import Session
+
+scheduler = AsyncIOScheduler()
+
+async def sync_redis_to_postgresql():
+    """Background job to sync Redis data to PostgreSQL periodically."""
+    logger = logging.getLogger(__name__)
+    try:
+        # Get database session
+        db_gen = get_db()
+        db: Session = next(db_gen)
+        
+        try:
+            # Get all active tests
+            from models.candidate import Candidate
+            active_candidates = db.query(Candidate).filter(
+                Candidate.status == 'in progress'
+            ).all()
+            
+            sync_service = RedisSyncService(db)
+            synced_count = 0
+            
+            for candidate in active_candidates:
+                try:
+                    # Sync answers from Redis to PostgreSQL
+                    result = sync_service.sync_all_answers_to_postgresql(candidate.candidate_id)
+                    if result.get("success"):
+                        synced_count += 1
+                except Exception as e:
+                    logger.error(f"Error syncing candidate {candidate.candidate_id}: {str(e)}")
+            
+            if synced_count > 0:
+                logger.info(f"Background sync completed: {synced_count} candidates synced from Redis to PostgreSQL")
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error in background Redis sync job: {str(e)}")
+
+async def check_and_auto_complete_stale_tests():
+    """Background job to check for stale tests and auto-complete them."""
+    logger = logging.getLogger(__name__)
+    try:
+        # Get database session
+        db_gen = get_db()
+        db: Session = next(db_gen)
+        
+        try:
+            cleanup_service = TestCleanupService(db)
+            result = cleanup_service.process_stale_tests()
+            
+            if result.get("success") and result.get("completed", 0) > 0:
+                logger.info(f"Background cleanup: {result['completed']} stale tests auto-completed")
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error in background test cleanup job: {str(e)}")
+
+# Start scheduler when app starts
+@app.on_event("startup")
+async def startup_event():
+    """Start background jobs on application startup."""
+    try:
+        # Schedule periodic Redis sync (every 5 minutes)
+        scheduler.add_job(
+            sync_redis_to_postgresql,
+            trigger=IntervalTrigger(minutes=settings.BACKGROUND_SYNC_INTERVAL_MINUTES),
+            id='redis_sync_job',
+            replace_existing=True
+        )
+        
+        # Schedule stale test cleanup (every 5 minutes)
+        scheduler.add_job(
+            check_and_auto_complete_stale_tests,
+            trigger=IntervalTrigger(minutes=settings.BACKGROUND_SYNC_INTERVAL_MINUTES),
+            id='stale_test_cleanup_job',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        logging.getLogger(__name__).info("Background scheduler started: Redis sync and stale test cleanup jobs scheduled")
+        
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to start background scheduler: {str(e)}")
+
+# Shutdown scheduler when app stops
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown background jobs on application shutdown."""
+    try:
+        if scheduler.running:
+            scheduler.shutdown()
+            logging.getLogger(__name__).info("Background scheduler stopped")
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Error shutting down scheduler: {str(e)}")
+
 # Auth callback endpoint (handles redirects from OAuth flow)
 @app.get("/auth/callback")
 async def auth_callback(

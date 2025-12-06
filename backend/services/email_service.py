@@ -9,6 +9,12 @@ try:
     from pydantic import SecretStr  # noqa: F401
 except ImportError:
     pass  # pydantic might not be installed, but that's okay
+try:
+    from fastapi_mail.errors import ConnectionErrors
+    from aiosmtplib.errors import SMTPAuthenticationError
+except ImportError:
+    ConnectionErrors = Exception
+    SMTPAuthenticationError = Exception
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -315,6 +321,19 @@ This is an automated email. Please do not reply to this message.
             logger.info(f"Successfully sent invitation email to {candidate_email} for candidate {candidate_id}")
             return True
             
+        except (ConnectionErrors, SMTPAuthenticationError) as e:
+            error_msg = str(e)
+            # Check if it's a Google app-specific password error
+            if 'Application-specific password required' in error_msg or '534' in error_msg:
+                logger.error(
+                    f"Failed to send invitation email to {candidate_email}: "
+                    "Google requires an application-specific password because 2FA is enabled. "
+                    "Please generate an app-specific password from your Google Account settings "
+                    "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
+                )
+            else:
+                logger.error(f"Failed to send invitation email to {candidate_email}: {error_msg}", exc_info=True)
+            return False
         except Exception as e:
             logger.error(f"Failed to send invitation email to {candidate_email}: {str(e)}", exc_info=True)
             return False
@@ -520,6 +539,19 @@ This is an automated email. Please do not reply to this message.
             logger.info(f"Successfully sent scheduling invitation email to {candidate_email} for candidate {candidate_id}")
             return True
             
+        except (ConnectionErrors, SMTPAuthenticationError) as e:
+            error_msg = str(e)
+            # Check if it's a Google app-specific password error
+            if 'Application-specific password required' in error_msg or '534' in error_msg:
+                logger.error(
+                    f"Failed to send scheduling invitation email to {candidate_email}: "
+                    "Google requires an application-specific password because 2FA is enabled. "
+                    "Please generate an app-specific password from your Google Account settings "
+                    "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
+                )
+            else:
+                logger.error(f"Failed to send scheduling invitation email to {candidate_email}: {error_msg}", exc_info=True)
+            return False
         except Exception as e:
             logger.error(f"Failed to send scheduling invitation email to {candidate_email}: {str(e)}", exc_info=True)
             return False
@@ -593,6 +625,19 @@ This is an automated email. Please do not reply to this message.
             logger.info(f"Successfully sent test invitation email to {candidate_email} for candidate {candidate_id}")
             return True
             
+        except (ConnectionErrors, SMTPAuthenticationError) as e:
+            error_msg = str(e)
+            # Check if it's a Google app-specific password error
+            if 'Application-specific password required' in error_msg or '534' in error_msg:
+                logger.error(
+                    f"Failed to send test invitation email to {candidate_email}: "
+                    "Google requires an application-specific password because 2FA is enabled. "
+                    "Please generate an app-specific password from your Google Account settings "
+                    "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
+                )
+            else:
+                logger.error(f"Failed to send test invitation email to {candidate_email}: {error_msg}", exc_info=True)
+            return False
         except Exception as e:
             logger.error(f"Failed to send test invitation email to {candidate_email}: {str(e)}", exc_info=True)
             return False

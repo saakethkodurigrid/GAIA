@@ -381,15 +381,19 @@ class InterviewService:
             # Commit all changes at once
             self.db.commit()
             
-            # Update test session last_activity if session exists
+            # Update candidate last_activity if test is in progress
             try:
-                # Lazy import to avoid circular dependency
-                from services.test_session_service import TestSessionService
-                test_session_service = TestSessionService(self.db)
-                test_session_service.update_last_activity(candidate_id)
+                candidate = self.db.query(Candidate).filter(
+                    Candidate.candidate_id == candidate_id,
+                    Candidate.status == 'in progress'
+                ).first()
+                if candidate and candidate.test_session:
+                    from datetime import datetime
+                    candidate.test_session.last_activity = datetime.utcnow()
+                    self.db.commit()
             except Exception as e:
-                # Don't fail if test session update fails
-                logger.warning(f"Failed to update test session activity: {str(e)}")
+                # Don't fail if activity update fails
+                logger.warning(f"Failed to update candidate activity: {str(e)}")
             
             # Log successful save with evaluation results
             print("=== MCQ ANSWERS SAVED SUCCESSFULLY (BACKEND SERVICE) ===")

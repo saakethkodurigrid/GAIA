@@ -71,6 +71,21 @@ class Settings:
     # Resume Score Threshold for Auto-Sending Scheduling Invitations
     RESUME_SCORE_THRESHOLD: float = float(os.getenv('RESUME_SCORE_THRESHOLD', '30.0'))
     
+    # Redis Configuration
+    # Use connection string if provided, otherwise fall back to individual settings
+    REDIS_URL: str = os.getenv('REDIS_URL', '')
+    # Fallback settings (only used if REDIS_URL is not provided)
+    REDIS_HOST: str = os.getenv('REDIS_HOST', 'localhost')
+    REDIS_PORT: int = int(os.getenv('REDIS_PORT', '6379'))
+    REDIS_PASSWORD: str = os.getenv('REDIS_PASSWORD', '')
+    REDIS_DB: int = int(os.getenv('REDIS_DB', '0'))
+    
+    # Test Session Configuration
+    HEARTBEAT_INTERVAL_SECONDS: int = int(os.getenv('HEARTBEAT_INTERVAL_SECONDS', '120'))  # 2 minutes
+    STALE_TEST_THRESHOLD_MINUTES: int = int(os.getenv('STALE_TEST_THRESHOLD_MINUTES', '5'))  # 5 minutes
+    BACKGROUND_SYNC_INTERVAL_MINUTES: int = int(os.getenv('BACKGROUND_SYNC_INTERVAL_MINUTES', '5'))  # 5 minutes
+    REDIS_TTL_SECONDS: int = int(os.getenv('REDIS_TTL_SECONDS', '86400'))  # 24 hours
+    
     # Google OAuth Scopes
     GOOGLE_SCOPES: list = [
         'https://www.googleapis.com/auth/userinfo.email',

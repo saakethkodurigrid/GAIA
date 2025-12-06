@@ -2,7 +2,7 @@
 Test Session schemas for request and response validation.
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from schemas.mcq import SaveMCQAnswerRequest
 
@@ -34,8 +34,24 @@ class HeartbeatResponse(BaseModel):
 
 
 class CompleteTestRequest(BaseModel):
-    """Request schema for completing a test session."""
-    mcq_answers: Optional[SaveMCQAnswerRequest] = Field(None, description="MCQ answers")
+    """Request schema for completing a test session.
+    
+    Supports multiple completion methods: 'manual', 'tab_close', 'timer_expired', 
+    'heartbeat_timeout' (reserved for future use), 'auto'.
+    
+    MCQ answers can be provided in two formats:
+    1. Full format: SaveMCQAnswerRequest object (for regular API calls)
+    2. Simplified format: List[Dict[str, str]] (for sendBeacon/tab close)
+    3. Dict format: Dict with 'answers' key (serialized SaveMCQAnswerRequest)
+    """
+    completion_method: str = Field(
+        default="manual",
+        description="How test was completed: 'manual', 'tab_close', 'timer_expired', 'heartbeat_timeout' (reserved), 'auto'"
+    )
+    mcq_answers: Optional[Union[SaveMCQAnswerRequest, List[Dict[str, str]], Dict[str, Any]]] = Field(
+        None, 
+        description="MCQ answers - can be SaveMCQAnswerRequest object, List[Dict] for simplified format, or Dict with 'answers' key"
+    )
     coding_answers: Optional[Dict[str, Any]] = Field(None, description="Coding answers (to be implemented)")
     system_design_data: Optional[Dict[str, Any]] = Field(None, description="System design data (to be implemented)")
     sections_completed: Optional[Dict[str, bool]] = Field(
