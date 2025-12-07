@@ -26,7 +26,8 @@ from schemas.system_design import (
 
 
 # In-memory session storage (replace with database in production)
-sessions: Dict[str, SessionModel] = {}
+# Key: (candidate_id, question_uuid) tuple
+sessions: Dict[tuple, SessionModel] = {}
 
 
 class SystemDesignService:
@@ -42,8 +43,6 @@ class SystemDesignService:
     
     def create_session(self, request: SessionCreateRequest) -> SessionResponse:
         """Create a new interview session."""
-        session_id = str(uuid.uuid4())
-        
         # Get candidate_id from request (should be set by route from auth)
         candidate_id = request.candidate_id
         if not candidate_id:
@@ -110,12 +109,17 @@ class SystemDesignService:
                     question_text = "Design a URL shortener like bit.ly"
                     question_uuid = None
         
-        question_id = question_uuid or request.question_id or "Q1"
+        # Ensure we have a question_uuid (required for composite key)
+        if not question_uuid:
+            # If no question_uuid, we can't create a proper session
+            raise ValueError("question_uuid is required for session creation")
+        
+        # Use composite key: (candidate_id, question_uuid)
+        session_key = (candidate_id, question_uuid)
         
         session = SessionModel(
-            session_id=session_id,
             candidate_id=candidate_id,
-            question_id=question_id,
+            question_id=question_uuid,
             question_text=question_text,
             canvas_versions=[],
             chat_history=[],
@@ -131,11 +135,7 @@ class SystemDesignService:
             last_canvas_hash=None
         )
         
-        # Store question_uuid in session if available
-        if question_uuid:
-            session.question_id = question_uuid
-        
-        sessions[session_id] = session
+        sessions[session_key] = session
         
         # Verify question_uuid exists in question bank before returning it
         # If it doesn't exist, return None to prevent frontend 404 errors
@@ -148,47 +148,26 @@ class SystemDesignService:
                 final_question_uuid = None
         
         return SessionResponse(
-            session_id=session_id,
             question_text=question_text,
             question_uuid=final_question_uuid
         )
     
-    def get_session(self, session_id: str, candidate_id: Optional[str] = None) -> SessionModel:
-        """Get session by ID, creating if it doesn't exist."""
-        if session_id not in sessions:
+    def get_session(self, candidate_id: str, question_uuid: str) -> SessionModel:
+        """Get session by composite key (candidate_id, question_uuid), creating if it doesn't exist."""
+        session_key = (candidate_id, question_uuid)
+        
+        if session_key not in sessions:
             # Recreate session if it was lost from memory
-            # Note: candidate_id should be provided to recreate properly
-            if not candidate_id:
-                raise ValueError(f"Session {session_id} not found and candidate_id required to recreate")
+            # Get question details
+            question = self.question_service.get_question_by_id(question_uuid)
+            if not question:
+                raise ValueError(f"Question with UUID {question_uuid} not found")
             
-            # Try to get the assigned question for this candidate
-            question_text = "Design a URL shortener like bit.ly"  # Fallback default
-            question_id = "Q1"
-            question_uuid = None
-            
-            try:
-                from services.question_assignment_service import QuestionAssignmentService
-                assignment_service = QuestionAssignmentService(self.db)
-                assigned_question_uuid = assignment_service.get_assigned_question(candidate_id)
-                
-                if assigned_question_uuid:
-                    question = self.question_service.get_question_by_id(assigned_question_uuid)
-                    if question:
-                        question_uuid = question.uuid
-                        question_id = question.uuid
-                        question_text = question.question
-                        logger.info(f"[SESSION RECREATE] ✅ Restored question from assignment: {question_text[:100]}...")
-                    else:
-                        logger.warning(f"[SESSION RECREATE] ⚠️  Assigned question {assigned_question_uuid} not found, using default")
-                else:
-                    logger.warning(f"[SESSION RECREATE] ⚠️  No assigned question found for candidate {candidate_id}, using default")
-            except Exception as e:
-                logger.error(f"[SESSION RECREATE] Error fetching assigned question: {e}, using default")
+            question_text = question.question
             
             session = SessionModel(
-                session_id=session_id,
                 candidate_id=candidate_id,
-                question_id=question_id,
+                question_id=question_uuid,
                 question_text=question_text,
                 canvas_versions=[],
                 chat_history=[],
@@ -204,14 +183,10 @@ class SystemDesignService:
                 last_canvas_hash=None
             )
             
-            # Store question_uuid if available
-            if question_uuid:
-                session.question_id = question_uuid
-            
-            sessions[session_id] = session
-            logger.info(f"[SESSION RECREATE] Recreated session {session_id} with question: {question_text[:100]}...")
+            sessions[session_key] = session
+            logger.info(f"[SESSION RECREATE] Recreated session for candidate {candidate_id}, question {question_uuid}: {question_text[:100]}...")
         
-        return sessions[session_id]
+        return sessions[session_key]
     
     def get_questions(self, tag: Optional[str] = None) -> QuestionsResponse:
         """Get all questions, optionally filtered by tag."""
@@ -285,9 +260,11 @@ class SystemDesignService:
             tags=tags_data
         )
     
-    async def update_canvas(self, request: CanvasUpdateRequest, candidate_id: Optional[str] = None) -> CanvasUpdateResponse:
+    async def update_canvas(self, request: CanvasUpdateRequest, candidate_id: str, question_uuid: str) -> CanvasUpdateResponse:
         """Handle canvas updates (save, submit, or update)."""
-        session = self.get_session(request.session_id, candidate_id)
+        if not question_uuid:
+            raise ValueError("question_uuid is required")
+        session = self.get_session(candidate_id, question_uuid)
         
         # For "update" action, optimize by checking hash first
         if request.action == "update":
@@ -372,8 +349,15 @@ class SystemDesignService:
             # Evaluate figure + chat
             session.last_activity_time = time.time()
             
-            latest_chat = session.chat_history[-10:] if session.chat_history else []
-            chat_text = "\n".join([msg.content for msg in latest_chat])
+            # Use more chat context - last 30 messages or all if less than 30
+            if session.chat_history:
+                if len(session.chat_history) <= 30:
+                    latest_chat = session.chat_history
+                else:
+                    latest_chat = session.chat_history[-30:]
+                chat_text = "\n".join([msg.content for msg in latest_chat])
+            else:
+                chat_text = ""
             
             # Always fetch evaluation criteria from database using question_id
             evaluation_criteria = None
@@ -438,9 +422,11 @@ class SystemDesignService:
         
         raise ValueError("Invalid action")
     
-    async def send_message(self, request: ChatMessageRequest, candidate_id: Optional[str] = None) -> ChatMessageResponse:
+    async def send_message(self, request: ChatMessageRequest, candidate_id: str, question_uuid: str) -> ChatMessageResponse:
         """Send a chat message."""
-        session = self.get_session(request.session_id, candidate_id)
+        if not question_uuid:
+            raise ValueError("question_uuid is required")
+        session = self.get_session(candidate_id, question_uuid)
         
         # Sanitize user message
         sanitized_message, is_safe, warning = guardrails.sanitize_input(request.message)
@@ -518,14 +504,14 @@ class SystemDesignService:
         
         return ChatMessageResponse(user_message=user_msg.model_dump(), ai_response=None)
     
-    def get_chat_history(self, session_id: str, candidate_id: Optional[str] = None) -> ChatHistoryResponse:
+    def get_chat_history(self, candidate_id: str, question_uuid: str) -> ChatHistoryResponse:
         """Get full chat history for a session."""
-        session = self.get_session(session_id, candidate_id)
+        session = self.get_session(candidate_id, question_uuid)
         return ChatHistoryResponse(messages=[msg.model_dump() for msg in session.chat_history])
     
-    async def check_proactive_prompts(self, session_id: str, candidate_id: Optional[str] = None) -> ProactivePromptResponse:
+    async def check_proactive_prompts(self, candidate_id: str, question_uuid: str) -> ProactivePromptResponse:
         """Check if any proactive prompts should be triggered for the session."""
-        session = self.get_session(session_id, candidate_id)
+        session = self.get_session(candidate_id, question_uuid)
         prompt = await self.orchestrator.check_proactive_prompts(session)
         
         if prompt:
@@ -537,9 +523,9 @@ class SystemDesignService:
         else:
             return ProactivePromptResponse(has_prompt=False, prompt=None)
     
-    async def generate_final_report(self, session_id: str, candidate_id: Optional[str] = None) -> FinalReportResponse:
+    async def generate_final_report(self, candidate_id: str, question_uuid: str) -> FinalReportResponse:
         """Generate final evaluation report for the session."""
-        session = self.get_session(session_id, candidate_id)
+        session = self.get_session(candidate_id, question_uuid)
         
         # Fetch evaluation_criteria from database using question_id (UUID)
         # Try to fetch question from database - question_id could be a UUID or legacy format

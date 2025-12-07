@@ -28,7 +28,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [questionUuid, setQuestionUuid] = useState<string | null>(null);
   const sessionCreatedRef = useRef(false);
   const proactivePromptIntervalRef = useRef<number | null>(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
@@ -62,14 +62,25 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         }
 
         // Step 2: Create session with assigned question UUID (if available)
+        // Note: candidate_id is auto-filled by backend from authenticated user, don't send it
         console.log('Creating session...');
         const sessionResponse = await createSession({
-          candidate_id: user.candidateId,
           question_uuid: assignedQuestion?.question_uuid || undefined,
         });
 
         console.log('Session created:', sessionResponse);
-        setSessionId(sessionResponse.session_id);
+        
+        // Store question_uuid (required for all subsequent API calls)
+        if (sessionResponse.question_uuid) {
+          setQuestionUuid(sessionResponse.question_uuid);
+        } else {
+          // If no question_uuid, try to use assigned question UUID
+          if (assignedQuestion?.question_uuid) {
+            setQuestionUuid(assignedQuestion.question_uuid);
+          } else {
+            throw new Error('No question_uuid available from session or assigned question');
+          }
+        }
 
         // Step 3: Load question details
         // Priority: Use question_text from session response (always available)
@@ -109,10 +120,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         setProblem(problemData);
         console.log('Question loaded:', problemData);
 
-        // Step 4: Load chat history if session exists
-        if (sessionResponse.session_id) {
+        // Step 4: Load chat history if question_uuid exists
+        const uuidToUse = sessionResponse.question_uuid || assignedQuestion?.question_uuid;
+        if (uuidToUse) {
           try {
-            const chatHistory = await getChatHistory(sessionResponse.session_id);
+            const chatHistory = await getChatHistory(uuidToUse);
             if (chatHistory.messages && chatHistory.messages.length > 0) {
               const mappedMessages: ChatMessage[] = chatHistory.messages.map((msg, index) => ({
                 id: `${msg.timestamp || index}`,
@@ -154,7 +166,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
   // SSE connection for proactive prompts
   useEffect(() => {
-    if (!sessionId) return;
+    if (!questionUuid) return;
 
     // Cleanup function
     const cleanup = () => {
@@ -223,11 +235,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
       // Attempt to reconnect after 3 seconds
       reconnectTimeoutRef.current = window.setTimeout(() => {
-        if (sessionId) {
+        if (questionUuid) {
           console.log('Attempting to reconnect SSE stream...');
           try {
             sseAbortControllerRef.current = createProactivePromptsStream(
-              sessionId,
+              questionUuid,
               handleSSEMessage,
               handleSSEError,
               () => {
@@ -239,10 +251,10 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             console.error('Failed to reconnect SSE stream:', err);
             // Try again after another 3 seconds
             reconnectTimeoutRef.current = window.setTimeout(() => {
-              if (sessionId) {
+              if (questionUuid) {
                 try {
                   sseAbortControllerRef.current = createProactivePromptsStream(
-                    sessionId,
+                    questionUuid,
                     handleSSEMessage,
                     handleSSEError,
                     () => {
@@ -269,9 +281,9 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     // Create SSE connection
     try {
       console.log('[SSE] 🔌 Setting up SSE connection for proactive prompts...');
-      console.log('[SSE] 🔌 Session ID:', sessionId);
+      console.log('[SSE] 🔌 Question UUID:', questionUuid);
       sseAbortControllerRef.current = createProactivePromptsStream(
-        sessionId,
+        questionUuid,
         handleSSEMessage,
         handleSSEError,
         handleSSEClose
@@ -290,7 +302,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         proactivePromptIntervalRef.current = null;
       }
     };
-  }, [sessionId]);
+  }, [questionUuid]);
 
   // Timer countdown
   useEffect(() => {
@@ -320,13 +332,13 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
   // Auto-update canvas to backend (debounced)
   useEffect(() => {
-    if (!sessionId || !excalidrawData) return;
+    if (!questionUuid || !excalidrawData) return;
 
     // Clear existing timeout
     const canvasUpdateTimeout = setTimeout(async () => {
       try {
         await updateCanvas({
-          session_id: sessionId,
+          question_uuid: questionUuid,
           canvas_data: {
             elements: excalidrawData.elements || [],
             appState: excalidrawData.appState,
@@ -343,15 +355,15 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     return () => {
       clearTimeout(canvasUpdateTimeout);
     };
-  }, [excalidrawData, sessionId]);
+  }, [excalidrawData, questionUuid]);
 
   const handleUpdateNotes = useCallback((newNotes: string) => {
     setNotes(newNotes);
   }, []);
 
   const handleSendMessage = useCallback(async (message: string) => {
-    if (!message.trim() || !sessionId) {
-      console.error('Cannot send message: missing session ID');
+    if (!message.trim() || !questionUuid) {
+      console.error('Cannot send message: missing question UUID');
       return;
     }
 
@@ -376,7 +388,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       // Send message to backend with canvas data
       const response = await sendChatMessage({
         message: message.trim(),
-        session_id: sessionId,
+        question_uuid: questionUuid,
         canvas_data: canvasData,
       });
 
@@ -406,7 +418,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       };
       setChatMessages((prev) => [...prev, errorMessage]);
     }
-  }, [sessionId, excalidrawData]);
+  }, [questionUuid, excalidrawData]);
 
   const handleClearCanvas = useCallback((excalidrawAPI: any) => {
     if (excalidrawAPI) {
@@ -429,15 +441,15 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   }, []);
 
   const handleSubmitSolution = useCallback(async () => {
-    if (!sessionId || !excalidrawData) {
-      console.error('Cannot submit: missing session ID or canvas data');
+    if (!questionUuid || !excalidrawData) {
+      console.error('Cannot submit: missing question UUID or canvas data');
       return;
     }
 
     try {
       // First submit the canvas
       await updateCanvas({
-        session_id: sessionId,
+        question_uuid: questionUuid,
         canvas_data: {
           elements: excalidrawData.elements || [],
           appState: excalidrawData.appState,
@@ -449,7 +461,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
       // Then end the session to get final report
       try {
-        const report = await endSession(sessionId);
+        const report = await endSession(questionUuid);
         console.log('Final report received:', report);
         // You can store the report or show it to the user
       } catch (error) {
@@ -460,7 +472,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       console.error('Error submitting solution:', error);
       throw error;
     }
-  }, [sessionId, excalidrawData]);
+  }, [questionUuid, excalidrawData]);
 
   const value: SystemDesignContextType = {
     problem,

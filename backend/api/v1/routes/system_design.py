@@ -35,7 +35,7 @@ async def create_session(
         db: Database session
         
     Returns:
-        SessionResponse with session_id and question details
+        SessionResponse with question details
     """
     try:
         # Ensure candidate_id in request matches authenticated candidate (or auto-fill)
@@ -84,15 +84,22 @@ async def update_canvas(
     try:
         service = SystemDesignService(db)
         
-        # Verify session belongs to candidate
-        session = service.get_session(request.session_id, current_candidate.candidate_id)
+        # Get question_uuid from request (required)
+        if not request.question_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="question_uuid is required"
+            )
+        
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, request.question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.update_canvas(request, current_candidate.candidate_id)
+        return await service.update_canvas(request, current_candidate.candidate_id, request.question_uuid)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -117,7 +124,7 @@ async def send_message(
     Send a chat message.
     
     Args:
-        request: ChatMessageRequest with message and session_id
+        request: ChatMessageRequest with message and question_uuid
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
@@ -127,15 +134,22 @@ async def send_message(
     try:
         service = SystemDesignService(db)
         
-        # Verify session belongs to candidate
-        session = service.get_session(request.session_id, current_candidate.candidate_id)
+        # Get question_uuid from request (required)
+        if not request.question_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="question_uuid is required"
+            )
+        
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, request.question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.send_message(request, current_candidate.candidate_id)
+        return await service.send_message(request, current_candidate.candidate_id, request.question_uuid)
     except HTTPException:
         raise
     except Exception as e:
@@ -145,9 +159,9 @@ async def send_message(
         )
 
 
-@router.get("/sessions/{session_id}/chat-history", response_model=ChatHistoryResponse)
+@router.get("/sessions/{question_uuid}/chat-history", response_model=ChatHistoryResponse)
 async def get_chat_history(
-    session_id: str = Path(..., description="Session ID"),
+    question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -155,7 +169,7 @@ async def get_chat_history(
     Get full chat history for a session.
     
     Args:
-        session_id: Session ID
+        question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
@@ -165,15 +179,15 @@ async def get_chat_history(
     try:
         service = SystemDesignService(db)
         
-        # Verify session belongs to candidate
-        session = service.get_session(session_id, current_candidate.candidate_id)
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return service.get_chat_history(session_id, current_candidate.candidate_id)
+        return service.get_chat_history(current_candidate.candidate_id, question_uuid)
     except HTTPException:
         raise
     except Exception as e:
@@ -183,9 +197,9 @@ async def get_chat_history(
         )
 
 
-@router.post("/sessions/{session_id}/end", response_model=FinalReportResponse)
+@router.post("/sessions/{question_uuid}/end", response_model=FinalReportResponse)
 async def end_session(
-    session_id: str = Path(..., description="Session ID"),
+    question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -193,7 +207,7 @@ async def end_session(
     End session and generate final report.
     
     Args:
-        session_id: Session ID
+        question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
@@ -203,15 +217,15 @@ async def end_session(
     try:
         service = SystemDesignService(db)
         
-        # Verify session belongs to candidate
-        session = service.get_session(session_id, current_candidate.candidate_id)
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.generate_final_report(session_id, current_candidate.candidate_id)
+        return await service.generate_final_report(current_candidate.candidate_id, question_uuid)
     except HTTPException:
         raise
     except Exception as e:
@@ -221,9 +235,9 @@ async def end_session(
         )
 
 
-@router.get("/sessions/{session_id}/report", response_model=FinalReportResponse)
+@router.get("/sessions/{question_uuid}/report", response_model=FinalReportResponse)
 async def get_report(
-    session_id: str = Path(..., description="Session ID"),
+    question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -231,7 +245,7 @@ async def get_report(
     Get final evaluation report.
     
     Args:
-        session_id: Session ID
+        question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
@@ -241,15 +255,15 @@ async def get_report(
     try:
         service = SystemDesignService(db)
         
-        # Verify session belongs to candidate
-        session = service.get_session(session_id, current_candidate.candidate_id)
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.generate_final_report(session_id, current_candidate.candidate_id)
+        return await service.generate_final_report(current_candidate.candidate_id, question_uuid)
     except HTTPException:
         raise
     except Exception as e:
@@ -259,9 +273,9 @@ async def get_report(
         )
 
 
-@router.get("/sessions/{session_id}/prompts-stream")
+@router.get("/sessions/{question_uuid}/prompts-stream")
 async def stream_proactive_prompts(
-    session_id: str = Path(..., description="Session ID"),
+    question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -271,7 +285,7 @@ async def stream_proactive_prompts(
     This is more efficient than polling /check-prompts repeatedly.
     
     Args:
-        session_id: Session ID
+        question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
@@ -281,7 +295,7 @@ async def stream_proactive_prompts(
     service = SystemDesignService(db)
     
     # Verify session ownership
-    session = service.get_session(session_id, current_candidate.candidate_id)
+    session = service.get_session(current_candidate.candidate_id, question_uuid)
     if session.candidate_id != current_candidate.candidate_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -297,7 +311,7 @@ async def stream_proactive_prompts(
                 await asyncio.sleep(3)
                 
                 # Refresh session to get latest activity time
-                session = service.get_session(session_id, current_candidate.candidate_id)
+                session = service.get_session(current_candidate.candidate_id, question_uuid)
                 
                 # Update last_activity_time to current time since SSE connection is active
                 # This prevents premature closure when user is still on the page
@@ -320,7 +334,7 @@ async def stream_proactive_prompts(
                     yield f"data: {json.dumps({'has_prompt': False, 'closed': True})}\n\n"
                     break
                 
-                prompt_response = await service.check_proactive_prompts(session_id, current_candidate.candidate_id)
+                prompt_response = await service.check_proactive_prompts(current_candidate.candidate_id, question_uuid)
                 
                 # Only send if prompt is new and different
                 if prompt_response.has_prompt and prompt_response.prompt and prompt_response.prompt != last_prompt:

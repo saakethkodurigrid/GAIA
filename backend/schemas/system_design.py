@@ -15,7 +15,7 @@ class CanvasData(BaseModel):
 class ChatMessageRequest(BaseModel):
     """Request schema for sending a chat message."""
     message: str = Field(..., description="The chat message content", min_length=1)
-    session_id: str = Field(..., description="Session ID for the interview")
+    question_uuid: str = Field(..., description="Question UUID for the interview")
     canvas_data: Optional[CanvasData] = Field(None, description="Optional current canvas state from Excalidraw")
     
     class Config:
@@ -24,7 +24,7 @@ class ChatMessageRequest(BaseModel):
 
 class CanvasUpdateRequest(BaseModel):
     """Request schema for canvas updates."""
-    session_id: str = Field(..., description="Session ID for the interview")
+    question_uuid: str = Field(..., description="Question UUID for the interview")
     canvas_data: CanvasData = Field(..., description="Canvas data from Excalidraw")
     action: str = Field(..., description="Action type: 'save', 'submit', or 'update'")
     change_hash: Optional[str] = Field(None, description="Hash of canvas changes for optimization")
@@ -41,7 +41,6 @@ class SessionCreateRequest(BaseModel):
 
 class SessionResponse(BaseModel):
     """Response schema for session creation."""
-    session_id: str
     question_text: str
     question_uuid: Optional[str] = None
 
@@ -82,7 +81,7 @@ class ChatHistoryResponse(BaseModel):
 
 class FinalReportResponse(BaseModel):
     """Response schema for final evaluation report."""
-    session_id: str
+    question_uuid: str
     question: str
     average_scores: Dict[str, float]
     timeline: List[Dict[str, Any]]

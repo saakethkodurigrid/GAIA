@@ -11,7 +11,6 @@ export interface SessionCreateRequest {
 }
 
 export interface SessionResponse {
-  session_id: string;
   question_text: string;
   question_uuid?: string | null;
 }
@@ -48,7 +47,6 @@ export const createSession = async (request?: Partial<SessionCreateRequest>): Pr
 
   const data = await response.json();
   console.log('[createSession] System Design Question from Backend:', {
-    session_id: data.session_id,
     question_text: data.question_text,
     question_uuid: data.question_uuid,
     full_response: data
@@ -70,7 +68,7 @@ export interface CanvasData {
 }
 
 export interface CanvasUpdateRequest {
-  session_id: string;
+  question_uuid: string;
   canvas_data: CanvasData;
   action: 'save' | 'submit' | 'update';
   change_hash?: string;
@@ -109,7 +107,7 @@ export const updateCanvas = async (request: CanvasUpdateRequest): Promise<Canvas
 // Chat Message Types
 export interface ChatMessageRequest {
   message: string;
-  session_id: string;
+  question_uuid: string;
   canvas_data?: CanvasData;
 }
 
@@ -165,7 +163,7 @@ export interface SSEPromptEvent {
 // SSE Stream for Proactive Prompts
 // Returns an AbortController to allow cleanup
 export const createProactivePromptsStream = (
-  sessionId: string,
+  questionUuid: string,
   onMessage: (event: SSEPromptEvent) => void,
   onError?: (error: Error) => void,
   onClose?: () => void
@@ -177,7 +175,7 @@ export const createProactivePromptsStream = (
 
   const abortController = new AbortController();
 
-  const url = `${API_BASE_URL}/system-design/sessions/${sessionId}/prompts-stream`;
+  const url = `${API_BASE_URL}/system-design/sessions/${questionUuid}/prompts-stream`;
 
   // Use fetch with ReadableStream to support custom headers (EventSource doesn't support headers)
   fetch(url, {
@@ -289,8 +287,8 @@ export interface ChatHistoryResponse {
 }
 
 // Get Chat History API
-export const getChatHistory = async (sessionId: string): Promise<ChatHistoryResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/chat-history`, {
+export const getChatHistory = async (questionUuid: string): Promise<ChatHistoryResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/chat-history`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,
@@ -307,7 +305,7 @@ export const getChatHistory = async (sessionId: string): Promise<ChatHistoryResp
 
 // Final Report Types
 export interface FinalReportResponse {
-  session_id: string;
+  question_uuid: string;
   question: string;
   average_scores: Record<string, number>;
   timeline: Array<{
@@ -323,8 +321,8 @@ export interface FinalReportResponse {
 }
 
 // End Session API
-export const endSession = async (sessionId: string): Promise<FinalReportResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/end`, {
+export const endSession = async (questionUuid: string): Promise<FinalReportResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/end`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,
@@ -340,8 +338,8 @@ export const endSession = async (sessionId: string): Promise<FinalReportResponse
 };
 
 // Get Report API
-export const getReport = async (sessionId: string): Promise<FinalReportResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${sessionId}/report`, {
+export const getReport = async (questionUuid: string): Promise<FinalReportResponse> => {
+  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/report`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,

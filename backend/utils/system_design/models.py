@@ -28,9 +28,8 @@ class Evaluation(BaseModel):
 
 
 class Session(BaseModel):
-    session_id: str
-    candidate_id: str  # Candidate who owns this session
-    question_id: str
+    candidate_id: str  # Candidate who owns this session (part of composite key)
+    question_id: str  # Question UUID (part of composite key)
     question_text: str
     canvas_versions: List[CanvasVersion]
     chat_history: List[ChatMessage]

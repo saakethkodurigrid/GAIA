@@ -16,6 +16,20 @@ try:
 except (ImportError, AttributeError):
     pass
 
+# Patch fastapi_mail to ensure SecretStr is available before it's imported
+# This fixes the NameError: name 'SecretStr' is not defined issue
+# We inject SecretStr into the builtins namespace so it's available globally
+try:
+    from pydantic import SecretStr
+    import builtins
+    # Make SecretStr available in the global namespace
+    # This ensures fastapi_mail.config can find it when defining ConnectionConfig
+    if not hasattr(builtins, 'SecretStr'):
+        builtins.SecretStr = SecretStr
+except (ImportError, AttributeError):
+    # pydantic not installed or patching failed, continue anyway
+    pass
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
