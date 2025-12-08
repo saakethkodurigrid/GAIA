@@ -463,12 +463,13 @@ class InterviewService:
     
     async def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
         """
-        Save test schedule for a candidate and assign system design question and generate MCQ questions.
+        Save test schedule for a candidate and assign system design question, coding questions, and generate MCQ questions.
         
         This method:
         1. Updates the candidate's scheduled_date and status to 'scheduled'
         2. Calls QuestionAssignmentService to assign a system design question (parallel)
-        3. Generates MCQ questions using RAG (parallel)
+        3. Calls CodingQuestionAssignmentService to assign coding questions (parallel)
+        4. Generates MCQ questions using RAG (parallel)
         
         Args:
             candidate_id: UUID of the candidate
@@ -562,9 +563,10 @@ class InterviewService:
             print(f"Candidate - scheduled_date: {candidate.scheduled_date}")
             print(f"Candidate - resume: {candidate.resume}")
             print("--------------------------------")
-            # Parallel tasks: System Design Question Assignment and MCQ Generation
+            # Parallel tasks: System Design Question Assignment, MCQ Generation, and Coding Question Assignment
             system_design_result = None
             mcq_result = None
+            coding_result = None
             error_messages = []
             
             # Task 1: Assign system design question to candidate
@@ -580,7 +582,21 @@ class InterviewService:
             except Exception as e:
                 error_messages.append(f"System design question assignment error: {str(e)}")
             
-            # Task 2: Generate and save MCQ questions (if resume and job description are available)
+            # Task 2: Assign coding questions to candidate
+            try:
+                from services.coding_question_assignment_service import CodingQuestionAssignmentService
+                from core.config import settings
+                coding_service = CodingQuestionAssignmentService(self.db)
+                coding_result = coding_service.assign_coding_questions_to_candidate(
+                    candidate_id=candidate_id,
+                    use_random=settings.RANDOM_CODING_QUESTIONS
+                )
+                if not coding_result.get("success"):
+                    error_messages.append(f"Coding question assignment failed: {coding_result.get('message', 'Unknown error')}")
+            except Exception as e:
+                error_messages.append(f"Coding question assignment error: {str(e)}")
+            
+            # Task 3: Generate and save MCQ questions (if resume and job description are available)
             if candidate.resume and assignment and assignment.job:
                 print("Inside if condition..............")
                 try:

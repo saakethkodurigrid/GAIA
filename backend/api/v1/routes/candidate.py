@@ -3,16 +3,21 @@ Candidate API routes for interview-related operations.
 """
 import json
 import logging
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_candidate
+from core.config import settings
 from models.candidate import Candidate
 from models.test_session import TestSession
+from models.coding_question_bank import CodingQuestionBank
+from models.interview_coding import InterviewCoding
 from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 from schemas.admin import AssignedQuestionResponse
+from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse
 from schemas.test_session import (
     StartTestRequest,
     StartTestResponse,
@@ -865,4 +870,518 @@ async def get_test_status(
         sections_completed=test_session.sections_completed or {},
         last_activity=test_session.last_activity
     )
+
+
+@router.post("/{candidate_id}/coding/run", response_model=RunCodeResponse)
+async def run_code(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: RunCodeRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Run code against test cases for a coding question.
+    
+    Supports two modes:
+    - "run": Execute only sample test cases (safe to show results)
+    - "run_all": Execute sample test cases + hidden test cases (results sanitized)
+    
+    Test cases are fetched from Redis (if available) or database.
+    Code is executed via external execution service.
+    
+    Only the authenticated candidate can run code for their own questions.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: RunCodeRequest with question_id, language, code, and mode
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        RunCodeResponse with execution results
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or question not found
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's questions
+            - 502: If execution service returns invalid response
+            - 503: If execution service is unavailable
+            - 504: If execution service times out
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only run code for your own questions."
+        )
+    
+    try:
+        loader_service = TestDataLoaderService(db)
+        coding_question = None
+        sample_test_cases = []
+        test_cases = []
+        
+        # Step 1: Try to get from Redis first
+        try:
+            coding_questions = loader_service.get_coding_questions_from_redis(candidate_id)
+            if coding_questions:
+                # Find the question by question_id
+                for q in coding_questions:
+                    if q.get("question_uuid") == request.question_id:
+                        coding_question = q
+                        sample_test_cases = q.get("sample_test_cases", [])
+                        test_cases = q.get("test_cases", [])
+                        break
+        except Exception as e:
+            logger.warning(f"Failed to get coding questions from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+        
+        # Step 2: Fallback to database if not found in Redis
+        if not coding_question:
+            logger.info(f"Question {request.question_id} not found in Redis, fetching from database")
+            coding_question_db = db.query(CodingQuestionBank).filter(
+                CodingQuestionBank.uuid == request.question_id
+            ).first()
+            
+            if not coding_question_db:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Coding question with ID {request.question_id} not found"
+                )
+            
+            # Extract test cases from database
+            sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
+            test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
+            
+            # Optionally reload test data to Redis for future requests
+            try:
+                loader_service.load_test_data_to_redis(candidate_id)
+            except Exception as e:
+                logger.warning(f"Failed to reload test data to Redis: {str(e)}")
+        
+        # Step 3: Validate test cases exist
+        if not sample_test_cases and not test_cases:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No test cases found for this question"
+            )
+        
+        if request.mode == "run" and not sample_test_cases:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No sample test cases found for this question"
+            )
+        
+        # Step 4: Format test cases for execution service
+        # Build formatted test cases based on mode
+        formatted_test_cases = []
+        
+        if request.mode == "run":
+            # For "run" mode: use only sample_test_cases
+            if sample_test_cases:
+                for idx, tc in enumerate(sample_test_cases):
+                    if isinstance(tc, dict):
+                        formatted_tc = {
+                            "id": tc.get("id", f"sample_{idx + 1}"),
+                            "input": tc.get("input", ""),
+                            "expected_output": tc.get("expected_output", "")
+                        }
+                        formatted_test_cases.append(formatted_tc)
+        elif request.mode == "run_all":
+            # For "run_all" mode: combine sample_test_cases + test_cases
+            # First add sample test cases
+            if sample_test_cases:
+                for idx, tc in enumerate(sample_test_cases):
+                    if isinstance(tc, dict):
+                        formatted_tc = {
+                            "id": tc.get("id", f"sample_{idx + 1}"),
+                            "input": tc.get("input", ""),
+                            "expected_output": tc.get("expected_output", "")
+                        }
+                        formatted_test_cases.append(formatted_tc)
+            # Then add hidden test cases
+            if test_cases:
+                for idx, tc in enumerate(test_cases):
+                    if isinstance(tc, dict):
+                        formatted_tc = {
+                            "id": tc.get("id", f"hidden_{idx + 1}"),
+                            "input": tc.get("input", ""),
+                            "expected_output": tc.get("expected_output", "")
+                        }
+                        formatted_test_cases.append(formatted_tc)
+        
+        # Step 5: Build request for execution service
+        execution_request = {
+            "language": request.language,
+            "code": request.code,
+            "test_cases": formatted_test_cases,
+            "user_id": candidate_id,
+            "question_id": request.question_id
+        }
+        
+        # Step 6: Call external execution service
+        execution_url = settings.CODE_EXECUTION_URL
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    execution_url,
+                    json=execution_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                response.raise_for_status()
+                execution_result = response.json()
+        except httpx.TimeoutException:
+            logger.error(f"Execution service timeout for candidate {candidate_id}, question {request.question_id}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Code execution timed out. Please try again."
+            )
+        except httpx.ConnectError:
+            logger.error(f"Execution service connection error for candidate {candidate_id}, question {request.question_id}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Code execution service is currently unavailable. Please try again later."
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Execution service HTTP error {e.response.status_code}: {e.response.text}")
+            try:
+                error_detail = e.response.json().get("detail", e.response.text)
+            except:
+                error_detail = e.response.text
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Execution service error: {error_detail}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error calling execution service: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to execute code: {str(e)}"
+            )
+        
+        # Step 7: Sanitize response based on mode
+        if request.mode == "run_all" and "test_results" in execution_result:
+            # Sanitize hidden test cases (remove input/expected_output)
+            # Build a set of sample test case IDs for quick lookup
+            sample_test_case_ids = set()
+            if sample_test_cases:
+                for idx, tc in enumerate(sample_test_cases):
+                    if isinstance(tc, dict):
+                        sample_id = tc.get("id", f"sample_{idx + 1}")
+                        sample_test_case_ids.add(sample_id)
+            
+            sanitized_results = []
+            for result in execution_result.get("test_results", []):
+                test_case_id = result.get("test_case_id", "")
+                
+                # Check if this is a sample test case by ID
+                is_sample = test_case_id in sample_test_case_ids or test_case_id.startswith("sample_")
+                
+                if is_sample:
+                    # Keep full details for sample test cases
+                    sanitized_results.append(result)
+                else:
+                    # Sanitize hidden test cases - remove sensitive information
+                    sanitized_result = {
+                        "test_case_id": test_case_id,
+                        "test_case_number": result.get("test_case_number"),
+                        "status": result.get("status", "unknown"),
+                        "passed": result.get("passed", False),
+                        "execution_time_ms": result.get("execution_time_ms"),
+                        "cpu_usage_percent": result.get("cpu_usage_percent"),
+                        "memory_usage_bytes": result.get("memory_usage_bytes")
+                        # Intentionally omitting: input, expected_output, actual_output
+                    }
+                    sanitized_results.append(sanitized_result)
+            
+            execution_result["test_results"] = sanitized_results
+        
+        # Step 8: Return response
+        return RunCodeResponse(
+            execution_id=execution_result.get("execution_id"),
+            summary=execution_result.get("summary", {}),
+            test_results=execution_result.get("test_results", []),
+            metadata=execution_result.get("metadata"),
+            timestamp=execution_result.get("timestamp")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error running code for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post("/{candidate_id}/coding/submit", response_model=SubmitCodingAnswerResponse)
+async def submit_coding_answer(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: SubmitCodingAnswerRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Submit final answer for a coding question.
+    
+    This endpoint:
+    1. Runs all test cases (sample + hidden) via execution service
+    2. Calculates score: 5 points per sample test case passed, 10 points per hidden test case passed
+    3. Updates InterviewCoding table with score and test_cases_passed
+    4. Uses Redis for optimization (caching test cases)
+    
+    Only the authenticated candidate can submit answers for their own questions.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: SubmitCodingAnswerRequest with question_id, language, and code
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        SubmitCodingAnswerResponse with submission results and score
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or question not found
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's questions
+            - 502: If execution service returns invalid response
+            - 503: If execution service is unavailable
+            - 504: If execution service times out
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only submit answers for your own questions."
+        )
+    
+    try:
+        loader_service = TestDataLoaderService(db)
+        coding_question = None
+        sample_test_cases = []
+        test_cases = []
+        
+        # Step 1: Try to get from Redis first (optimization)
+        try:
+            coding_questions = loader_service.get_coding_questions_from_redis(candidate_id)
+            if coding_questions:
+                # Find the question by question_id
+                for q in coding_questions:
+                    if q.get("question_uuid") == request.question_id:
+                        coding_question = q
+                        sample_test_cases = q.get("sample_test_cases", [])
+                        test_cases = q.get("test_cases", [])
+                        break
+        except Exception as e:
+            logger.warning(f"Failed to get coding questions from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+        
+        # Step 2: Fallback to database if not found in Redis
+        if not coding_question:
+            logger.info(f"Question {request.question_id} not found in Redis, fetching from database")
+            coding_question_db = db.query(CodingQuestionBank).filter(
+                CodingQuestionBank.uuid == request.question_id
+            ).first()
+            
+            if not coding_question_db:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Coding question with ID {request.question_id} not found"
+                )
+            
+            # Extract test cases from database
+            sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
+            test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
+            
+            # Reload test data to Redis for future requests (optimization)
+            try:
+                loader_service.load_test_data_to_redis(candidate_id)
+            except Exception as e:
+                logger.warning(f"Failed to reload test data to Redis: {str(e)}")
+        
+        # Step 3: Validate test cases exist
+        if not sample_test_cases and not test_cases:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No test cases found for this question"
+            )
+        
+        # Step 4: Format all test cases for execution service (run_all mode)
+        formatted_test_cases = []
+        
+        # Add sample test cases
+        if sample_test_cases:
+            for idx, tc in enumerate(sample_test_cases):
+                if isinstance(tc, dict):
+                    formatted_tc = {
+                        "id": tc.get("id", f"sample_{idx + 1}"),
+                        "input": tc.get("input", ""),
+                        "expected_output": tc.get("expected_output", "")
+                    }
+                    formatted_test_cases.append(formatted_tc)
+        
+        # Add hidden test cases
+        if test_cases:
+            for idx, tc in enumerate(test_cases):
+                if isinstance(tc, dict):
+                    formatted_tc = {
+                        "id": tc.get("id", f"hidden_{idx + 1}"),
+                        "input": tc.get("input", ""),
+                        "expected_output": tc.get("expected_output", "")
+                    }
+                    formatted_test_cases.append(formatted_tc)
+        
+        # Step 5: Build request for execution service
+        execution_request = {
+            "language": request.language,
+            "code": request.code,
+            "test_cases": formatted_test_cases,
+            "user_id": candidate_id,
+            "question_id": request.question_id
+        }
+        
+        # Step 6: Call external execution service
+        execution_url = settings.CODE_EXECUTION_URL
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    execution_url,
+                    json=execution_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                response.raise_for_status()
+                execution_result = response.json()
+        except httpx.TimeoutException:
+            logger.error(f"Execution service timeout for candidate {candidate_id}, question {request.question_id}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Code execution timed out. Please try again."
+            )
+        except httpx.ConnectError:
+            logger.error(f"Execution service connection error for candidate {candidate_id}, question {request.question_id}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Code execution service is currently unavailable. Please try again later."
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Execution service HTTP error {e.response.status_code}: {e.response.text}")
+            try:
+                error_detail = e.response.json().get("detail", e.response.text)
+            except:
+                error_detail = e.response.text
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Execution service error: {error_detail}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error calling execution service: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to execute code: {str(e)}"
+            )
+        
+        # Step 7: Calculate score based on test results
+        # Build a set of sample test case IDs for quick lookup
+        sample_test_case_ids = set()
+        if sample_test_cases:
+            for idx, tc in enumerate(sample_test_cases):
+                if isinstance(tc, dict):
+                    sample_id = tc.get("id", f"sample_{idx + 1}")
+                    sample_test_case_ids.add(sample_id)
+        
+        # Calculate scores
+        total_score = 0
+        test_cases_passed = 0
+        sample_test_cases_passed = 0
+        hidden_test_cases_passed = 0
+        total_test_cases = len(formatted_test_cases)
+        
+        test_results = execution_result.get("test_results", [])
+        for result in test_results:
+            test_case_id = result.get("test_case_id", "")
+            passed = result.get("passed", False)
+            status_value = result.get("status", "").lower()
+            
+            # Check if test passed
+            is_passed = passed or status_value == "passed"
+            
+            if is_passed:
+                test_cases_passed += 1
+                
+                # Check if this is a sample test case
+                is_sample = test_case_id in sample_test_case_ids or test_case_id.startswith("sample_")
+                
+                if is_sample:
+                    # Sample test case: 5 points
+                    total_score += 5
+                    sample_test_cases_passed += 1
+                else:
+                    # Hidden test case: 10 points
+                    total_score += 10
+                    hidden_test_cases_passed += 1
+        
+        # Step 8: Update InterviewCoding table
+        interview_coding = db.query(InterviewCoding).filter(
+            InterviewCoding.candidate_id == candidate_id,
+            InterviewCoding.question_uuid == request.question_id
+        ).first()
+        
+        if not interview_coding:
+            # Create new record if it doesn't exist
+            interview_coding = InterviewCoding(
+                candidate_id=candidate_id,
+                question_uuid=request.question_id,
+                score=total_score,
+                test_cases_passed=test_cases_passed,
+                difficulty=None  # Can be set from CodingQuestionBank if needed
+            )
+            db.add(interview_coding)
+        else:
+            # Update existing record
+            interview_coding.score = total_score
+            interview_coding.test_cases_passed = test_cases_passed
+        
+        # Commit to database
+        db.commit()
+        
+        # Step 9: Update last_activity
+        try:
+            candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+            if candidate and candidate.test_session:
+                candidate.test_session.last_activity = datetime.utcnow()
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to update last_activity: {str(e)}")
+        
+        logger.info(
+            f"Coding answer submitted for candidate {candidate_id}, question {request.question_id}: "
+            f"Score={total_score}, TestCasesPassed={test_cases_passed}/{total_test_cases}"
+        )
+        
+        # Step 10: Return response
+        return SubmitCodingAnswerResponse(
+            success=True,
+            message="Coding answer submitted successfully",
+            question_id=request.question_id,
+            score=total_score,
+            test_cases_passed=test_cases_passed,
+            total_test_cases=total_test_cases,
+            sample_test_cases_passed=sample_test_cases_passed,
+            hidden_test_cases_passed=hidden_test_cases_passed,
+            execution_id=execution_result.get("execution_id")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error submitting coding answer for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 

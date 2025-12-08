@@ -88,8 +88,20 @@ async def sync_redis_to_postgresql():
         db: Session = next(db_gen)
         
         try:
-            # Get all active tests
+            # Check if there are any active tests first
             from models.candidate import Candidate
+            active_count = db.query(Candidate).filter(
+                Candidate.status == 'in progress'
+            ).count()
+            
+            # Skip if no active tests
+            if active_count == 0:
+                logger.info("No active tests found, skipping Redis sync")
+                return
+            
+            logger.info(f"Found {active_count} active test(s), proceeding with Redis sync")
+            
+            # Get all active tests
             active_candidates = db.query(Candidate).filter(
                 Candidate.status == 'in progress'
             ).all()
@@ -134,6 +146,19 @@ async def check_and_auto_complete_stale_tests():
         db: Session = next(db_gen)
         
         try:
+            # Check if there are any active tests first
+            from models.candidate import Candidate
+            active_count = db.query(Candidate).filter(
+                Candidate.status == 'in progress'
+            ).count()
+            
+            # Skip if no active tests
+            if active_count == 0:
+                logger.info("No active tests found, skipping stale test cleanup")
+                return
+            
+            logger.info(f"Found {active_count} active test(s), proceeding with stale test cleanup")
+            
             cleanup_service = TestCleanupService(db)
             result = cleanup_service.process_stale_tests()
             

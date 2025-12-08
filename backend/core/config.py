@@ -86,6 +86,12 @@ class Settings:
     BACKGROUND_SYNC_INTERVAL_MINUTES: int = int(os.getenv('BACKGROUND_SYNC_INTERVAL_MINUTES', '5'))  # 5 minutes
     REDIS_TTL_SECONDS: int = int(os.getenv('REDIS_TTL_SECONDS', '86400'))  # 24 hours
     
+    # Coding Question Assignment Configuration
+    RANDOM_CODING_QUESTIONS: bool = os.getenv('RANDOM_CODING_QUESTIONS', 'False').lower() == 'true'
+    
+    # Code Execution Service Configuration
+    CODE_EXECUTION_URL: str = os.getenv('CODE_EXECUTION_URL', 'http://localhost:8000')
+    
     # Google OAuth Scopes
     GOOGLE_SCOPES: list = [
         'https://www.googleapis.com/auth/userinfo.email',
