@@ -360,9 +360,6 @@ This is an automated email. Please do not reply to this message.
             else:
                 # Re-raise if it's not a connection/auth error
                 raise
-        except Exception as e:
-            logger.error(f"Failed to send invitation email to {candidate_email}: {str(e)}", exc_info=True)
-            return False
     
     def _create_test_invitation_email_html(
         self,
@@ -584,9 +581,6 @@ This is an automated email. Please do not reply to this message.
             else:
                 # Re-raise if it's not a connection/auth error
                 raise
-        except Exception as e:
-            logger.error(f"Failed to send scheduling invitation email to {candidate_email}: {str(e)}", exc_info=True)
-            return False
     
     async def send_test_invitation_email(
         self,
@@ -676,9 +670,6 @@ This is an automated email. Please do not reply to this message.
             else:
                 # Re-raise if it's not a connection/auth error
                 raise
-        except Exception as e:
-            logger.error(f"Failed to send test invitation email to {candidate_email}: {str(e)}", exc_info=True)
-            return False
 
 
 # Create singleton instance - handle import errors gracefully

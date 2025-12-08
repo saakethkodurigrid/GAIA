@@ -13,6 +13,7 @@ export interface SessionCreateRequest {
 export interface SessionResponse {
   question_text: string;
   question_uuid?: string | null;
+  current_canvas?: CanvasData | null;
 }
 
 export interface QuestionResponse {

@@ -51,7 +51,8 @@ class EvaluationEngine:
         canvas_json: Dict[str, Any],
         chat_text: str,
         question_text: str,
-        evaluation_criteria: Optional[str] = None
+        evaluation_criteria: Optional[str] = None,
+        evaluation_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Evaluate figure + chat and return scores, feedback, and follow-up
@@ -145,13 +146,32 @@ SCORING GUIDELINES:
 Provide your evaluation as JSON with scores, detailed feedback, and a thoughtful follow-up question."""
         else:
             # Use the evaluation criteria from the database with comprehensive system prompt
+            # evaluation_criteria is the PRIMARY source (required)
+            # evaluation_context is SUPPLEMENTAL (optional, provides domain-specific insights)
+            
+            # Build evaluation context section if available
+            context_section = ""
+            if evaluation_context:
+                context_parts = []
+                if evaluation_context.get("domain_specific_notes"):
+                    context_parts.append(f"DOMAIN-SPECIFIC NOTES:\n{evaluation_context.get('domain_specific_notes')}")
+                if evaluation_context.get("scoring_tips"):
+                    context_parts.append(f"SCORING TIPS:\n{evaluation_context.get('scoring_tips')}")
+                
+                if context_parts:
+                    context_section = f"""
+
+ADDITIONAL EVALUATION CONTEXT (Use this to understand domain-specific nuances, but still evaluate based on the criteria above):
+{chr(10).join(context_parts)}
+"""
+            
             system_prompt = f"""You are an experienced system design interviewer evaluating a candidate's design solution.
 Your role is to provide a thorough, fair, and constructive evaluation STRICTLY based on the evaluation criteria provided below.
 
 CRITICAL: You MUST evaluate using ONLY the categories and criteria specified below. Do NOT use generic categories.
 
 EVALUATION CRITERIA (MANDATORY - Use these exact categories for evaluation, but DO NOT include them in your response):
-{evaluation_criteria}
+{evaluation_criteria}{context_section}
 
 CRITICAL OUTPUT RESTRICTIONS:
 - DO NOT include the evaluation criteria text in your feedback or response
@@ -159,6 +179,7 @@ CRITICAL OUTPUT RESTRICTIONS:
 - Only provide scores, feedback, and follow-up questions
 - The feedback should be natural, conversational text - NOT a list of criteria
 - Reference the criteria implicitly in your evaluation, but do not quote them
+- Use the additional context to understand domain-specific nuances, but always evaluate based on the criteria above
 
 EVALUATION INSTRUCTIONS:
 1. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
@@ -170,6 +191,7 @@ EVALUATION INSTRUCTIONS:
 7. Be constructive and encouraging - frame feedback as opportunities for improvement
 8. Note any missing critical components or design patterns mentioned in the evaluation criteria
 9. Acknowledge strengths while also identifying areas that need improvement based on the criteria
+10. Use the additional context (if provided) to understand what strong candidates typically discuss for this domain
 
 FEEDBACK STYLE:
 - Be conversational and friendly, as if you're mentoring a colleague
@@ -189,7 +211,7 @@ IMPORTANT: Your JSON response must include scores for the EXACT categories menti
 
         # Initialize expected_categories for validation
         expected_categories = []
-        
+
         # Build dynamic JSON example based on evaluation_criteria if available
         if evaluation_criteria:
             # Extract category names from evaluation_criteria (look for numbered sections)
@@ -628,7 +650,7 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         
         return evaluation
     
-    async def generate_final_report(self, session: Session, evaluation_criteria: Optional[str] = None) -> Dict[str, Any]:
+    async def generate_final_report(self, session: Session, evaluation_criteria: Optional[str] = None, evaluation_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate final evaluation report for the session using LLM evaluation with evaluation_criteria from database"""
         
         # Get the latest canvas and chat history for comprehensive evaluation
@@ -647,7 +669,8 @@ Provide your response as JSON with the EXACT category names from the evaluation 
                     canvas_json=latest_canvas,
                     chat_text=chat_text,
                     question_text=session.question_text,
-                    evaluation_criteria=evaluation_criteria
+                    evaluation_criteria=evaluation_criteria,
+                    evaluation_context=evaluation_context
                 )
             except Exception as e:
                 print(f"Error performing final LLM evaluation: {str(e)}")

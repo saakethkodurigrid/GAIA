@@ -97,6 +97,7 @@ async def sync_redis_to_postgresql():
             sync_service = RedisSyncService(db)
             synced_count = 0
             
+            # Sync answers for active candidates
             for candidate in active_candidates:
                 try:
                     # Sync answers from Redis to PostgreSQL
@@ -105,6 +106,16 @@ async def sync_redis_to_postgresql():
                         synced_count += 1
                 except Exception as e:
                     logger.error(f"Error syncing candidate {candidate.candidate_id}: {str(e)}")
+            
+            # Also sync all active system design sessions (may include sessions for candidates not in 'in progress' status)
+            try:
+                system_design_result = sync_service.sync_all_system_design_sessions()
+                if system_design_result.get("success"):
+                    logger.info(f"Synced {system_design_result.get('synced_count', 0)} system design sessions")
+                else:
+                    logger.warning(f"System design sync had {system_design_result.get('failed_count', 0)} failures")
+            except Exception as e:
+                logger.error(f"Error syncing system design sessions: {str(e)}")
             
             if synced_count > 0:
                 logger.info(f"Background sync completed: {synced_count} candidates synced from Redis to PostgreSQL")

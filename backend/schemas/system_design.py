@@ -43,6 +43,7 @@ class SessionResponse(BaseModel):
     """Response schema for session creation."""
     question_text: str
     question_uuid: Optional[str] = None
+    current_canvas: Optional[Dict[str, Any]] = Field(None, description="Current canvas data if session exists")
 
 
 class QuestionResponse(BaseModel):

@@ -62,16 +62,341 @@ class ConversationOrchestrator:
         
         return False
     
+    def _classify_question_type(self, message: str) -> str:
+        """Classify question type to determine response strategy."""
+        message_lower = message.lower()
+        
+        # Methodology questions - need structure/frameworks
+        methodology_keywords = [
+            "functional requirement",
+            "non-functional requirement",
+            "non functional requirement",
+            "what should i consider",
+            "how do i approach",
+            "what is the process",
+            "what are the steps",
+            "where do i start",
+            "how do i begin"
+        ]
+        if any(keyword in message_lower for keyword in methodology_keywords):
+            return "methodology"
+        
+        # Design questions - use Socratic method
+        design_keywords = [
+            "how should i design",
+            "what technology",
+            "should i use",
+            "which approach",
+            "how would you",
+            "what design"
+        ]
+        if any(keyword in message_lower for keyword in design_keywords):
+            return "design"
+        
+        # Stuck/confused - provide hints
+        stuck_keywords = [
+            "i don't know",
+            "i'm stuck",
+            "help me",
+            "not sure",
+            "confused",
+            "can't figure out",
+            "unclear"
+        ]
+        if any(keyword in message_lower for keyword in stuck_keywords):
+            return "stuck"
+        
+        # Good question - acknowledge and guide
+        if message_lower.endswith("?"):
+            return "clarification"
+        
+        return "general"
+    
+    def _get_methodology_framework(
+        self, 
+        message: str, 
+        question_metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Provide scaffolding frameworks for methodology questions."""
+        message_lower = message.lower()
+        
+        # Determine if asking about functional, non-functional, or both
+        has_functional = "functional requirement" in message_lower and "non-functional" not in message_lower and "non functional" not in message_lower
+        has_non_functional = "non-functional requirement" in message_lower or "non functional requirement" in message_lower
+        has_both = ("functional" in message_lower and "non-functional" in message_lower) or ("functional" in message_lower and "non functional" in message_lower)
+        
+        # Try to get from question metadata first
+        if question_metadata:
+            if has_functional and question_metadata.get("functional_requirements_template"):
+                return question_metadata["functional_requirements_template"]
+            if has_non_functional and question_metadata.get("non_functional_requirements_template"):
+                return question_metadata["non_functional_requirements_template"]
+            if has_both:
+                # Combine both templates
+                func_template = question_metadata.get("functional_requirements_template", "")
+                nfr_template = question_metadata.get("non_functional_requirements_template", "")
+                if func_template and nfr_template:
+                    return f"{func_template}\n\n{nfr_template}"
+        
+        # Fallback to generic frameworks
+        functional_framework = """
+Great question! Functional requirements describe WHAT the system should do.
+Think about:
+- User actions (what can users do?)
+- Data operations (what data needs to be stored/retrieved?)
+- System behaviors (how should the system respond?)
+- Integrations (what external systems does it interact with?)
+
+For this system, what user actions come to mind?
+"""
+        
+        non_functional_framework = """
+Excellent! Non-functional requirements describe HOW WELL the system should perform.
+Consider:
+- Performance (latency, throughput)
+- Scalability (can it handle growth?)
+- Reliability (uptime, fault tolerance)
+- Security (authentication, encryption)
+- Maintainability (code quality, monitoring)
+
+For this system, which of these do you think is most critical?
+"""
+        
+        if has_both:
+            return f"{functional_framework}\n\n{non_functional_framework}"
+        elif has_functional:
+            return functional_framework
+        elif has_non_functional:
+            return non_functional_framework
+        
+        return ""
+    
+    def _acknowledge_good_question(self, message: str) -> str:
+        """Acknowledge when candidate asks good questions."""
+        message_lower = message.lower()
+        
+        good_question_patterns = [
+            ("functional requirements", "That's exactly the right question! You're thinking about what the system needs to do."),
+            ("non-functional requirements", "Perfect! You're considering how well the system should perform."),
+            ("scalability", "Great thinking! Scalability is crucial for this type of system."),
+            ("trade-off", "Excellent! Considering trade-offs shows strong system design thinking."),
+            ("reliability", "That's a great question! Reliability is a key non-functional requirement."),
+            ("performance", "Good question! Performance is critical for user experience.")
+        ]
+        
+        for pattern, acknowledgment in good_question_patterns:
+            if pattern in message_lower:
+                return acknowledgment
+        
+        return ""
+    
+    def _check_repetition(self, chat_history: List[ChatMessage], current_message: str) -> Dict[str, Any]:
+        """Check if candidate is asking similar questions repeatedly."""
+        if len(chat_history) < 2:
+            return {"is_repetitive": False, "count": 0, "escalate_help": False}
+        
+        # Check last 5 user messages for similar patterns
+        recent_user_messages = [msg.content.lower() for msg in chat_history[-5:] if msg.role == "user"]
+        current_lower = current_message.lower()
+        
+        # Count similar questions
+        similar_keywords = ["requirement", "should", "how", "what", "approach", "design"]
+        similar_count = sum(1 for msg in recent_user_messages
+                           if any(keyword in msg and keyword in current_lower
+                                 for keyword in similar_keywords))
+        
+        return {
+            "is_repetitive": similar_count >= 2,
+            "count": similar_count,
+            "escalate_help": similar_count >= 3
+        }
+    
+    def _analyze_candidate_state(
+        self, 
+        chat_history: List[ChatMessage], 
+        canvas_data: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Analyze candidate's current state and needs."""
+        state = {
+            "is_stuck": False,
+            "needs_scaffolding": False,
+            "is_making_progress": False,
+            "confidence_level": "medium"
+        }
+        
+        # Check for stuck indicators
+        if chat_history:
+            recent_messages = [msg.content.lower() for msg in chat_history[-3:] if msg.role == "user"]
+            stuck_indicators = ["don't know", "stuck", "confused", "help", "not sure", "can't figure out"]
+            if any(indicator in msg for msg in recent_messages for indicator in stuck_indicators):
+                state["is_stuck"] = True
+                state["needs_scaffolding"] = True
+        
+        # Check for progress
+        if canvas_data:
+            parsed = self.parser.parse(canvas_data)
+            if parsed["component_count"] > 0:
+                state["is_making_progress"] = True
+        
+        # Check confidence (based on question quality and specificity)
+        if chat_history:
+            last_user_msg = chat_history[-1].content.lower() if chat_history[-1].role == "user" else ""
+            specific_questions = ["how", "what", "should", "consider", "approach"]
+            if any(keyword in last_user_msg for keyword in specific_questions):
+                state["confidence_level"] = "high"
+        
+        return state
+    
+    def _track_question_progression(
+        self, 
+        session: Session, 
+        current_message: str
+    ) -> Dict[str, Any]:
+        """Track question patterns and determine if help should escalate."""
+        progression = {
+            "similar_questions_count": 0,
+            "should_escalate": False,
+            "help_level": "hint"  # hint -> guidance -> direct_structure
+        }
+        
+        # Track similar questions in session
+        if not hasattr(session, 'question_patterns'):
+            session.question_patterns = {}
+        
+        # Extract question topic
+        message_lower = current_message.lower()
+        question_key = None
+        if "functional" in message_lower or "requirement" in message_lower:
+            question_key = "requirements"
+        elif "non-functional" in message_lower or "nfr" in message_lower:
+            question_key = "nfr"
+        elif "design" in message_lower or "how should" in message_lower:
+            question_key = "design"
+        else:
+            question_key = "general"
+        
+        if question_key in session.question_patterns:
+            session.question_patterns[question_key] += 1
+        else:
+            session.question_patterns[question_key] = 1
+        
+        count = session.question_patterns[question_key]
+        progression["similar_questions_count"] = count
+        
+        # Escalate help based on count
+        if count >= 3:
+            progression["should_escalate"] = True
+            progression["help_level"] = "direct_structure"
+        elif count >= 2:
+            progression["should_escalate"] = True
+            progression["help_level"] = "guidance"
+        
+        return progression
+    
+    def _get_relevant_evaluation_criteria(
+        self, 
+        message: str, 
+        canvas_data: Optional[Dict[str, Any]],
+        question_metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Extract relevant evaluation criteria based on question."""
+        message_lower = message.lower()
+        criteria_context = ""
+        
+        # Use guidance_prompts from question_metadata if available
+        if question_metadata and question_metadata.get("guidance_prompts"):
+            guidance = question_metadata["guidance_prompts"]
+            
+            if "functional" in message_lower or "requirement" in message_lower:
+                if guidance.get("core_functionality"):
+                    criteria_context = f"""
+Evaluation Criteria Context:
+- Core Functionality: {', '.join(guidance.get('core_functionality', [])[:3])}
+- This is what you're asking about! Think about what the system must do.
+"""
+            elif "non-functional" in message_lower or "performance" in message_lower or "scalability" in message_lower:
+                if guidance.get("scalability") or guidance.get("reliability"):
+                    criteria_context = f"""
+Evaluation Criteria Context:
+- Scalability: {', '.join(guidance.get('scalability', [])[:2]) if guidance.get('scalability') else 'Can the system handle growth?'}
+- Reliability: {', '.join(guidance.get('reliability', [])[:2]) if guidance.get('reliability') else 'Fault tolerance, redundancy, monitoring'}
+"""
+        
+        if canvas_data:
+            parsed = self.parser.parse(canvas_data)
+            if parsed["component_count"] > 0:
+                criteria_context += f"""
+- Architecture: Your current design has {parsed['component_count']} components
+- Design Quality: Consider edge cases and trade-offs in your design
+"""
+        
+        return criteria_context
+    
+    def _determine_response_strategy(
+        self,
+        question_type: str,
+        candidate_state: Dict[str, Any],
+        progression: Dict[str, Any]
+    ) -> str:
+        """Determine the right balance of guidance vs discovery."""
+        
+        # Methodology questions → Provide structure
+        if question_type == "methodology":
+            if progression["help_level"] == "direct_structure":
+                return "provide_framework_with_examples"
+            else:
+                return "provide_framework_ask_application"
+        
+        # Stuck candidates → Provide hints
+        if candidate_state["is_stuck"]:
+            if progression["should_escalate"]:
+                return "provide_structured_guidance"
+            else:
+                return "provide_hints"
+        
+        # Design questions → Socratic method
+        if question_type == "design":
+            return "socratic_questions"
+        
+        # Good questions → Acknowledge and guide
+        if question_type == "clarification":
+            return "acknowledge_and_guide"
+        
+        return "balanced_guidance"  # Default: mix of guidance and questions
+    
     async def generate_response(
         self,
         message: str,
         canvas_data: Optional[Dict[str, Any]],
         chat_history: List[ChatMessage],
-        question_text: str
+        question_text: str,
+        question_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Generate AI interviewer response"""
+        """Generate AI interviewer response with adaptive strategy"""
         
-        # Build context
+        # Step 1: Classify question type
+        question_type = self._classify_question_type(message)
+        
+        # Step 2: Analyze candidate state
+        candidate_state = self._analyze_candidate_state(chat_history, canvas_data)
+        
+        # Step 3: Check for repetition
+        repetition_info = self._check_repetition(chat_history, message)
+        
+        # Step 4: Track progression (requires session - will be passed separately)
+        # For now, use repetition_info as proxy
+        
+        # Step 5: Determine response strategy
+        response_strategy = self._determine_response_strategy(
+            question_type, 
+            candidate_state, 
+            {
+                "should_escalate": repetition_info["escalate_help"],
+                "help_level": "direct_structure" if repetition_info["escalate_help"] else "hint"
+            }
+        )
+        
+        # Step 6: Build context (increased from 3 to 6 messages)
         context_parts = [f"Interview Question: {question_text}"]
         
         # Add canvas context if available
@@ -80,26 +405,213 @@ class ConversationOrchestrator:
             graph_summary = self.parser.get_graph_summary(parsed)
             context_parts.append(f"\nCurrent Diagram:\n{graph_summary}")
         
-        # Add recent chat history
+        # Add recent chat history (increased from 3 to 6 messages)
         if chat_history:
             context_parts.append("\nRecent Conversation:")
-            for msg in chat_history[-3:]:
+            for msg in chat_history[-6:]:
                 role_label = "Candidate" if msg.role == "user" else "Interviewer"
                 context_parts.append(f"{role_label}: {msg.content}")
         
         context = "\n".join(context_parts)
         
-        system_prompt = """You are a friendly, experienced system design interviewer conducting a Socratic-style interview with a candidate.
+        # Step 7: Get evaluation criteria context
+        criteria_context = self._get_relevant_evaluation_criteria(message, canvas_data, question_metadata)
+        
+        # Step 8: Route to appropriate handler based on strategy
+        if response_strategy in ["provide_framework_ask_application", "provide_framework_with_examples"]:
+            return await self._handle_methodology_question(
+                message, question_type, chat_history, question_metadata, 
+                repetition_info, criteria_context
+            )
+        elif response_strategy in ["provide_hints", "provide_structured_guidance"]:
+            return await self._handle_stuck_candidate(
+                message, chat_history, question_metadata, repetition_info, criteria_context
+            )
+        elif response_strategy == "socratic_questions":
+            return await self._handle_design_question(
+                message, canvas_data, chat_history, question_text, 
+                question_metadata, criteria_context
+            )
+        else:
+            return await self._handle_general_question(
+                message, canvas_data, chat_history, question_text, 
+                question_metadata, criteria_context
+            )
+    
+    async def _handle_methodology_question(
+        self,
+        message: str,
+        question_type: str,
+        chat_history: List[ChatMessage],
+        question_metadata: Optional[Dict[str, Any]],
+        repetition_info: Dict[str, Any],
+        criteria_context: str
+    ) -> str:
+        """Handle methodology questions with scaffolding."""
+        acknowledgment = self._acknowledge_good_question(message)
+        framework = self._get_methodology_framework(message, question_metadata)  # Pass actual message, not question_type
+        
+        # Build context
+        context_parts = []
+        if chat_history:
+            context_parts.append("Recent Conversation:")
+            for msg in chat_history[-6:]:
+                role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                context_parts.append(f"{role_label}: {msg.content}")
+        
+        context = "\n".join(context_parts)
+        
+        # Determine prompt based on escalation level
+        if repetition_info["escalate_help"]:
+            # Provide framework with examples
+            system_prompt = """You are a friendly system design interviewer. The candidate has asked similar methodology questions multiple times.
+IMPORTANT: You MUST provide the framework/structure that is given below. Do not just ask them to think - provide the actual framework first, then ask them to apply it.
+
+The framework below contains the structure they need. Present it clearly, then ask them to apply it to their specific problem."""
+            
+            user_prompt = f"""{context}
+
+Candidate asked: {message}
+
+{acknowledgment}
+
+FRAMEWORK TO PROVIDE (you MUST include this in your response):
+{framework}
+
+{criteria_context}
+
+The candidate has asked similar questions {repetition_info['count']} times. 
+Your response MUST:
+1. Start with the acknowledgment (if provided)
+2. Present the framework above clearly and completely
+3. Then ask them to apply it to their specific problem
+
+Do NOT just ask them to think - provide the framework first!"""
+        else:
+            # Provide framework, ask application
+            system_prompt = """You are a friendly system design interviewer. The candidate asked a methodology question.
+IMPORTANT: You MUST provide the framework/structure that is given below. Do not just ask them to think - provide the actual framework first, then ask them to apply it.
+
+The framework below contains the structure they need. Present it clearly, then ask them to think through how it applies to their specific problem."""
+            
+            user_prompt = f"""{context}
+
+Candidate asked: {message}
+
+{acknowledgment}
+
+FRAMEWORK TO PROVIDE (you MUST include this in your response):
+{framework}
+
+{criteria_context}
+
+Your response MUST:
+1. Start with the acknowledgment (if provided)
+2. Present the framework above clearly and completely
+3. Then ask them to think through how it applies to their specific problem
+
+Do NOT just ask them to think - provide the framework first!"""
+        
+        return await self._call_llm_with_error_handling(system_prompt, user_prompt)
+    
+    async def _handle_stuck_candidate(
+        self,
+        message: str,
+        chat_history: List[ChatMessage],
+        question_metadata: Optional[Dict[str, Any]],
+        repetition_info: Dict[str, Any],
+        criteria_context: str
+    ) -> str:
+        """Handle stuck/confused candidates with hints or structured guidance."""
+        
+        # Get hints from question_metadata if available
+        hints = ""
+        if question_metadata and question_metadata.get("hints"):
+            hints_dict = question_metadata["hints"]
+            # Get level 1 hint (most basic)
+            if hints_dict.get("level_1"):
+                hints = "\n".join(hints_dict["level_1"][:2])  # First 2 hints
+        
+        # Build context
+        context_parts = []
+        if chat_history:
+            context_parts.append("Recent Conversation:")
+            for msg in chat_history[-6:]:
+                role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                context_parts.append(f"{role_label}: {msg.content}")
+        
+        context = "\n".join(context_parts)
+        
+        if repetition_info["escalate_help"]:
+            # Provide structured guidance
+            system_prompt = """You are a friendly system design interviewer. The candidate is stuck and has asked for help multiple times.
+Provide structured guidance with clear steps or categories to help them move forward.
+Be supportive and encouraging while giving them a clear path forward."""
+            
+            user_prompt = f"""{context}
+
+Candidate said: {message}
+
+The candidate is stuck and has asked similar questions {repetition_info['count']} times.
+{hints}
+{criteria_context}
+
+Provide structured guidance with clear steps to help them move forward."""
+        else:
+            # Provide hints
+            system_prompt = """You are a friendly system design interviewer. The candidate seems stuck or confused.
+Provide helpful hints that guide them toward the answer without giving it directly.
+Be encouraging and supportive."""
+            
+            user_prompt = f"""{context}
+
+Candidate said: {message}
+
+The candidate seems stuck or confused.
+{hints}
+{criteria_context}
+
+Provide helpful hints that guide them toward the answer."""
+        
+        return await self._call_llm_with_error_handling(system_prompt, user_prompt)
+    
+    async def _handle_design_question(
+        self,
+        message: str,
+        canvas_data: Optional[Dict[str, Any]],
+        chat_history: List[ChatMessage],
+        question_text: str,
+        question_metadata: Optional[Dict[str, Any]],
+        criteria_context: str
+    ) -> str:
+        """Handle design questions using Socratic method."""
+        
+        # Build context
+        context_parts = [f"Interview Question: {question_text}"]
+        
+        if canvas_data:
+            parsed = self.parser.parse(canvas_data)
+            graph_summary = self.parser.get_graph_summary(parsed)
+            context_parts.append(f"\nCurrent Diagram:\n{graph_summary}")
+        
+        if chat_history:
+            context_parts.append("\nRecent Conversation:")
+            for msg in chat_history[-6:]:
+                role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                context_parts.append(f"{role_label}: {msg.content}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a friendly, experienced system design interviewer conducting a Socratic-style interview.
 Your role is to GUIDE the candidate through questions, NOT to provide direct answers.
 
 CRITICAL RULES:
-1. NEVER give direct answers to questions - always ask clarifying questions instead
-2. When the candidate asks "what should X be?" or "how should I do Y?", respond with questions like:
-   - "What do you think would be a good approach for X?"
+1. NEVER give direct answers to design questions - always ask clarifying questions instead
+2. When the candidate asks "what technology should I use?" or "how should I design X?", respond with questions like:
+   - "What do you think would be a good approach for X? What factors would you consider?"
    - "Let's think about this together - what are the trade-offs you're considering?"
-   - "That's a great question. What factors would influence your decision about Y?"
+   - "That's a great question. What requirements would influence your decision about Y?"
 3. Guide them through the evaluation criteria by asking questions about:
-   - Core functionality (URL encoding/decoding, generation, redirection)
    - System architecture (API design, database schema, caching, load balancing)
    - Scalability (read/write throughput, partitioning, horizontal scaling)
    - Reliability (fault tolerance, redundancy, rate limiting, monitoring)
@@ -108,18 +620,37 @@ CRITICAL RULES:
 5. Keep responses concise (2-3 sentences, usually ending with a question)
 6. Reference their diagram when relevant: "I see you've drawn X - can you explain how that handles Y?"
 
-IMPORTANT: Your job is to help them discover the answers through questions, not to tell them the answers.
-If they ask for requirements or specifications, ask them what they think the requirements should be based on the problem statement."""
+IMPORTANT: Your job is to help them discover the answers through questions, not to tell them the answers."""
+        
+        user_prompt = f"""{context}
 
-        # Sanitize user message and chat history
-        sanitized_message, is_safe, warning = guardrails.sanitize_input(message)
-        if not is_safe:
-            print(f"[GUARDRAIL] User message flagged: {warning}")
+Candidate: {message}
+
+{criteria_context}
+
+Respond as the interviewer using the Socratic method:
+- DO NOT answer the design question directly. Instead, ask clarifying questions that guide them to think through the answer themselves.
+- Guide them through the evaluation criteria by asking questions about architecture, scalability, reliability, and design quality.
+- Keep it conversational and friendly, but always guide through questions, never give direct answers.
+
+Remember: You are helping them discover answers through questions, not providing answers directly."""
         
-        # Sanitize chat history
-        sanitized_history = guardrails.sanitize_chat_history(chat_history)
+        return await self._call_llm_with_error_handling(system_prompt, user_prompt, temperature=0.5)
+    
+    async def _handle_general_question(
+        self,
+        message: str,
+        canvas_data: Optional[Dict[str, Any]],
+        chat_history: List[ChatMessage],
+        question_text: str,
+        question_metadata: Optional[Dict[str, Any]],
+        criteria_context: str
+    ) -> str:
+        """Handle general questions with balanced guidance."""
         
-        # Rebuild context with sanitized data
+        acknowledgment = self._acknowledge_good_question(message)
+        
+        # Build context
         context_parts = [f"Interview Question: {question_text}"]
         
         if canvas_data:
@@ -127,34 +658,62 @@ If they ask for requirements or specifications, ask them what they think the req
             graph_summary = self.parser.get_graph_summary(parsed)
             context_parts.append(f"\nCurrent Diagram:\n{graph_summary}")
         
-        if sanitized_history:
+        if chat_history:
             context_parts.append("\nRecent Conversation:")
-            for msg in sanitized_history[-3:]:
+            for msg in chat_history[-6:]:
                 role_label = "Candidate" if msg.role == "user" else "Interviewer"
-                content = msg.content if hasattr(msg, 'content') else msg.get("content", "")
-                context_parts.append(f"{role_label}: {content}")
+                context_parts.append(f"{role_label}: {msg.content}")
         
         context = "\n".join(context_parts)
         
+        system_prompt = """You are a friendly, experienced system design interviewer.
+Your role is to GUIDE the candidate through questions, balancing between providing helpful context and asking them to think.
+
+CRITICAL RULES:
+1. Acknowledge good questions when appropriate
+2. Provide helpful context when needed, but still ask follow-up questions
+3. Guide them through the evaluation criteria
+4. Be conversational, warm, and encouraging
+5. Keep responses concise (2-3 sentences)
+6. Reference their diagram when relevant
+
+IMPORTANT: Balance between guidance and discovery - provide context when helpful, but still encourage them to think through the answer."""
+        
         user_prompt = f"""{context}
 
-Candidate: {sanitized_message}
+Candidate: {message}
 
-Respond as the interviewer using the Socratic method:
-- If the candidate asks a question, DO NOT answer it directly. Instead, ask them a clarifying question that guides them to think through the answer themselves.
-- If they ask "what should X be?", respond with "What do you think X should be? What factors would you consider?"
-- If they ask for requirements, ask them "Based on the problem statement, what requirements do you think we need to consider?"
-- Guide them through the evaluation criteria (core functionality, architecture, scalability, reliability, design quality) by asking questions about each area.
-- Keep it conversational and friendly, but always guide through questions, never give direct answers.
+{acknowledgment}
+{criteria_context}
 
-Remember: You are helping them discover answers through questions, not providing answers directly."""
-
-        # Apply guardrails to prompts
-        sanitized_system, sanitized_user, prompt_is_safe = guardrails.validate_and_sanitize_prompt(system_prompt, user_prompt)
+Respond as the interviewer with balanced guidance:
+- Acknowledge good questions when appropriate
+- Provide helpful context, but still ask follow-up questions
+- Guide them through the evaluation criteria
+- Keep it conversational and friendly"""
         
-        # Call LLM API
+        return await self._call_llm_with_error_handling(system_prompt, user_prompt, temperature=0.6)
+    
+    async def _call_llm_with_error_handling(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.5,
+        max_tokens: int = 400
+    ) -> str:
+        """Helper method to call LLM with error handling and guardrails."""
         if not self.llm:
             return "I'm here to help, but the API key is not configured. Please set LLM_PROVIDER and API key in your environment."
+        
+        # Sanitize inputs
+        sanitized_message, is_safe, warning = guardrails.sanitize_input(user_prompt)
+        if not is_safe:
+            print(f"[GUARDRAIL] User message flagged: {warning}")
+        
+        # Apply guardrails to prompts
+        sanitized_system, sanitized_user, prompt_is_safe = guardrails.validate_and_sanitize_prompt(
+            system_prompt, sanitized_message
+        )
         
         try:
             messages = [
@@ -163,8 +722,8 @@ Remember: You are helping them discover answers through questions, not providing
             ]
             response = await self.llm.chat_completion(
                 messages=messages,
-                temperature=0.7,
-                max_tokens=200  # Reduced to work within credit limits
+                temperature=temperature,  # Reduced from 0.7 for more consistent responses
+                max_tokens=max_tokens  # Increased from 200 for more complete responses
             )
             
             content = response.content or "I understand. Please continue."

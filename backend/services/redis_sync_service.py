@@ -201,13 +201,206 @@ class RedisSyncService:
         Returns:
             Dictionary with sync results
         """
-        # TODO: Implement system design sync
-        # This depends on the InterviewSystemDesign model structure
-        logger.info(f"Syncing system design data for candidate {candidate_id} (to be implemented)")
-        return {
-            "success": True,
-            "message": "System design sync to be implemented"
-        }
+        try:
+            from models.interview_system_design import InterviewSystemDesign
+            import json
+            
+            synced_count = 0
+            failed_count = 0
+            
+            # Get all system design sessions for this candidate from Redis
+            pattern = f"candidate:{candidate_id}:system_design:*:session"
+            session_keys = self.redis_client.keys(pattern)
+            
+            for redis_key in session_keys:
+                try:
+                    # Parse question_uuid from key: candidate:{candidate_id}:system_design:{question_uuid}:session
+                    parts = redis_key.split(":")
+                    question_uuid = parts[3]
+                    
+                    # Get session data from Redis
+                    session_data = self.redis_client.get(redis_key)
+                    if not session_data:
+                        continue
+                    
+                    session_dict = json.loads(session_data)
+                    
+                    # Get or create interview_system_design record
+                    db_record = self.db.query(InterviewSystemDesign).filter(
+                        InterviewSystemDesign.candidate_id == candidate_id,
+                        InterviewSystemDesign.question_uuid == question_uuid
+                    ).first()
+                    
+                    # Parse timestamps
+                    last_activity = None
+                    if session_dict.get("last_activity_time"):
+                        try:
+                            if isinstance(session_dict["last_activity_time"], str):
+                                last_activity = datetime.fromisoformat(session_dict["last_activity_time"].replace('Z', '+00:00'))
+                            else:
+                                last_activity = datetime.fromtimestamp(session_dict["last_activity_time"])
+                        except:
+                            pass
+                    
+                    last_drawing = None
+                    if session_dict.get("last_drawing_activity_time"):
+                        try:
+                            if isinstance(session_dict["last_drawing_activity_time"], str):
+                                last_drawing = datetime.fromisoformat(session_dict["last_drawing_activity_time"].replace('Z', '+00:00'))
+                            else:
+                                last_drawing = datetime.fromtimestamp(session_dict["last_drawing_activity_time"])
+                        except:
+                            pass
+                    
+                    # Collect chat messages from Redis
+                    chat_key = f"candidate:{candidate_id}:system_design:{question_uuid}:chat"
+                    cached_chat = self.redis_client.lrange(chat_key, 0, -1)
+                    chat_messages = []
+                    
+                    if cached_chat:
+                        for msg_json in cached_chat:
+                            try:
+                                msg = json.loads(msg_json)
+                                chat_messages.append({
+                                    "role": msg.get("role", "user"),
+                                    "content": msg.get("content", ""),
+                                    "timestamp": msg.get("timestamp") or datetime.utcnow().isoformat()
+                                })
+                            except Exception as e:
+                                logger.warning(f"Error parsing chat message: {e}")
+                                continue
+                    
+                    # Merge with existing chat messages (avoid duplicates)
+                    if db_record and db_record.chat_messages:
+                        existing_contents = {(m.get("content"), m.get("role")) for m in db_record.chat_messages}
+                        for msg in chat_messages:
+                            if (msg.get("content"), msg.get("role")) not in existing_contents:
+                                db_record.chat_messages.append(msg)
+                        chat_messages = db_record.chat_messages
+                    
+                    if not db_record:
+                        # Create new record
+                        db_record = InterviewSystemDesign(
+                            candidate_id=candidate_id,
+                            question_uuid=question_uuid,
+                            current_canvas=session_dict.get("current_canvas"),
+                            previous_canvas=session_dict.get("previous_canvas"),
+                            chat_messages=chat_messages,
+                            last_activity_time=last_activity,
+                            last_drawing_activity_time=last_drawing,
+                            prompt_history=session_dict.get("prompt_history", []),
+                            milestones=session_dict.get("milestones", {}),
+                            last_canvas_hash=session_dict.get("last_canvas_hash"),
+                            status='in_progress' if session_dict.get("current_canvas") else 'assigned'
+                        )
+                        self.db.add(db_record)
+                    else:
+                        # Update existing record (preserve score and diagram)
+                        if session_dict.get("current_canvas"):
+                            db_record.current_canvas = session_dict.get("current_canvas")
+                        if session_dict.get("previous_canvas"):
+                            db_record.previous_canvas = session_dict.get("previous_canvas")
+                        db_record.chat_messages = chat_messages
+                        if last_activity and (not db_record.last_activity_time or last_activity > db_record.last_activity_time):
+                            db_record.last_activity_time = last_activity
+                        if last_drawing:
+                            db_record.last_drawing_activity_time = last_drawing
+                        if session_dict.get("prompt_history"):
+                            db_record.prompt_history = session_dict.get("prompt_history", [])
+                        if session_dict.get("milestones"):
+                            db_record.milestones = session_dict.get("milestones", {})
+                        if session_dict.get("last_canvas_hash"):
+                            db_record.last_canvas_hash = session_dict.get("last_canvas_hash")
+                        # Update status if not already evaluated/submitted
+                        if db_record.status not in ['submitted', 'evaluated']:
+                            db_record.status = 'in_progress' if session_dict.get("current_canvas") else 'assigned'
+                    
+                    self.db.commit()
+                    synced_count += 1
+                    logger.debug(f"Synced system design session: {candidate_id}:{question_uuid}")
+                    
+                except Exception as e:
+                    logger.error(f"Error syncing system design session {redis_key}: {str(e)}")
+                    self.db.rollback()
+                    failed_count += 1
+                    continue
+            
+            logger.info(f"Synced {synced_count} system design sessions to PostgreSQL for candidate {candidate_id}")
+            
+            return {
+                "success": failed_count == 0,
+                "synced_count": synced_count,
+                "failed_count": failed_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error syncing system design data for candidate {candidate_id}: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def sync_all_system_design_sessions(self) -> Dict[str, Any]:
+        """
+        Sync all active system design sessions from Redis to PostgreSQL.
+        Finds all sessions in Redis and syncs them.
+        
+        Returns:
+            Dictionary with sync results
+        """
+        try:
+            # Find all system design session keys in Redis
+            pattern = "candidate:*:system_design:*:session"
+            session_keys = self.redis_client.keys(pattern)
+            
+            synced_count = 0
+            failed_count = 0
+            failed_sessions = []
+            
+            # Group by candidate_id to use existing sync method
+            candidates_to_sync = set()
+            for redis_key in session_keys:
+                try:
+                    # Parse candidate_id from key
+                    # Format: candidate:{candidate_id}:system_design:{question_uuid}:session
+                    parts = redis_key.split(":")
+                    if len(parts) >= 2:
+                        candidate_id = parts[1]
+                        candidates_to_sync.add(candidate_id)
+                except Exception as e:
+                    logger.warning(f"Error parsing session key {redis_key}: {e}")
+                    continue
+            
+            # Sync all sessions for each candidate
+            for candidate_id in candidates_to_sync:
+                try:
+                    result = self.sync_system_design_to_postgresql(candidate_id, {})
+                    if result.get("success"):
+                        synced_count += result.get("synced_count", 0)
+                        failed_count += result.get("failed_count", 0)
+                    else:
+                        failed_count += 1
+                        failed_sessions.append(candidate_id)
+                except Exception as e:
+                    logger.error(f"Error syncing candidate {candidate_id}: {e}")
+                    failed_count += 1
+                    failed_sessions.append(candidate_id)
+            
+            logger.info(f"Synced {synced_count} system design sessions, {failed_count} failed")
+            
+            return {
+                "success": failed_count == 0,
+                "synced_count": synced_count,
+                "failed_count": failed_count,
+                "failed_sessions": failed_sessions
+            }
+            
+        except Exception as e:
+            logger.error(f"Error syncing all system design sessions: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
     
     def sync_all_answers_to_postgresql(self, candidate_id: str) -> Dict[str, Any]:
         """
@@ -238,9 +431,9 @@ class RedisSyncService:
             if answers.get("coding"):
                 results["coding"] = self.sync_coding_answers_to_postgresql(candidate_id, answers["coding"])
             
-            # Sync System Design data
-            if answers.get("system_design"):
-                results["system_design"] = self.sync_system_design_to_postgresql(candidate_id, answers["system_design"])
+            # Sync System Design data (from Redis session keys, not answers key)
+            # System design sessions are stored as: candidate:{candidate_id}:system_design:{question_uuid}:session
+            results["system_design"] = self.sync_system_design_to_postgresql(candidate_id, {})
             
             # Update progress in TestSession table
             if progress:

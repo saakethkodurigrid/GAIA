@@ -120,7 +120,13 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         setProblem(problemData);
         console.log('Question loaded:', problemData);
 
-        // Step 4: Load chat history if question_uuid exists
+        // Step 4: Load canvas data if available
+        if (sessionResponse.current_canvas) {
+          console.log('Loading canvas data from session:', sessionResponse.current_canvas);
+          setExcalidrawData(sessionResponse.current_canvas);
+        }
+
+        // Step 5: Load chat history if question_uuid exists
         const uuidToUse = sessionResponse.question_uuid || assignedQuestion?.question_uuid;
         if (uuidToUse) {
           try {

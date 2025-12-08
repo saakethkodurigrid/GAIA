@@ -11,8 +11,9 @@ type AppState = any;
 type BinaryFiles = any;
 
 const ExcalidrawCanvas = () => {
-  const { updateExcalidrawData } = useSystemDesign();
+  const { updateExcalidrawData, excalidrawData } = useSystemDesign();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoadedInitialData = useRef(false);
 
   // Debounced onChange to prevent infinite loops
   const onChange = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
@@ -26,6 +27,43 @@ const ExcalidrawCanvas = () => {
       updateExcalidrawData({ elements: [...elements], appState, files });
     }, 300);
   }, [updateExcalidrawData]);
+
+  // Prepare initial data for Excalidraw
+  // Normalize appState to ensure collaborators is always an array (Excalidraw requirement)
+  const normalizeAppState = (appState: any) => {
+    if (!appState) return undefined;
+    
+    const normalized = { ...appState };
+    
+    // Ensure collaborators is an array (Excalidraw expects array, not object)
+    if (normalized.collaborators !== undefined) {
+      if (Array.isArray(normalized.collaborators)) {
+        // Already an array, keep it
+      } else if (normalized.collaborators && typeof normalized.collaborators === 'object') {
+        // Convert object to array
+        normalized.collaborators = Object.values(normalized.collaborators);
+      } else {
+        // Remove invalid collaborators
+        delete normalized.collaborators;
+      }
+    }
+    
+    return normalized;
+  };
+
+  const initialData = excalidrawData && !hasLoadedInitialData.current ? {
+    elements: excalidrawData.elements || [],
+    appState: normalizeAppState(excalidrawData.appState),
+    files: excalidrawData.files,
+  } : undefined;
+
+  // Mark as loaded once we've set initial data
+  useEffect(() => {
+    if (initialData) {
+      hasLoadedInitialData.current = true;
+      console.log('Canvas initial data prepared:', initialData);
+    }
+  }, [initialData]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -93,6 +131,7 @@ const ExcalidrawCanvas = () => {
       >
         <Excalidraw
           onChange={onChange}
+          initialData={initialData}
           theme="light"
           UIOptions={{
             canvasActions: {
