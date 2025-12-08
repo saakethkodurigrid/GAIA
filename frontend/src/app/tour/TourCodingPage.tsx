@@ -7,7 +7,7 @@ import Footer from '../../components/Footer';
 const TourCodingPageContent = () => {
   const { startTour, isRunning } = useTour();
   const [timeRemaining] = useState(10800); // 3 hours
-  const [selectedLanguage, setSelectedLanguage] = useState<'python' | 'javascript' | 'java'>('python');
+  const [selectedLanguage, setSelectedLanguage] = useState<'python' | 'javascript' | 'java' | 'cpp' | 'csharp'>('python');
   const [activeTab, setActiveTab] = useState<'testcases' | 'output'>('testcases');
   const [leftPanelWidth] = useState(50); // Percentage
 
@@ -174,7 +174,7 @@ const TourCodingPageContent = () => {
           >
             <div className="flex items-center justify-between px-4 py-2">
               <div className="flex">
-                {(['python', 'javascript', 'java'] as const).map((lang) => (
+                {(['python', 'javascript', 'java', 'cpp', 'csharp'] as const).map((lang) => (
                   <button
                     key={lang}
                     onClick={() => !isRunning && setSelectedLanguage(lang)}
@@ -185,7 +185,7 @@ const TourCodingPageContent = () => {
                     }`}
                     disabled={isRunning}
                   >
-                    {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    {lang === 'cpp' ? 'C++' : lang === 'csharp' ? 'C#' : lang.charAt(0).toUpperCase() + lang.slice(1)}
                   </button>
                 ))}
               </div>

@@ -20,7 +20,7 @@ const CodingTestPageContent = () => {
     let attempted = 0;
     problems.forEach((problem) => {
       // Check if code has been modified from boilerplate in any language
-      const languages: Array<'python' | 'javascript' | 'java'> = ['python', 'javascript', 'java'];
+      const languages: Array<'python' | 'javascript' | 'java' | 'cpp' | 'csharp'> = ['python', 'javascript', 'java', 'cpp', 'csharp'];
       const hasAttempted = languages.some((lang) => {
         const codeKey = `${problem.id}-${lang}`;
         const currentCode = code[codeKey] || problem.boilerplate[lang];

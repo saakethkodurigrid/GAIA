@@ -7,6 +7,7 @@ import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
+import { getFaceDetectionLogs } from '../../utils/faceDetection';
 
 // Helper functions for localStorage
 const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
@@ -97,6 +98,54 @@ const TestOverviewPage = () => {
   };
 
   const handleSubmitTest = () => {
+    // Get and print face detection logs
+    const logs = getFaceDetectionLogs();
+    console.log('=== Face Detection Logs ===');
+    console.log('Total detection events:', logs.length);
+    
+    if (logs.length > 0) {
+      // Calculate summary statistics
+      const faceCountSummary: Record<number, number> = {};
+      let maxFaces = 0;
+      let totalFaces = 0;
+      
+      logs.forEach((log) => {
+        const count = log.faceCount;
+        faceCountSummary[count] = (faceCountSummary[count] || 0) + 1;
+        totalFaces += count;
+        if (count > maxFaces) {
+          maxFaces = count;
+        }
+      });
+      
+      const averageFaces = totalFaces / logs.length;
+      
+      // Print summary
+      console.log('\n--- Face Detection Summary ---');
+      console.log(`Total events: ${logs.length}`);
+      console.log(`Maximum faces detected: ${maxFaces}`);
+      console.log(`Average faces per detection: ${averageFaces.toFixed(2)}`);
+      console.log('\nFace count breakdown:');
+      Object.entries(faceCountSummary)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .forEach(([faceCount, occurrences]) => {
+          console.log(`  ${faceCount} face(s): ${occurrences} time(s)`);
+        });
+      
+      // Print detailed logs
+      console.log('\n--- Detailed Logs ---');
+      logs.forEach((log, index) => {
+        console.log(`Log ${index + 1}:`, {
+          timestamp: new Date(log.timestamp).toLocaleString(),
+          faceCount: log.faceCount,
+          message: log.message,
+        });
+      });
+    } else {
+      console.log('No multiple face detections logged.');
+    }
+    console.log('==========================');
+
     // Navigate to test completed page with replace to prevent back navigation
     navigate('/test/completed', { replace: true });
   };

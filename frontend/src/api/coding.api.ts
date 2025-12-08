@@ -3,6 +3,69 @@ import type { CodingProblem } from '../types';
 export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
   {
     id: 1,
+    title: 'Warehouse Box Organization',
+    difficulty: 'Medium',
+    description: 'A warehouse manager needs to organize boxes stored in a single row. Each box has a different weight, and they are positioned sequentially from position 0 to n-1. The manager has a forklift that can lift a group of three consecutive boxes simultaneously. The removal process works as follows: In each operation, locate the box with the smallest weight value. Use the forklift to remove that box together with its immediate neighbors on both sides (if available). Repeat this procedure until all boxes have been removed from the warehouse. When multiple boxes share the same minimum weight, the manager chooses the one appearing earliest in the sequence. If a box is at the edge and doesn\'t have neighbors on both sides, only the available adjacent boxes are removed. Calculate the total sum of the minimum-weight boxes selected in each removal operation.',
+    examples: [
+      {
+        input: 'boxes = [5, 4, 1, 3, 2]',
+        output: '3',
+        explanation: 'Step 1: The smallest weight is 1 (at position 2). Remove boxes at positions 1, 2, and 3 (weights 4, 1, 3). Add 1 to the total. Remaining boxes: [5, 2]. Step 2: The smallest weight is 2 (at position 1). Remove boxes at positions 0 and 1 (weights 5, 2). Add 2 to the total. Final result: 1 + 2 = 3.'
+      }
+    ],
+    constraints: [
+      '3 ≤ number of boxes ≤ 2000',
+      '1 ≤ box weight ≤ 100,000'
+    ],
+    boilerplate: {
+      python: `def findTotalWeight(boxes):
+    # Write your code here
+    pass`,
+      javascript: `function findTotalWeight(boxes) {
+    // Write your code here
+    
+}`,
+      java: `class Solution {
+    public int findTotalWeight(int[] boxes) {
+        // Write your code here
+        
+    }
+}`,
+      cpp: `class Solution {
+public:
+    int findTotalWeight(vector<int>& boxes) {
+        // Write your code here
+        
+    }
+};`,
+      csharp: `public class Solution {
+    public int FindTotalWeight(int[] boxes) {
+        // Write your code here
+        
+    }
+}`
+    },
+    testCases: [
+      {
+        input: 'boxes = [5, 4, 1, 3, 2]',
+        output: '3'
+      },
+      {
+        input: 'boxes = [6, 4, 9, 10, 34, 56, 54]',
+        output: '68'
+      },
+      {
+        input: 'boxes = [132, 45, 65, 765, 345, 243, 75, 67]',
+        output: '1120'
+      },
+      {
+        input: 'boxes = [21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12, 21, 12, 63, 21, 42, 32, 12]',
+        output: '309'
+      }
+    ]
+  },
+  {
+    id: 2,
     title: 'Two Sum',
     difficulty: 'Medium',
     description: 'Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.',
@@ -40,6 +103,19 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
         // Write your code here
         
     }
+}`,
+      cpp: `class Solution {
+public:
+    vector<int> twoSum(vector<int>& nums, int target) {
+        // Write your code here
+        
+    }
+};`,
+      csharp: `public class Solution {
+    public int[] TwoSum(int[] nums, int target) {
+        // Write your code here
+        
+    }
 }`
     },
     testCases: [
@@ -62,7 +138,7 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
     ]
   },
   {
-    id: 2,
+    id: 3,
     title: 'Reverse Linked List',
     difficulty: 'Easy',
     description: 'Given the head of a singly linked list, reverse the list, and return the reversed list.',
@@ -93,6 +169,40 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
         // Write your code here
         
     }
+}`,
+      cpp: `/**
+ * Definition for singly-linked list.
+ * struct ListNode {
+ *     int val;
+ *     ListNode *next;
+ *     ListNode() : val(0), next(nullptr) {}
+ *     ListNode(int x) : val(x), next(nullptr) {}
+ *     ListNode(int x, ListNode *next) : val(x), next(next) {}
+ * };
+ */
+class Solution {
+public:
+    ListNode* reverseList(ListNode* head) {
+        // Write your code here
+        
+    }
+};`,
+      csharp: `/**
+ * Definition for singly-linked list.
+ * public class ListNode {
+ *     public int val;
+ *     public ListNode next;
+ *     public ListNode(int val=0, ListNode next=null) {
+ *         this.val = val;
+ *         this.next = next;
+ *     }
+ * }
+ */
+public class Solution {
+    public ListNode ReverseList(ListNode head) {
+        // Write your code here
+        
+    }
 }`
     },
     testCases: [
@@ -107,7 +217,7 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
     ]
   },
   {
-    id: 3,
+    id: 4,
     title: 'Valid Parentheses',
     difficulty: 'Easy',
     description: 'Given a string s containing just the characters \'(\', \')\', \'{\', \'}\', \'[\' and \']\', determine if the input string is valid.',
@@ -142,6 +252,19 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
         // Write your code here
         
     }
+}`,
+      cpp: `class Solution {
+public:
+    bool isValid(string s) {
+        // Write your code here
+        
+    }
+};`,
+      csharp: `public class Solution {
+    public bool IsValid(string s) {
+        // Write your code here
+        
+    }
 }`
     },
     testCases: [
@@ -160,7 +283,7 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
     ]
   },
   {
-    id: 4,
+    id: 5,
     title: 'Maximum Subarray',
     difficulty: 'Medium',
     description: 'Given an integer array nums, find the contiguous subarray (containing at least one number) which has the largest sum and return its sum.',
@@ -196,6 +319,19 @@ export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
         // Write your code here
         
     }
+}`,
+      cpp: `class Solution {
+public:
+    int maxSubArray(vector<int>& nums) {
+        // Write your code here
+        
+    }
+};`,
+      csharp: `public class Solution {
+    public int MaxSubArray(int[] nums) {
+        // Write your code here
+        
+    }
 }`
     },
     testCases: [
@@ -223,31 +359,121 @@ export const fetchCodingProblems = async (): Promise<CodingProblem[]> => {
   });
 };
 
-export const runCode = async (
-  _code: string,
-  _language: string,
-  _problemId: number
-): Promise<{ output: string; testResults: Array<{ input: string; expectedOutput: string; actualOutput: string; passed: boolean }> }> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Mock execution - in real app, this would execute code on backend
-      resolve({
-        output: 'Code executed successfully',
-        testResults: []
-      });
-    }, 1000);
-  });
+// Code execution API types
+export interface CodeExecutionRequest {
+  language: string;
+  code: string;
+  sample_test_cases: Array<{
+    id: string;
+    input: string;
+    expected_output: string;
+  }>;
+  user_id: string;
+  question_id: string;
+}
+
+export interface CodeExecutionResponse {
+  execution_id: string;
+  summary: {
+    total_tests: number;
+    passed: number;
+    failed: number;
+    all_passed: boolean;
+    pass_percentage: number;
+  };
+  test_results: Array<{
+    test_case_id: string;
+    test_case_number: number;
+    input: string;
+    expected_output: string;
+    actual_output: string;
+    error: string | null;
+    status: string;
+    passed: boolean;
+    execution_time_ms: number;
+    cpu_usage_percent: number;
+    memory_usage_bytes: number;
+  }>;
+  metadata: {
+    replica: string;
+    execution_time_ms: number;
+    cpu_usage_percent: number;
+    memory_usage_mb: number;
+  };
+  timestamp: string;
+}
+
+const CODE_EXECUTOR_API_URL = 'https://ai-ta-ra-code-executor2.happypond-428960e8.eastus2.azurecontainerapps.io/run';
+
+/**
+ * Fixes Java class name issues
+ * Java requires: Public class name must match filename (Main.java)
+ * Solution: Remove 'public' keyword from class declaration
+ */
+export const fixJavaClassName = (code: string): string => {
+  // Remove 'public' keyword from class declaration
+  // Changes: "public class Result" -> "class Result"
+  // Changes: "public class Solution" -> "class Solution"
+  // This allows any class name to work with Main.java filename
+  return code.replace(/public\s+class\s+(\w+)/g, 'class $1');
 };
 
-export const submitSolution = async (
-  _problemId: number,
-  _code: string,
-  _language: string
-): Promise<{ success: boolean; message: string }> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({ success: true, message: 'Solution submitted successfully' });
-    }, 1000);
-  });
+/**
+ * Transforms input format based on language requirements
+ * For C++, Java, C#: converts "boxes = [5, 4, 1, 3, 2]" to format expected by code
+ * (count on first line, then each number on separate lines)
+ */
+export const transformInputForLanguage = (input: string, language: string): string => {
+  // Languages that expect count + numbers format
+  const countBasedLanguages = ['cpp', 'java', 'csharp'];
+  
+  if (!countBasedLanguages.includes(language.toLowerCase())) {
+    // For Python, JavaScript, etc., return as-is
+    return input;
+  }
+
+  // Try to extract array from input string
+  // Pattern: "variable = [1, 2, 3]" or "[1, 2, 3]"
+  const arrayMatch = input.match(/\[([^\]]+)\]/);
+  if (!arrayMatch) {
+    // If no array found, return as-is (might already be in correct format)
+    return input;
+  }
+
+  // Extract numbers from the array
+  const numbersStr = arrayMatch[1];
+  const numbers = numbersStr
+    .split(',')
+    .map(num => num.trim())
+    .filter(num => num.length > 0);
+
+  // Format: first line is count, then each number on separate line
+  const formattedInput = `${numbers.length}\n${numbers.join('\n')}`;
+  return formattedInput;
 };
+
+export const runCodeExecution = async (
+  request: CodeExecutionRequest
+): Promise<CodeExecutionResponse> => {
+  // Console log the request being sent to the API
+  console.log('Code execution API request:', JSON.stringify(request, null, 2));
+  
+  const response = await fetch(CODE_EXECUTOR_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to execute code' }));
+    throw new Error(error.detail || 'Failed to execute code');
+  }
+
+  const data: CodeExecutionResponse = await response.json();
+  console.log('Code execution API response:', JSON.stringify(data, null, 2));
+  return data;
+};
+
 

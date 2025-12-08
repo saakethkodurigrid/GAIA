@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useFaceDetection } from '../../hooks/useFaceDetection';
 
 interface VideoPreviewProps {
   videoStream: MediaStream | null;
@@ -6,9 +7,106 @@ interface VideoPreviewProps {
 }
 
 const VideoPreview = ({ videoStream, onStreamRequest }: VideoPreviewProps) => {
+  // Auto-show video when stream is available for face detection
   const [isVisible, setIsVisible] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(videoStream);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hiddenVideoRef = useRef<HTMLVideoElement>(null); // Hidden video for face detection
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+
+  // Update videoElement state when video is ready and playing
+  useEffect(() => {
+    console.log('[VideoPreview] Video element effect', { isVisible, hasStream: !!localStream, hasVideoRef: !!videoRef.current });
+    
+    const video = videoRef.current;
+    if (video && isVisible && localStream) {
+      const handleLoadedMetadata = () => {
+        console.log('[VideoPreview] Video metadata loaded', {
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+        });
+        setVideoElement(video);
+      };
+
+      const handlePlay = () => {
+        console.log('[VideoPreview] Video started playing');
+        setVideoElement(video);
+      };
+
+      const handleCanPlay = () => {
+        console.log('[VideoPreview] Video can play');
+        setVideoElement(video);
+      };
+
+      video.addEventListener('loadedmetadata', handleLoadedMetadata);
+      video.addEventListener('play', handlePlay);
+      video.addEventListener('canplay', handleCanPlay);
+
+      // Also set immediately if already loaded
+      if (video.readyState >= 2) {
+        console.log('[VideoPreview] Video already ready, setting element immediately');
+        setVideoElement(video);
+      }
+
+      return () => {
+        video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        video.removeEventListener('play', handlePlay);
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+    } else {
+      console.log('[VideoPreview] Clearing video element', { hasVideo: !!video, isVisible, hasStream: !!localStream });
+      setVideoElement(null);
+    }
+  }, [isVisible, localStream]);
+
+  // Note: We don't auto-show the video anymore since face detection works via hidden video
+  // User can manually show/hide the video preview, and face detection will continue working
+
+  // Track hidden video element for face detection
+  const [hiddenVideoElement, setHiddenVideoElement] = useState<HTMLVideoElement | null>(null);
+
+  // Create hidden video element for face detection (works even when preview is hidden)
+  useEffect(() => {
+    const hiddenVideo = hiddenVideoRef.current;
+    if (localStream && hiddenVideo) {
+      hiddenVideo.srcObject = localStream;
+      hiddenVideo.play().catch(err => {
+        console.error('Error playing hidden video for face detection:', err);
+      });
+
+      const handleLoadedMetadata = () => {
+        console.log('[VideoPreview] Hidden video metadata loaded for face detection');
+        setHiddenVideoElement(hiddenVideo);
+      };
+
+      const handlePlay = () => {
+        console.log('[VideoPreview] Hidden video started playing for face detection');
+        setHiddenVideoElement(hiddenVideo);
+      };
+
+      hiddenVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+      hiddenVideo.addEventListener('play', handlePlay);
+
+      // Set immediately if already loaded
+      if (hiddenVideo.readyState >= 2) {
+        setHiddenVideoElement(hiddenVideo);
+      }
+
+      return () => {
+        hiddenVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        hiddenVideo.removeEventListener('play', handlePlay);
+      };
+    } else {
+      setHiddenVideoElement(null);
+    }
+  }, [localStream]);
+
+  // Use visible video element if available, otherwise use hidden video for face detection
+  const faceDetectionVideoElement = videoElement || hiddenVideoElement;
+  
+  // Enable face detection when stream is available (works with both visible and hidden video)
+  useFaceDetection(faceDetectionVideoElement, !!localStream);
 
   useEffect(() => {
     // Use provided stream or request new one
@@ -85,6 +183,18 @@ const VideoPreview = ({ videoStream, onStreamRequest }: VideoPreviewProps) => {
           {isVisible ? 'Hide Video' : 'Show Video'}
         </span>
       </button>
+
+      {/* Hidden video element for face detection (always active when stream is available) */}
+      {localStream && (
+        <video
+          ref={hiddenVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="hidden"
+          style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+        />
+      )}
 
       {/* Video Preview */}
       {isVisible && (

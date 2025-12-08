@@ -23,6 +23,7 @@ import TestPermissionsPage from './app/Candidate/TestPermissionsPage';
 import TestOverviewPage from './app/Candidate/TestOverviewPage';
 import TestCompletedPage from './app/Candidate/TestCompletedPage';
 import TestReadyPage from './app/Candidate/TestReadyPage';
+import AnalysisPage from './app/Candidate/AnalysisPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
@@ -109,6 +110,7 @@ function AppRoutes() {
       <Route path="/test/permissions" element={<ProtectedRoute><TestPermissionsPage /></ProtectedRoute>} />
       <Route path="/test-overview" element={<ProtectedRoute><TestOverviewPage /></ProtectedRoute>} />
       <Route path="/test/completed" element={<ProtectedRoute><TestCompletedPage /></ProtectedRoute>} />
+      <Route path="/candidate/analysis" element={<AnalysisPage />} />
       
       {/* Tutorial/Mock Test Pages */}
       <Route path="/tutorial/mcq" element={<TourMCQPage />} />

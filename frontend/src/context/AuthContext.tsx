@@ -84,6 +84,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         userType: authResponse.user_type,
         status: authResponse.status,
         candidateId: authResponse.candidate_id,
+        jobRole: authResponse.job_role,
       });
       // Store user data in localStorage
       localStorage.setItem('user_data', JSON.stringify({
@@ -92,6 +93,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         userType: authResponse.user_type,
         status: authResponse.status,
         candidateId: authResponse.candidate_id,
+        jobRole: authResponse.job_role,
       }));
       
       // Store Google ID token for API authentication

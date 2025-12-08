@@ -168,6 +168,7 @@ async def google_callback(
         'name': response.name,
         'status': response.status.value if response.status else None,
         'candidate_id': response.candidate_id,
+        'job_role': response.job_role,
         'id_token': id_token_str,  # Include Google ID token for API authentication
     }
     

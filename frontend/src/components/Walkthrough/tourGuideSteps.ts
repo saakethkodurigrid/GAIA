@@ -79,7 +79,7 @@ export const codingTourSteps: TourStep[] = [
   {
     target: '[data-tour="language-selector"]',
     title: 'Choose Your Language',
-    content: 'You can write your solution in the language you are most comfortable with. Choose from Python, JavaScript, or Java.',
+    content: 'You can write your solution in the language you are most comfortable with. Choose from Python, JavaScript, Java, C++, or C#.',
     placement: 'center'
   },
   {

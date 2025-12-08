@@ -114,6 +114,41 @@ class AuthService:
             # Default to candidate for unknown role_id
             return UserType.CANDIDATE
     
+    def _get_candidate_job_role(self, candidate_id: str) -> Optional[str]:
+        """
+        Get job role for a candidate from their job assignment.
+        
+        Args:
+            candidate_id: Candidate UUID
+            
+        Returns:
+            Job role string or None if not found
+        """
+        try:
+            from models.recruiter_admin_candidate import RecruiterAdminCandidate
+            from models.job import Job
+            
+            # Get candidate's job assignment
+            assignment = self.db.query(RecruiterAdminCandidate).filter(
+                RecruiterAdminCandidate.candidate_id == candidate_id
+            ).first()
+            
+            if not assignment:
+                return None
+            
+            # Get job details
+            job = self.db.query(Job).filter(
+                Job.job_id == assignment.job_id
+            ).first()
+            
+            if not job:
+                return None
+            
+            return job.job_role
+        except Exception as e:
+            logger.warning(f"Error fetching job role for candidate {candidate_id}: {str(e)}")
+            return None
+    
     def authenticate_admin_recruiter(self, token: str) -> AuthResponse:
         """
         Authenticate admin/recruiter user.
@@ -269,6 +304,9 @@ class AuthService:
                 message=f"Invalid candidate status: {status}"
             )
         
+        # Get job role for candidate
+        job_role = self._get_candidate_job_role(candidate_id)
+        
         return AuthResponse(
             success=True,
             message="Authentication successful",
@@ -276,7 +314,8 @@ class AuthService:
             email=email,
             name=user_info.get('name'),
             status=status_enum,
-            candidate_id=candidate_id
+            candidate_id=candidate_id,
+            job_role=job_role
         )
     
     def _handle_candidate_authentication(self, email: str, name: Optional[str] = None) -> AuthResponse:
@@ -312,14 +351,6 @@ class AuthService:
         # Handle status-based routing
         status = candidate.status.lower()
         
-        # Check for 'in progress' status - multiple login error
-        if status == 'in progress':
-            return AuthResponse(
-                success=False,
-                message="Multiple login detected. Test is already in progress.",
-                status=CandidateStatus.IN_PROGRESS
-            )
-        
         # Map status to enum
         status_enum = None
         if status == 'shortlisted':
@@ -342,6 +373,9 @@ class AuthService:
                 message=f"Invalid candidate status: {status}"
             )
         
+        # Get job role for candidate
+        job_role = self._get_candidate_job_role(candidate.candidate_id)
+        
         return AuthResponse(
             success=True,
             message="Authentication successful",
@@ -349,7 +383,8 @@ class AuthService:
             email=email,
             name=name,
             status=status_enum,
-            candidate_id=candidate.candidate_id
+            candidate_id=candidate.candidate_id,
+            job_role=job_role
         )
     
     def authenticate_user(self, token: str, candidate_id: Optional[str] = None) -> AuthResponse:
@@ -438,13 +473,6 @@ class AuthService:
                 # Candidate exists - handle status-based routing
                 status = candidate.status.lower()
                 
-                if status == 'in progress':
-                    return AuthResponse(
-                        success=False,
-                        message="Multiple login detected. Test is already in progress.",
-                        status=CandidateStatus.IN_PROGRESS
-                    )
-                
                 # Map status to enum
                 status_enum = None
                 if status == 'shortlisted':
@@ -467,6 +495,9 @@ class AuthService:
                         message=f"Invalid candidate status: {status}"
                     )
                 
+                # Get job role for candidate
+                job_role = self._get_candidate_job_role(candidate.candidate_id)
+                
                 return AuthResponse(
                     success=True,
                     message="Authentication successful",
@@ -474,7 +505,8 @@ class AuthService:
                     email=email,
                     name=user_info.get('name'),
                     status=status_enum,
-                    candidate_id=candidate.candidate_id
+                    candidate_id=candidate.candidate_id,
+                    job_role=job_role
                 )
         
         # User not found anywhere - access denied

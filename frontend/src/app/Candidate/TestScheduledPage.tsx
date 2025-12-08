@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { startTest } from '../../api/candidate.api';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 
@@ -16,6 +17,8 @@ const TestScheduledPage = () => {
   });
   const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [formattedDate, setFormattedDate] = useState<string>('');
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Initialize scheduled date from location state or fetch from user data
   useEffect(() => {
@@ -90,6 +93,37 @@ const TestScheduledPage = () => {
 
   const handleLogout = () => {
     logout();
+  };
+
+  const handleStartAssessment = async () => {
+    if (!user?.candidateId) {
+      setStartError('Candidate ID not found. Please login again.');
+      return;
+    }
+
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+    if (!token) {
+      setStartError('Authentication token not found. Please login again.');
+      return;
+    }
+
+    setIsStarting(true);
+    setStartError(null);
+
+    // Navigate immediately without waiting for test generation
+    navigate('/test/instructions');
+
+    // Start test session in the background (fire-and-forget)
+    // This loads questions into Redis but doesn't block navigation
+    startTest(user.candidateId, token)
+      .then(() => {
+        console.log('Test started, data loaded to Redis');
+      })
+      .catch((error) => {
+        console.error('Failed to start test in background:', error);
+        // Note: We don't show error to user since they've already navigated
+        // The next page will handle retrying if needed
+      });
   };
 
   return (
@@ -225,12 +259,24 @@ const TestScheduledPage = () => {
           </div>
         </div>
 
+        {/* Error Message */}
+        {startError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-600">{startError}</p>
+          </div>
+        )}
+
         {/* Start Assessment Button */}
         <button
-          onClick={() => navigate('/test/instructions')}
-          className="bg-yellow-400 text-gray-900 py-3 px-8 rounded-lg font-semibold text-base hover:bg-yellow-500 transition-colors shadow-md"
+          onClick={handleStartAssessment}
+          disabled={isStarting}
+          className={`py-3 px-8 rounded-lg font-semibold text-base transition-colors shadow-md ${
+            isStarting
+              ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+              : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
+          }`}
         >
-          Start Assessment
+          {isStarting ? 'Starting Test...' : 'Start Assessment'}
         </button>
       </div>
 

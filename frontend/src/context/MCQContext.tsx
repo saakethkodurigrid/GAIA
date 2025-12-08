@@ -4,6 +4,8 @@ import { fetchQuestions } from '../api/questions.api';
 import { QUESTION_STATUS, TIMER_DURATION } from '../utils/constants';
 import type { MCQContextType, Question } from '../types';
 import { useAuth } from './AuthContext';
+import { sendHeartbeat } from '../api/candidate.api';
+import { submitAssessment } from '../api/questions.api';
 
 const MCQContext = createContext<MCQContextType | undefined>(undefined);
 
@@ -55,8 +57,10 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
   useEffect(() => {
     const loadQuestions = async () => {
       try {
-        // Fetch questions from backend using candidate_id
         const candidateId = user?.candidateId;
+        if (!candidateId) return;
+
+        // Fetch questions (will come from Redis if test was started, otherwise from DB)
         const data = await fetchQuestions(candidateId);
         setQuestions(data);
         
@@ -114,6 +118,73 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
 
     return () => clearInterval(timer);
   }, [timeRemaining]);
+
+  // Heartbeat interval - send every 2 minutes to keep test session alive
+  useEffect(() => {
+    const candidateId = user?.candidateId;
+    if (!candidateId || timeRemaining <= 0 || isLoading) return;
+
+    // Send heartbeat every 2 minutes (120 seconds)
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+        if (token && candidateId) {
+          await sendHeartbeat(candidateId, token);
+          console.log('Heartbeat sent successfully');
+        }
+      } catch (error) {
+        console.error('Failed to send heartbeat:', error);
+        // Don't throw - heartbeat failure shouldn't break the test
+      }
+    }, 120000); // 2 minutes
+
+    return () => clearInterval(heartbeatInterval);
+  }, [user?.candidateId, timeRemaining, isLoading]);
+
+  // Auto-save answers to Redis every 30 seconds
+  useEffect(() => {
+    const candidateId = user?.candidateId;
+    if (!candidateId || questions.length === 0 || isLoading) return;
+
+    const autoSaveInterval = setInterval(async () => {
+      // Check if there are unsaved answers
+      const hasUnsaved = Object.keys(answers).some(
+        (qId) => {
+          const questionId = parseInt(qId);
+          return answers[questionId] !== undefined && 
+                 answers[questionId] !== savedAnswers[questionId];
+        }
+      );
+
+      if (hasUnsaved) {
+        try {
+          const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+          if (token && candidateId) {
+            // Convert to backend format
+            const answerItems = questions
+              .filter((q) => {
+                const answer = answers[q.id];
+                return answer !== undefined && answer !== null && q.question_uuid;
+              })
+              .map((q) => ({
+                question_uuid: q.question_uuid!,
+                candidate_answer: String(answers[q.id]),
+              }));
+
+            if (answerItems.length > 0) {
+              await submitAssessment(answers, questions, candidateId);
+              console.log('Auto-saved answers to Redis');
+            }
+          }
+        } catch (error) {
+          console.error('Auto-save failed:', error);
+          // Silent fail - don't interrupt user experience
+        }
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [user?.candidateId, answers, savedAnswers, questions, isLoading]);
 
   const selectAnswer = useCallback((questionId: number, answerIndex: number) => {
     // Only update the selected answer, don't automatically save or change status

@@ -130,3 +130,89 @@ export const uploadCandidateImage = async (
   return uploadResponse.json();
 };
 
+// ==================== Redis Integration Functions ====================
+
+export interface StartTestRequest {
+  duration_minutes?: number; // Optional, defaults to backend default
+}
+
+export interface StartTestResponse {
+  success: boolean;
+  message: string;
+  test_start_time: string; // ISO timestamp
+  remaining_seconds: number;
+}
+
+/**
+ * Start a test session and load questions into Redis
+ * This MUST be called before fetching questions to ensure Redis is populated
+ */
+export const startTest = async (
+  candidateId: string,
+  token: string,
+  durationMinutes?: number
+): Promise<StartTestResponse> => {
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/test/start`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        duration_minutes: durationMinutes,
+      } as StartTestRequest),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to start test' }));
+    throw new Error(error.detail || 'Failed to start test');
+  }
+
+  return response.json();
+};
+
+export interface HeartbeatRequest {
+  client_timestamp?: string; // Optional ISO timestamp
+}
+
+export interface HeartbeatResponse {
+  success: boolean;
+  message: string;
+  server_timestamp: string; // ISO timestamp
+  remaining_seconds: number;
+}
+
+/**
+ * Send heartbeat every 2 minutes to keep test session alive
+ * Prevents auto-completion due to inactivity
+ */
+export const sendHeartbeat = async (
+  candidateId: string,
+  token: string,
+  clientTimestamp?: Date
+): Promise<HeartbeatResponse> => {
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/test/heartbeat`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        client_timestamp: clientTimestamp?.toISOString(),
+      } as HeartbeatRequest),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to send heartbeat' }));
+    throw new Error(error.detail || 'Failed to send heartbeat');
+  }
+
+  return response.json();
+};
+

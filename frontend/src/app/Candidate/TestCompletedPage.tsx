@@ -91,6 +91,10 @@ const TestCompletedPage = () => {
     navigate('/auth/login');
   };
 
+  const handleViewAnalysis = () => {
+    navigate('/candidate/analysis');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
       {/* Header */}
@@ -199,8 +203,14 @@ const TestCompletedPage = () => {
             </p>
           </div>
 
-          {/* Close Button */}
-          <div className="flex justify-center">
+          {/* Action Buttons */}
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={handleViewAnalysis}
+              className="bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-blue-700 transition-colors shadow-md"
+            >
+              View Analysis
+            </button>
             <button
               onClick={handleClose}
               className="bg-gray-700 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-gray-800 transition-colors shadow-md"

@@ -490,13 +490,7 @@ class InterviewService:
                     scheduled_date=None
                 )
             
-            # Validate that candidate is in 'shortlisted' status
-            if candidate.status not in ['shortlisted', 'scheduled']:
-                return ScheduleTestResponse(
-                    success=False,
-                    message=f"Cannot schedule test. Candidate status is '{candidate.status}'. Only 'shortlisted' or 'scheduled' candidates can schedule tests.",
-                    scheduled_date=None
-                )
+            # Allow scheduling for candidates in any status (removed status check)
             
             # Update candidate's scheduled_date and status
             candidate.scheduled_date = request.scheduled_date

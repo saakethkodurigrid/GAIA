@@ -36,6 +36,49 @@ const ExcalidrawCanvas = () => {
     };
   }, []);
 
+  // Hide the main menu trigger button and library sidebar trigger
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Hide Excalidraw main menu trigger button (library button) */
+      button[data-testid="main-menu-trigger"] {
+        display: none !important;
+      }
+      /* Hide Excalidraw library sidebar trigger */
+      .sidebar-trigger.default-sidebar-trigger,
+      .sidebar-trigger:has(.sidebar-trigger__label:contains("Library")) {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Also use MutationObserver to catch dynamically rendered library sidebar triggers
+    const hideLibrarySidebar = () => {
+      const sidebarTriggers = document.querySelectorAll('.sidebar-trigger');
+      sidebarTriggers.forEach((trigger) => {
+        const label = trigger.querySelector('.sidebar-trigger__label');
+        if (label && label.textContent?.trim() === 'Library') {
+          (trigger as HTMLElement).style.display = 'none';
+        }
+      });
+    };
+
+    // Initial hide
+    hideLibrarySidebar();
+
+    // Observe for dynamically added elements
+    const observer = new MutationObserver(hideLibrarySidebar);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      document.head.removeChild(style);
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 rounded-t-lg">

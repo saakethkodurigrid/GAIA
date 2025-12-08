@@ -46,6 +46,7 @@ class AuthResponse(BaseModel):
     name: Optional[str] = None
     status: Optional[CandidateStatus] = None
     candidate_id: Optional[str] = None
+    job_role: Optional[str] = None
 
 
 class GoogleAuthURLResponse(BaseModel):

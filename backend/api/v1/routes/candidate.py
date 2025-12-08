@@ -390,15 +390,11 @@ async def start_test(
                 detail="Candidate not found"
             )
         
-        # Get or create test session
-        test_session = candidate.test_session
-        if not test_session:
-            test_session = TestSession(candidate_id=candidate_id)
-            db.add(test_session)
-            db.flush()
+        # Get or create test session - query directly to avoid relationship issues
+        test_session = db.query(TestSession).filter(TestSession.candidate_id == candidate_id).first()
         
         # Check if test is already active
-        if candidate.status == 'in progress' and test_session.test_start_time:
+        if candidate.status == 'in progress' and test_session and test_session.test_start_time:
             # Calculate remaining time
             elapsed = datetime.utcnow() - test_session.test_start_time
             remaining = timedelta(minutes=test_session.test_duration_minutes or request.duration_minutes) - elapsed
@@ -411,21 +407,39 @@ async def start_test(
                 remaining_seconds=remaining_seconds
             )
         
-        # Start new test session
+        # Start new test session - set all fields BEFORE creating/committing
         now = datetime.utcnow()
-        test_session.test_start_time = now
-        test_session.test_duration_minutes = request.duration_minutes
-        test_session.last_activity = now  # Track activity, updated when answers are saved
-        test_session.last_heartbeat = now  # Initialize heartbeat
-        test_session.completion_method = None
-        test_session.test_completed_at = None
-        test_session.sections_completed = {}
-        test_session.pending_answers = {}
-        test_session.section_timings = {}
+        
+        if not test_session:
+            # Create new test session with all required fields set
+            test_session = TestSession(
+                candidate_id=candidate_id,
+                test_start_time=now,  # ✅ Set before any database operation
+                test_duration_minutes=request.duration_minutes,
+                last_activity=now,
+                last_heartbeat=now,
+                completion_method=None,
+                test_completed_at=None,
+                sections_completed={},
+                pending_answers={},
+                section_timings={}
+            )
+            db.add(test_session)
+        else:
+            # Update existing test session
+            test_session.test_start_time = now
+            test_session.test_duration_minutes = request.duration_minutes
+            test_session.last_activity = now
+            test_session.last_heartbeat = now
+            test_session.completion_method = None
+            test_session.test_completed_at = None
+            test_session.sections_completed = {}
+            test_session.pending_answers = {}
+            test_session.section_timings = {}
         
         candidate.status = 'in progress'
         
-        db.commit()
+        db.commit()  # ✅ Now commit with all fields set
         
         # Load all test data (MCQ, Coding, System Design) into Redis
         try:

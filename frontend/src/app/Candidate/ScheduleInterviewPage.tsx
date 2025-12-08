@@ -239,7 +239,7 @@ const ScheduleInterviewPage = () => {
                     </svg>
                     <span className="text-xs text-gray-600">Role</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-900">Senior Backend Developer</p>
+                  <p className="text-sm font-semibold text-gray-900">{user?.jobRole || 'Senior Backend Developer'}</p>
                 </div>
               </div>
               

@@ -52,6 +52,8 @@ export interface CodingProblem {
     python: string;
     javascript: string;
     java: string;
+    cpp: string;
+    csharp: string;
   };
   testCases: Array<{
     input: string;
@@ -63,7 +65,7 @@ export interface CodingContextType {
   problems: CodingProblem[];
   currentProblemIndex: number;
   currentProblem: CodingProblem | undefined;
-  selectedLanguage: 'python' | 'javascript' | 'java';
+  selectedLanguage: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
   code: Record<string, string>;
   testResults: Record<number, Array<{
     input: string;
@@ -75,7 +77,7 @@ export interface CodingContextType {
   isRunning: boolean;
   timeRemaining: number;
   isLoading: boolean;
-  setLanguage: (lang: 'python' | 'javascript' | 'java') => void;
+  setLanguage: (lang: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp') => void;
   updateCode: (code: string) => void;
   runCode: () => Promise<void>;
   resetCode: () => void;
@@ -134,6 +136,7 @@ export interface AuthResponse {
   name?: string;
   status?: CandidateStatus;
   candidate_id?: string;
+  job_role?: string;
   redirect_url?: string;
   id_token?: string;  // Google ID token for API authentication
 }
@@ -151,6 +154,7 @@ export interface AuthContextType {
     userType?: UserType;
     status?: CandidateStatus;
     candidateId?: string;
+    jobRole?: string;
   } | null;
   isLoading: boolean;
   error: string | null;

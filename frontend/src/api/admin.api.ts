@@ -175,10 +175,18 @@ export const uploadCandidatesBatch = async (
   // Create FormData with files and candidate data
   const formData = new FormData();
   
-  candidates.forEach((candidate, index) => {
+  // Prepare candidates data as JSON array (matching backend expectation)
+  const candidatesData = candidates.map(candidate => ({
+    name: candidate.name.trim(),
+    email: candidate.email.trim().toLowerCase()
+  }));
+  
+  // Append candidates_data as JSON string
+  formData.append('candidates_data', JSON.stringify(candidatesData));
+  
+  // Append all files (order must match candidates_data array)
+  candidates.forEach((candidate) => {
     formData.append('files', candidate.file);
-    formData.append(`candidate_${index}_name`, candidate.name.trim());
-    formData.append(`candidate_${index}_email`, candidate.email.trim().toLowerCase());
   });
 
   const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch`, {

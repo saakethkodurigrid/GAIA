@@ -15,7 +15,9 @@ const LanguageTabs = ({ onSubmitSection }: LanguageTabsProps) => {
   const languages = [
     { id: 'python', label: 'Python' },
     { id: 'javascript', label: 'JavaScript' },
-    { id: 'java', label: 'Java' }
+    { id: 'java', label: 'Java' },
+    { id: 'cpp', label: 'C++' },
+    { id: 'csharp', label: 'C#' }
   ] as const;
 
   const currentLanguage = languages.find(lang => lang.id === selectedLanguage) || languages[0];
