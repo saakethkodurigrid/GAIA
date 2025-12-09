@@ -1039,19 +1039,15 @@ async def run_code(
         sample_test_cases = []
         test_cases = []
         
-        # Step 1: Try to get from Redis first
+        # Step 1: Try to get specific question from Redis first (optimized lookup)
         try:
-            coding_questions = loader_service.get_coding_questions_from_redis(candidate_id)
-            if coding_questions:
-                # Find the question by question_id
-                for q in coding_questions:
-                    if q.get("question_uuid") == request.question_id:
-                        coding_question = q
-                        sample_test_cases = q.get("sample_test_cases", [])
-                        test_cases = q.get("test_cases", [])
-                        break
+            coding_question = loader_service.get_coding_question_from_redis(candidate_id, request.question_id)
+            if coding_question:
+                sample_test_cases = coding_question.get("sample_test_cases", [])
+                test_cases = coding_question.get("test_cases", [])
         except Exception as e:
-            logger.warning(f"Failed to get coding questions from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+            logger.warning(f"Failed to get coding question from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+            coding_question = None
         
         # Step 2: Fallback to database if not found in Redis
         if not coding_question:
@@ -1339,19 +1335,15 @@ async def submit_coding_answer(
         sample_test_cases = []
         test_cases = []
         
-        # Step 1: Try to get from Redis first (optimization)
+        # Step 1: Try to get specific question from Redis first (optimized lookup)
         try:
-            coding_questions = loader_service.get_coding_questions_from_redis(candidate_id)
-            if coding_questions:
-                # Find the question by question_id
-                for q in coding_questions:
-                    if q.get("question_uuid") == request.question_id:
-                        coding_question = q
-                        sample_test_cases = q.get("sample_test_cases", [])
-                        test_cases = q.get("test_cases", [])
-                        break
+            coding_question = loader_service.get_coding_question_from_redis(candidate_id, request.question_id)
+            if coding_question:
+                sample_test_cases = coding_question.get("sample_test_cases", [])
+                test_cases = coding_question.get("test_cases", [])
         except Exception as e:
-            logger.warning(f"Failed to get coding questions from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+            logger.warning(f"Failed to get coding question from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+            coding_question = None
         
         # Step 2: Fallback to database if not found in Redis
         if not coding_question:
