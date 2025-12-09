@@ -15,6 +15,7 @@ class Candidate(Base):
     )
     
     candidate_id = Column(String(36), primary_key=True, index=True)  # UUID as CHAR(36)
+    candidate_reference_number = Column(String(10), unique=True, index=True, nullable=True)  # Display ID like "CI-627891"
     name = Column(String(255), nullable=False)
     email_id = Column(String(255), nullable=False, index=True)
     resume = Column(Text, nullable=True)

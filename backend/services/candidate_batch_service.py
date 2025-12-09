@@ -19,6 +19,7 @@ from utils.resume.resume_scorer import resume_scorer
 from utils.mcq.pii_scrubber import pii_scrubber
 from presidio_analyzer import AnalyzerEngine
 from services.email_service import email_service
+from services.candidate_service import CandidateService
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,10 @@ class CandidateBatchService:
                 # Step 4: Create candidate record
                 candidate_id = str(uuid.uuid4())
                 
+                # Generate candidate reference number
+                candidate_service = CandidateService(self.db)
+                candidate_reference_number = candidate_service._generate_candidate_reference_number(candidate_id)
+                
                 # Check if candidate with this email is already assigned to THIS SPECIFIC JOB
                 # This allows same email in different jobs (with different UUIDs) but prevents duplicates within same job
                 existing_assignment = self.db.query(RecruiterAdminCandidate).join(
@@ -198,6 +203,7 @@ class CandidateBatchService:
                 
                 new_candidate = Candidate(
                     candidate_id=candidate_id,
+                    candidate_reference_number=candidate_reference_number,
                     name=name,  # From provided data
                     email_id=email.lower(),  # From provided data
                     phone_number=None,  # Not provided, can be updated later
@@ -257,7 +263,7 @@ class CandidateBatchService:
                         logger.error(f"Failed to queue scheduling invitation email to {email}: {str(e)}")
                 
                 successful_candidates.append({
-                    "candidate_id": candidate_id,
+                    "candidate_id": candidate_reference_number,  # Return reference number instead of UUID
                     "name": name,
                     "email_id": email,
                     "status": initial_status,  # 'shortlisted' or 'rejected'
