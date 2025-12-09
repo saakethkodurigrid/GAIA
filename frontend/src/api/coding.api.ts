@@ -1,4 +1,10 @@
 import type { CodingProblem } from '../types';
+import { API_BASE_URL } from '../utils/config';
+
+// Get auth token helper
+const getAuthToken = (): string | null => {
+  return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+};
 
 export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
   {
@@ -476,4 +482,278 @@ export const runCodeExecution = async (
   return data;
 };
 
+// ============ Backend API Types ============
 
+export interface BackendCodingQuestion {
+  question_uuid: string;
+  question: string;
+  sample_test_cases: Array<{
+    id?: string;
+    input: string;
+    expected_output: string;
+  }>;
+  boilerplate_code: string | null;
+}
+
+export interface BackendCodingQuestionsResponse {
+  success: boolean;
+  message: string;
+  count: number;
+  questions: BackendCodingQuestion[];
+}
+
+export interface RunCodeRequest {
+  question_id: string;
+  language: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
+  code: string;
+  mode: 'run' | 'run_all';
+}
+
+export interface RunCodeResponse {
+  execution_id?: string;
+  summary: {
+    total_tests: number;
+    passed: number;
+    failed: number;
+    all_passed: boolean;
+    pass_percentage: number;
+  };
+  test_results: Array<{
+    test_case_id: string;
+    test_case_number: number;
+    input?: string;  // May be omitted for hidden test cases
+    expected_output?: string;  // May be omitted for hidden test cases
+    actual_output?: string;
+    error?: string | null;
+    status: string;
+    passed: boolean;
+    execution_time_ms?: number;
+    cpu_usage_percent?: number;
+    memory_usage_bytes?: number;
+  }>;
+  metadata?: {
+    replica?: string;
+    execution_time_ms?: number;
+    cpu_usage_percent?: number;
+    memory_usage_mb?: number;
+    execution_service_response_time_ms?: number;
+    preprocessing_time_ms?: number;
+    postprocessing_time_ms?: number;
+  };
+  timestamp?: string;
+  error?: string;
+}
+
+export interface SubmitCodingAnswerRequest {
+  question_id: string;
+  language: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
+  code: string;
+}
+
+export interface SubmitCodingAnswerResponse {
+  success: boolean;
+  message: string;
+  question_id: string;
+  score: number;
+  test_cases_passed: number;
+  total_test_cases: number;
+  sample_test_cases_passed: number;
+  hidden_test_cases_passed: number;
+  execution_id?: string;
+}
+
+// ============ Backend API Functions ============
+
+/**
+ * Fetch coding questions from backend
+ */
+export const fetchCodingQuestionsFromBackend = async (
+  candidateId: string
+): Promise<BackendCodingQuestion[]> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/coding-questions`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch coding questions' }));
+    throw new Error(error.detail || 'Failed to fetch coding questions');
+  }
+
+  const data: BackendCodingQuestionsResponse = await response.json();
+  
+  console.log('=== CODING QUESTIONS RESPONSE FROM BACKEND ===');
+  console.log('Full Response:', JSON.stringify(data, null, 2));
+  console.log('Success:', data.success);
+  console.log('Message:', data.message);
+  console.log('Count:', data.count);
+  console.log('Questions:', data.questions);
+  console.log('==========================================');
+  
+  if (!data.success || !data.questions) {
+    throw new Error(data.message || 'Failed to fetch coding questions');
+  }
+
+  return data.questions;
+};
+
+/**
+ * Run code against test cases (sample only or all)
+ */
+export const runCodeViaBackend = async (
+  candidateId: string,
+  request: RunCodeRequest
+): Promise<RunCodeResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  // Fix Java class name issue if needed
+  let codeToRun = request.code;
+  if (request.language === 'java') {
+    codeToRun = fixJavaClassName(request.code);
+  }
+
+  console.log('=== RUN CODE REQUEST TO BACKEND ===');
+  console.log('Candidate ID:', candidateId);
+  console.log('Request:', JSON.stringify({ ...request, code: codeToRun }, null, 2));
+  console.log('===================================');
+
+  // Measure total API call time (frontend to backend and back)
+  const apiStartTime = performance.now();
+  
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/coding/run`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ...request,
+        code: codeToRun,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to run code' }));
+    throw new Error(error.detail || 'Failed to run code');
+  }
+
+  const data = await response.json();
+  const apiEndTime = performance.now();
+  const totalApiTime = apiEndTime - apiStartTime;
+  
+  // Extract timing information from metadata if available
+  const executionServiceTime = data.metadata?.execution_service_response_time_ms;
+  const preprocessingTime = data.metadata?.preprocessing_time_ms;
+  const postprocessingTime = data.metadata?.postprocessing_time_ms;
+  
+  console.log('=== RUN CODE RESPONSE FROM BACKEND ===');
+  console.log('Response:', JSON.stringify(data, null, 2));
+  console.log('=====================================');
+  console.log('⏱️  TIMING INFORMATION:');
+  console.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
+  
+  if (executionServiceTime) {
+    console.log(`   Execution Service Time: ${executionServiceTime}ms (Backend → Azure → Backend)`);
+    
+    // Calculate network time (total - all backend processing)
+    const backendProcessingTime = (preprocessingTime || 0) + executionServiceTime + (postprocessingTime || 0);
+    const networkTime = totalApiTime - backendProcessingTime;
+    
+    console.log(`   📊 Backend Processing Breakdown:`);
+    if (preprocessingTime) {
+      console.log(`      - Preprocessing (Redis/DB/Formatting): ${preprocessingTime}ms`);
+    }
+    console.log(`      - Execution Service: ${executionServiceTime}ms`);
+    if (postprocessingTime) {
+      console.log(`      - Postprocessing (Sanitization): ${postprocessingTime}ms`);
+    }
+    console.log(`      - Total Backend Processing: ${backendProcessingTime.toFixed(2)}ms`);
+    console.log(`   🌐 Network Time (Frontend ↔ Backend): ${networkTime.toFixed(2)}ms`);
+    
+    if (networkTime < 0) {
+      console.log(`   ⚠️  Note: Negative network time suggests timing measurement overlap or backend processing not fully captured`);
+    }
+  } else {
+    console.log('   Execution Service Time: Not available in response');
+  }
+  console.log('=====================================');
+  
+  return data;
+};
+
+/**
+ * Submit final coding answer
+ */
+export const submitCodingAnswer = async (
+  candidateId: string,
+  request: SubmitCodingAnswerRequest
+): Promise<SubmitCodingAnswerResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  // Fix Java class name issue if needed
+  let codeToSubmit = request.code;
+  if (request.language === 'java') {
+    codeToSubmit = fixJavaClassName(request.code);
+  }
+
+  console.log('=== SUBMIT CODING ANSWER REQUEST TO BACKEND ===');
+  console.log('Candidate ID:', candidateId);
+  console.log('Request:', JSON.stringify({ ...request, code: codeToSubmit }, null, 2));
+  console.log('==============================================');
+
+  // Measure total API call time (frontend to backend and back)
+  const apiStartTime = performance.now();
+  
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/coding/submit`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ...request,
+        code: codeToSubmit,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to submit answer' }));
+    throw new Error(error.detail || 'Failed to submit answer');
+  }
+
+  const data = await response.json();
+  const apiEndTime = performance.now();
+  const totalApiTime = apiEndTime - apiStartTime;
+  
+  console.log('=== SUBMIT CODING ANSWER RESPONSE FROM BACKEND ===');
+  console.log('Response:', JSON.stringify(data, null, 2));
+  console.log('=================================================');
+  console.log('⏱️  TIMING INFORMATION:');
+  console.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
+  console.log('   Note: Execution service time is logged on backend for submit endpoint');
+  console.log('=================================================');
+  
+  return data;
+};

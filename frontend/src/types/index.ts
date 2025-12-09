@@ -39,6 +39,7 @@ export interface SubmitSectionModalProps {
 
 export interface CodingProblem {
   id: number;
+  question_uuid?: string;  // Backend UUID for API calls
   title: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   description: string;
@@ -67,19 +68,25 @@ export interface CodingContextType {
   currentProblem: CodingProblem | undefined;
   selectedLanguage: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
   code: Record<string, string>;
-  testResults: Record<number, Array<{
+  testResults: Record<string, Array<{  // Changed key from number to string (question_uuid)
+    testCaseId?: string;  // Test case ID from backend (e.g., "sample_1", "hidden_1")
     input: string;
     expectedOutput: string;
     actualOutput: string | null;
     passed: boolean | null;
+    error: string | null;  // Error message if execution failed
+    status?: string;  // Status from backend (e.g., "passed", "failed")
   }>>;
   output: string;
   isRunning: boolean;
+  isSubmitting?: boolean;  // Add this for submit state
   timeRemaining: number;
   isLoading: boolean;
   setLanguage: (lang: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp') => void;
   updateCode: (code: string) => void;
-  runCode: () => Promise<void>;
+  runCode: () => Promise<void>;  // Runs sample test cases
+  runAllTestCases?: () => Promise<void>;  // New: runs all test cases
+  submitAnswer?: () => Promise<void>;  // New: submits final answer
   resetCode: () => void;
   goToProblem: (index: number) => void;
   formatTime: (seconds: number) => string;

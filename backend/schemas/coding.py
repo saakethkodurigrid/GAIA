@@ -12,7 +12,7 @@ class RunCodeRequest(BaseModel):
         description="UUID of the coding question",
         pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     )
-    language: Literal["python", "javascript", "java"] = Field(
+    language: Literal["python", "javascript", "java", "cpp", "csharp"] = Field(
         ..., 
         description="Programming language"
     )
@@ -40,7 +40,7 @@ class SubmitCodingAnswerRequest(BaseModel):
         description="UUID of the coding question",
         pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     )
-    language: Literal["python", "javascript", "java"] = Field(
+    language: Literal["python", "javascript", "java", "cpp", "csharp"] = Field(
         ..., 
         description="Programming language"
     )

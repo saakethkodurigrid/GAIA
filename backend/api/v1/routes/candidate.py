@@ -3,6 +3,7 @@ Candidate API routes for interview-related operations.
 """
 import json
 import logging
+import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
@@ -1029,6 +1030,10 @@ async def run_code(
         )
     
     try:
+        # Measure total endpoint processing time
+        endpoint_start_time = time.perf_counter()
+        preprocessing_start_time = time.perf_counter()
+        
         loader_service = TestDataLoaderService(db)
         coding_question = None
         sample_test_cases = []
@@ -1131,9 +1136,14 @@ async def run_code(
             "question_id": request.question_id
         }
         
+        preprocessing_end_time = time.perf_counter()
+        preprocessing_duration_ms = (preprocessing_end_time - preprocessing_start_time) * 1000
+        
         # Step 6: Call external execution service
         execution_url = settings.CODE_EXECUTION_URL
         
+        # Measure execution time
+        execution_start_time = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -1143,20 +1153,48 @@ async def run_code(
                 )
                 response.raise_for_status()
                 execution_result = response.json()
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            
+            # Print and log execution time with breakdown
+            print(f"⏱️  Execution Service Response Time: {execution_duration_ms:.2f}ms (Question: {request.question_id})")
+            print(f"   📊 Preprocessing Time (Redis/DB/Formatting): {preprocessing_duration_ms:.2f}ms")
+            logger.info(
+                f"Code execution completed for candidate {candidate_id}, question {request.question_id}. "
+                f"Execution service response time: {execution_duration_ms:.2f}ms"
+            )
         except httpx.TimeoutException:
-            logger.error(f"Execution service timeout for candidate {candidate_id}, question {request.question_id}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Timeout: {execution_duration_ms:.2f}ms elapsed before timeout (Question: {request.question_id})")
+            logger.error(
+                f"Execution service timeout for candidate {candidate_id}, question {request.question_id}. "
+                f"Time elapsed before timeout: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="Code execution timed out. Please try again."
             )
         except httpx.ConnectError:
-            logger.error(f"Execution service connection error for candidate {candidate_id}, question {request.question_id}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Connection Error: {execution_duration_ms:.2f}ms elapsed before error (Question: {request.question_id})")
+            logger.error(
+                f"Execution service connection error for candidate {candidate_id}, question {request.question_id}. "
+                f"Time elapsed before connection error: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Code execution service is currently unavailable. Please try again later."
             )
         except httpx.HTTPStatusError as e:
-            logger.error(f"Execution service HTTP error {e.response.status_code}: {e.response.text}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service HTTP Error: {execution_duration_ms:.2f}ms elapsed (Status: {e.response.status_code}, Question: {request.question_id})")
+            logger.error(
+                f"Execution service HTTP error {e.response.status_code}: {e.response.text}. "
+                f"Time elapsed: {execution_duration_ms:.2f}ms"
+            )
             try:
                 error_detail = e.response.json().get("detail", e.response.text)
             except:
@@ -1166,13 +1204,20 @@ async def run_code(
                 detail=f"Execution service error: {error_detail}"
             )
         except Exception as e:
-            logger.error(f"Unexpected error calling execution service: {str(e)}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Unexpected Error: {execution_duration_ms:.2f}ms elapsed (Error: {str(e)[:50]}, Question: {request.question_id})")
+            logger.error(
+                f"Unexpected error calling execution service: {str(e)}. "
+                f"Time elapsed: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to execute code: {str(e)}"
             )
         
         # Step 7: Sanitize response based on mode
+        postprocessing_start_time = time.perf_counter()
         if request.mode == "run_all" and "test_results" in execution_result:
             # Sanitize hidden test cases (remove input/expected_output)
             # Build a set of sample test case IDs for quick lookup
@@ -1209,12 +1254,29 @@ async def run_code(
             
             execution_result["test_results"] = sanitized_results
         
-        # Step 8: Return response
+        postprocessing_end_time = time.perf_counter()
+        postprocessing_duration_ms = (postprocessing_end_time - postprocessing_start_time) * 1000
+        
+        # Step 8: Add execution time to metadata
+        metadata = execution_result.get("metadata") or {}
+        metadata["execution_service_response_time_ms"] = round(execution_duration_ms, 2)
+        metadata["preprocessing_time_ms"] = round(preprocessing_duration_ms, 2)
+        metadata["postprocessing_time_ms"] = round(postprocessing_duration_ms, 2)
+        
+        endpoint_end_time = time.perf_counter()
+        total_endpoint_time_ms = (endpoint_end_time - endpoint_start_time) * 1000
+        
+        # Print detailed timing breakdown
+        print(f"   📊 Postprocessing Time (Sanitization): {postprocessing_duration_ms:.2f}ms")
+        print(f"   ⏱️  Total Backend Processing Time: {total_endpoint_time_ms:.2f}ms")
+        print(f"   📈 Breakdown: Preprocessing={preprocessing_duration_ms:.2f}ms | Execution={execution_duration_ms:.2f}ms | Postprocessing={postprocessing_duration_ms:.2f}ms")
+        
+        # Step 9: Return response
         return RunCodeResponse(
             execution_id=execution_result.get("execution_id"),
             summary=execution_result.get("summary", {}),
             test_results=execution_result.get("test_results", []),
-            metadata=execution_result.get("metadata"),
+            metadata=metadata,
             timestamp=execution_result.get("timestamp")
         )
         
@@ -1358,6 +1420,8 @@ async def submit_coding_answer(
         # Step 6: Call external execution service
         execution_url = settings.CODE_EXECUTION_URL
         
+        # Measure execution time
+        execution_start_time = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -1367,20 +1431,47 @@ async def submit_coding_answer(
                 )
                 response.raise_for_status()
                 execution_result = response.json()
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            
+            # Print and log execution time
+            print(f"⏱️  Execution Service Response Time (Submit): {execution_duration_ms:.2f}ms (Question: {request.question_id})")
+            logger.info(
+                f"Code submission execution completed for candidate {candidate_id}, question {request.question_id}. "
+                f"Execution service response time: {execution_duration_ms:.2f}ms"
+            )
         except httpx.TimeoutException:
-            logger.error(f"Execution service timeout for candidate {candidate_id}, question {request.question_id}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Timeout (Submit): {execution_duration_ms:.2f}ms elapsed before timeout (Question: {request.question_id})")
+            logger.error(
+                f"Execution service timeout for candidate {candidate_id}, question {request.question_id}. "
+                f"Time elapsed before timeout: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="Code execution timed out. Please try again."
             )
         except httpx.ConnectError:
-            logger.error(f"Execution service connection error for candidate {candidate_id}, question {request.question_id}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Connection Error (Submit): {execution_duration_ms:.2f}ms elapsed before error (Question: {request.question_id})")
+            logger.error(
+                f"Execution service connection error for candidate {candidate_id}, question {request.question_id}. "
+                f"Time elapsed before connection error: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Code execution service is currently unavailable. Please try again later."
             )
         except httpx.HTTPStatusError as e:
-            logger.error(f"Execution service HTTP error {e.response.status_code}: {e.response.text}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service HTTP Error (Submit): {execution_duration_ms:.2f}ms elapsed (Status: {e.response.status_code}, Question: {request.question_id})")
+            logger.error(
+                f"Execution service HTTP error {e.response.status_code}: {e.response.text}. "
+                f"Time elapsed: {execution_duration_ms:.2f}ms"
+            )
             try:
                 error_detail = e.response.json().get("detail", e.response.text)
             except:
@@ -1390,7 +1481,13 @@ async def submit_coding_answer(
                 detail=f"Execution service error: {error_detail}"
             )
         except Exception as e:
-            logger.error(f"Unexpected error calling execution service: {str(e)}")
+            execution_end_time = time.perf_counter()
+            execution_duration_ms = (execution_end_time - execution_start_time) * 1000
+            print(f"⏱️  Execution Service Unexpected Error (Submit): {execution_duration_ms:.2f}ms elapsed (Error: {str(e)[:50]}, Question: {request.question_id})")
+            logger.error(
+                f"Unexpected error calling execution service: {str(e)}. "
+                f"Time elapsed: {execution_duration_ms:.2f}ms"
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to execute code: {str(e)}"

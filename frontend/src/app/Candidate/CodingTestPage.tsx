@@ -11,7 +11,7 @@ import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const CodingTestPageContent = () => {
-  const { formatTime, timeRemaining, isLoading, currentProblem, runCode, isRunning, problems, code } = useCoding();
+  const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code } = useCoding();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
   const navigate = useNavigate();
   
@@ -19,10 +19,11 @@ const CodingTestPageContent = () => {
   const getAttemptedCount = () => {
     let attempted = 0;
     problems.forEach((problem) => {
+      if (!problem.question_uuid) return;
       // Check if code has been modified from boilerplate in any language
       const languages: Array<'python' | 'javascript' | 'java' | 'cpp' | 'csharp'> = ['python', 'javascript', 'java', 'cpp', 'csharp'];
       const hasAttempted = languages.some((lang) => {
-        const codeKey = `${problem.id}-${lang}`;
+        const codeKey = `${problem.question_uuid}-${lang}`;
         const currentCode = code[codeKey] || problem.boilerplate[lang];
         return currentCode !== problem.boilerplate[lang];
       });
@@ -144,8 +145,39 @@ const CodingTestPageContent = () => {
 
                 {/* Problem Description */}
                 <div className="mb-6">
-                  <h3 className="text-base font-semibold text-gray-900 mb-2">Problem Description</h3>
-                  <p className="text-base text-gray-700 leading-relaxed">{currentProblem.description}</p>
+                  <style>{`
+                    .problem-description h3 {
+                      font-size: 1rem;
+                      font-weight: 600;
+                      color: #111827;
+                      margin-top: 1rem;
+                      margin-bottom: 0.5rem;
+                    }
+                    .problem-description p {
+                      margin-bottom: 0.75rem;
+                      line-height: 1.6;
+                      color: #374151;
+                    }
+                    .problem-description code {
+                      background-color: #f3f4f6;
+                      padding: 0.125rem 0.375rem;
+                      border-radius: 0.25rem;
+                      font-family: monospace;
+                      font-size: 0.875rem;
+                      color: #1f2937;
+                    }
+                    .problem-description ul, .problem-description ol {
+                      margin-left: 1.5rem;
+                      margin-bottom: 0.75rem;
+                    }
+                    .problem-description li {
+                      margin-bottom: 0.25rem;
+                    }
+                  `}</style>
+                  <div 
+                    className="problem-description text-base text-gray-700 leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: currentProblem.description }}
+                  />
                 </div>
 
                 {/* Examples */}
@@ -210,70 +242,75 @@ const CodingTestPageContent = () => {
           {/* Language Tabs */}
           <LanguageTabs onSubmitSection={() => setShowSubmitSectionModal(true)} />
 
-          {/* Code Editor - Takes remaining space */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <CodeEditor />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex-shrink-0 flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-200 bg-white">
-            <button
-              onClick={runCode}
-              disabled={isRunning}
-              className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-              </svg>
-              Run Code
-            </button>
-            <button
-              onClick={runCode}
-              disabled={isRunning}
-              className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-              </svg>
-              Run All Testcases
-            </button>
-            <button
-              onClick={() => setShowSubmitModal(true)}
-              className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors"
-            >
-              Submit Solution
-            </button>
-          </div>
-
-          {/* Testcases/Output Panel - Fixed height at bottom */}
-          <div className="flex-shrink-0 flex flex-col border-t border-gray-200">
-            {/* Tabs */}
-            <div className="flex items-center border-b border-gray-200 bg-white">
-              <button
-                onClick={() => setActiveTab('testcases')}
-                className={`px-6 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'testcases'
-                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                Testcases
-              </button>
-              <button
-                onClick={() => setActiveTab('output')}
-                className={`px-6 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'output'
-                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                Output
-              </button>
+          {/* Code Editor and Testcases Container - 60/40 split */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Code Editor Section - 60% */}
+            <div className="flex-[0.6] min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <CodeEditor />
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex-shrink-0 flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-200 bg-white">
+                <button
+                  onClick={runCode}
+                  disabled={isRunning}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                  </svg>
+                  Run Code
+                </button>
+                <button
+                  onClick={runAllTestCases}
+                  disabled={isRunning}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                  </svg>
+                  Run All Testcases
+                </button>
+                <button
+                  onClick={() => setShowSubmitModal(true)}
+                  className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors"
+                >
+                  Submit Solution
+                </button>
+              </div>
             </div>
 
-            {/* Content - Scrollable, shows only 1 test case initially */}
-            <div className="overflow-y-auto h-[180px]">
-              {activeTab === 'testcases' ? <TestCaseViewer /> : <OutputViewer />}
+            {/* Testcases/Output Panel - 40% */}
+            <div className="flex-[0.4] min-h-0 min-w-0 flex flex-col border-t border-gray-200 overflow-hidden">
+              {/* Tabs */}
+              <div className="flex-shrink-0 flex items-center border-b border-gray-200 bg-white">
+                <button
+                  onClick={() => setActiveTab('testcases')}
+                  className={`px-6 py-3 text-sm font-medium transition-colors ${
+                    activeTab === 'testcases'
+                      ? 'bg-white text-gray-900 border-b-2 border-gray-900'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Testcases
+                </button>
+                <button
+                  onClick={() => setActiveTab('output')}
+                  className={`px-6 py-3 text-sm font-medium transition-colors ${
+                    activeTab === 'output'
+                      ? 'bg-white text-gray-900 border-b-2 border-gray-900'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Output
+                </button>
+              </div>
+
+              {/* Content - Scrollable, takes remaining space */}
+              <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+                {activeTab === 'testcases' ? <TestCaseViewer /> : <OutputViewer />}
+              </div>
             </div>
           </div>
         </main>
