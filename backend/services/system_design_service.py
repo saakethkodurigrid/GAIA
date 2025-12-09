@@ -954,12 +954,18 @@ class SystemDesignService:
         )
         session.chat_history.append(user_msg)
         
-        # 1. SOFT SAVE: Save to Redis (immediate)
-        self._save_chat_to_redis(candidate_id, question_uuid, user_msg)
-        self._save_session_to_redis(candidate_id, question_uuid, session)
+        # 1. SOFT SAVE: Save to Redis (immediate, fast - synchronous is fine)
+        try:
+            self._save_chat_to_redis(candidate_id, question_uuid, user_msg)
+            self._save_session_to_redis(candidate_id, question_uuid, session)
+        except Exception as e:
+            logger.warning(f"[REDIS] Failed to save user message: {e}")
         
-        # 2. HARD SAVE: Save to PostgreSQL (immediate - chat is important)
-        await self._save_chat_message_to_postgresql(candidate_id, question_uuid, user_msg)
+        # 2. HARD SAVE: Save to PostgreSQL (fire-and-forget, non-blocking)
+        asyncio.create_task(
+            self._save_chat_message_to_postgresql(candidate_id, question_uuid, user_msg)
+        )
+        # Don't await - let it run in background, user doesn't wait for DB write
         
         # Check if message triggers AI response
         should_respond = self.orchestrator.should_respond(
@@ -999,13 +1005,20 @@ class SystemDesignService:
                 )
                 session.chat_history.append(ai_msg)
                 
-                # 1. SOFT SAVE: Save to Redis (immediate)
-                self._save_chat_to_redis(candidate_id, question_uuid, ai_msg)
-                self._save_session_to_redis(candidate_id, question_uuid, session)
+                # 1. SOFT SAVE: Save to Redis (immediate, fast - synchronous is fine)
+                try:
+                    self._save_chat_to_redis(candidate_id, question_uuid, ai_msg)
+                    self._save_session_to_redis(candidate_id, question_uuid, session)
+                except Exception as e:
+                    logger.warning(f"[REDIS] Failed to save AI message: {e}")
                 
-                # 2. HARD SAVE: Save to PostgreSQL (immediate - chat is important)
-                await self._save_chat_message_to_postgresql(candidate_id, question_uuid, ai_msg)
+                # 2. HARD SAVE: Save to PostgreSQL (fire-and-forget, non-blocking)
+                asyncio.create_task(
+                    self._save_chat_message_to_postgresql(candidate_id, question_uuid, ai_msg)
+                )
+                # Don't await - let it run in background, user doesn't wait for DB write
                 
+                # Return immediately - user gets response without waiting for DB save
                 return ChatMessageResponse(
                     user_message=user_msg.model_dump(),
                     ai_response=ai_response
@@ -1020,12 +1033,18 @@ class SystemDesignService:
                 )
                 session.chat_history.append(ai_msg)
                 
-                # 1. SOFT SAVE: Save to Redis (immediate)
-                self._save_chat_to_redis(candidate_id, question_uuid, ai_msg)
-                self._save_session_to_redis(candidate_id, question_uuid, session)
+                # 1. SOFT SAVE: Save to Redis (immediate, fast - synchronous is fine)
+                try:
+                    self._save_chat_to_redis(candidate_id, question_uuid, ai_msg)
+                    self._save_session_to_redis(candidate_id, question_uuid, session)
+                except Exception as e:
+                    logger.warning(f"[REDIS] Failed to save error message: {e}")
                 
-                # 2. HARD SAVE: Save to PostgreSQL (immediate - chat is important)
-                await self._save_chat_message_to_postgresql(candidate_id, question_uuid, ai_msg)
+                # 2. HARD SAVE: Save to PostgreSQL (fire-and-forget, non-blocking)
+                asyncio.create_task(
+                    self._save_chat_message_to_postgresql(candidate_id, question_uuid, ai_msg)
+                )
+                # Don't await - let it run in background, user doesn't wait for DB write
                 
                 return ChatMessageResponse(
                     user_message=user_msg.model_dump(),
