@@ -17,7 +17,7 @@ from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 from schemas.admin import AssignedQuestionResponse
-from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse
+from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse
 from schemas.test_session import (
     StartTestRequest,
     StartTestResponse,
@@ -110,6 +110,118 @@ async def get_mcq_questions(
         )
     
     return response
+
+
+@router.get("/{candidate_id}/coding-questions", response_model=CodingQuestionsResponse)
+async def get_coding_questions(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all coding questions for a candidate.
+    
+    First tries to get questions from Redis (if test data was loaded).
+    Falls back to database if Redis is unavailable or data not found.
+    
+    Only the authenticated candidate can access their own questions.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        CodingQuestionsResponse with list of questions, test cases, and boilerplate code
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or error occurs while retrieving questions
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's questions
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view your own questions."
+        )
+    
+    # Try to get questions from Redis first
+    try:
+        loader_service = TestDataLoaderService(db)
+        coding_questions = loader_service.get_coding_questions_from_redis(candidate_id)
+        
+        if coding_questions:
+            # Convert Redis data to response format
+            questions_list = [
+                CodingQuestionResponse(
+                    question_uuid=q.get("question_uuid"),
+                    question=q.get("question"),
+                    sample_test_cases=q.get("sample_test_cases", []),
+                    boilerplate_code=q.get("boilerplate_code")
+                )
+                for q in coding_questions
+            ]
+            
+            return CodingQuestionsResponse(
+                success=True,
+                message=f"Successfully retrieved {len(questions_list)} coding question(s) from Redis",
+                count=len(questions_list),
+                questions=questions_list
+            )
+    except Exception as e:
+        logger.warning(f"Failed to get coding questions from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+    
+    # Fallback to database
+    try:
+        # Get all coding question assignments for this candidate
+        coding_records = db.query(InterviewCoding).filter(
+            InterviewCoding.candidate_id == candidate_id
+        ).all()
+        
+        if not coding_records:
+            return CodingQuestionsResponse(
+                success=True,
+                message="No coding questions assigned to this candidate",
+                count=0,
+                questions=[]
+            )
+        
+        # Fetch question details from CodingQuestionBank
+        questions_list = []
+        for coding in coding_records:
+            coding_question = None
+            if hasattr(coding, 'question') and coding.question:
+                coding_question = coding.question
+            elif hasattr(coding, 'question_uuid'):
+                coding_question = db.query(CodingQuestionBank).filter(
+                    CodingQuestionBank.uuid == coding.question_uuid
+                ).first()
+            
+            if coding_question:
+                questions_list.append(
+                    CodingQuestionResponse(
+                        question_uuid=coding.question_uuid,
+                        question=coding_question.question if hasattr(coding_question, 'question') else "",
+                        sample_test_cases=coding_question.sample_test_cases if hasattr(coding_question, 'sample_test_cases') and coding_question.sample_test_cases else [],
+                        boilerplate_code=coding_question.boiler_plate if hasattr(coding_question, 'boiler_plate') else None
+                    )
+                )
+        
+        return CodingQuestionsResponse(
+            success=True,
+            message=f"Successfully retrieved {len(questions_list)} coding question(s) from database",
+            count=len(questions_list),
+            questions=questions_list
+        )
+        
+    except Exception as e:
+        logger.error(f"Error retrieving coding questions from database for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to retrieve coding questions: {str(e)}"
+        )
 
 
 @router.post("/{candidate_id}/mcq-questions/save-answers", response_model=SaveMCQAnswerResponse)

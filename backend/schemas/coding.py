@@ -59,3 +59,19 @@ class SubmitCodingAnswerResponse(BaseModel):
     hidden_test_cases_passed: int = Field(..., description="Number of hidden test cases passed")
     execution_id: Optional[str] = Field(None, description="Execution ID from execution service")
 
+
+class CodingQuestionResponse(BaseModel):
+    """Response schema for a single coding question."""
+    question_uuid: str = Field(..., description="UUID of the coding question")
+    question: str = Field(..., description="The question text")
+    sample_test_cases: List[Dict[str, Any]] = Field(default_factory=list, description="Sample test cases (visible to candidate)")
+    boilerplate_code: Optional[str] = Field(None, description="Boilerplate code for the question")
+
+
+class CodingQuestionsResponse(BaseModel):
+    """Response schema for listing coding questions."""
+    success: bool = Field(..., description="Whether the request was successful")
+    message: str = Field(..., description="Response message")
+    count: int = Field(..., description="Number of coding questions")
+    questions: List[CodingQuestionResponse] = Field(default_factory=list, description="List of coding questions")
+
