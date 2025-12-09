@@ -524,7 +524,7 @@ const JobDetailsPage = () => {
                         <tbody>
                           {resumes.map((resume) => (
                             <tr key={resume.candidate_id} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-3 px-4 text-base text-gray-900">{resume.candidate_id.substring(0, 8)}...</td>
+                              <td className="py-3 px-4 text-base text-gray-900 font-mono text-sm">{resume.candidate_id}</td>
                               <td className="py-3 px-4 text-base text-gray-900">{resume.name}</td>
                               <td className="py-3 px-4 text-base text-gray-600">{resume.email_id}</td>
                               <td className={`py-3 px-4 text-base font-medium ${getScoreColor(resume.resume_score)}`}>
@@ -595,7 +595,7 @@ const JobDetailsPage = () => {
                         <tbody>
                           {scheduledInterviews.map((interview) => (
                             <tr key={interview.candidate_id} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-3 px-4 text-base text-gray-900">{interview.candidate_id.substring(0, 8)}...</td>
+                              <td className="py-3 px-4 text-base text-gray-900 font-mono text-sm">{interview.candidate_id}</td>
                               <td className="py-3 px-4 text-base text-gray-900">{interview.name}</td>
                               <td className="py-3 px-4 text-base text-gray-600">{interview.email_id}</td>
                               <td className="py-3 px-4 text-base text-gray-700">{formatInterviewDate(interview.interview_date)}</td>
@@ -660,7 +660,7 @@ const JobDetailsPage = () => {
                         <tbody>
                           {completedInterviews.map((interview) => (
                             <tr key={interview.candidate_id} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-3 px-4 text-base text-gray-900">{interview.candidate_id.substring(0, 8)}...</td>
+                              <td className="py-3 px-4 text-base text-gray-900 font-mono text-sm">{interview.candidate_id}</td>
                               <td className="py-3 px-4 text-base text-gray-900">{interview.name}</td>
                               <td className="py-3 px-4 text-base text-gray-600">{interview.email_id}</td>
                               <td className={`py-3 px-4 text-base font-medium ${interview.interview_score !== null && interview.interview_score >= 60 ? 'text-green-600' : 'text-gray-600'}`}>

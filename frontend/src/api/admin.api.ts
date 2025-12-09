@@ -117,6 +117,18 @@ export interface CandidateEntry {
 
 /**
  * Upload multiple resume files (batch) for a job with candidate information
+ * 
+ * This function sends candidate data and resume files to the backend for batch processing.
+ * The backend will:
+ * 1. Extract text from resume files
+ * 2. Scrub PII from resume text
+ * 3. Calculate resume scores
+ * 4. Create candidate records and assign them to the job
+ * 
+ * @param jobId - Job reference number in format JD-XXXXXX (e.g., JD-783901)
+ * @param candidates - Array of candidate entries with name, email, and resume file
+ * @returns Promise resolving to AddCandidatesBatchResponse with processing results
+ * @throws Error if validation fails, authentication fails, or request fails
  */
 export const uploadCandidatesBatch = async (
   jobId: string,
@@ -134,6 +146,12 @@ export const uploadCandidatesBatch = async (
 
   if (candidates.length > 10) {
     throw new Error('Maximum 10 candidates allowed');
+  }
+
+  // Validate jobId format (JD-XXXXXX)
+  const jobIdPattern = /^JD-\d{6}$/;
+  if (!jobIdPattern.test(jobId)) {
+    throw new Error('Invalid job ID format. Expected format: JD-XXXXXX (e.g., JD-783901)');
   }
 
   // Validate file types and required fields
@@ -169,40 +187,71 @@ export const uploadCandidatesBatch = async (
   }
 
   if (invalidFiles.length > 0) {
-    throw new Error(`Invalid file types. Only PDF and DOCX are allowed. Invalid files: ${invalidFiles.join(', ')}`);
+    throw new Error(`Invalid file types. Only PDF, DOCX, and DOC are allowed. Invalid files: ${invalidFiles.join(', ')}`);
   }
 
   // Create FormData with files and candidate data
   const formData = new FormData();
   
   // Prepare candidates data as JSON array (matching backend expectation)
+  // Backend expects: [{"name": "...", "email": "..."}, ...]
   const candidatesData = candidates.map(candidate => ({
     name: candidate.name.trim(),
     email: candidate.email.trim().toLowerCase()
   }));
   
-  // Append candidates_data as JSON string
+  // Append candidates_data as JSON string (backend expects this field name)
   formData.append('candidates_data', JSON.stringify(candidatesData));
   
-  // Append all files (order must match candidates_data array)
+  // Append all files with field name "files" (must match backend parameter name)
+  // Order must match candidates_data array (files[0] for candidate[0], etc.)
   candidates.forEach((candidate) => {
     formData.append('files', candidate.file);
   });
 
-  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Don't set Content-Type header - browser will set it with boundary for FormData
+      },
+      body: formData,
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to upload resumes' }));
-    throw new Error(error.detail || 'Failed to upload resumes');
+    // Parse response body (works for both success and error responses)
+    const responseData = await response.json().catch(() => {
+      // If JSON parsing fails, return a default error structure
+      return { 
+        success: false, 
+        message: 'Failed to parse server response',
+        detail: `Server returned status ${response.status}`
+      };
+    });
+
+    // Handle error responses
+    if (!response.ok) {
+      // Backend may return 400 with AddCandidatesBatchResponse structure when all candidates fail
+      // Check if it's a structured error response or a simple error detail
+      if (responseData.detail) {
+        throw new Error(responseData.detail);
+      }
+      if (responseData.message) {
+        throw new Error(responseData.message);
+      }
+      throw new Error(`Failed to upload candidates: ${response.status} ${response.statusText}`);
+    }
+
+    // Return successful response
+    return responseData as AddCandidatesBatchResponse;
+  } catch (error) {
+    // Re-throw if it's already an Error with a message
+    if (error instanceof Error) {
+      throw error;
+    }
+    // Otherwise wrap in Error
+    throw new Error(`Failed to upload candidates: ${String(error)}`);
   }
-
-  return response.json();
 };
 
 export interface ResumeCandidateResponse {
