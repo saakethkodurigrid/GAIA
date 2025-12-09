@@ -516,8 +516,8 @@ async def get_scheduled_interviews(
     """
     Get list of candidates for scheduled interviews view.
     
-    Returns candidates that are shortlisted (status: shortlisted, scheduled, in progress, 
-    completed, selected, not selected). Does not include rejected candidates.
+    Returns candidates with status: scheduled, in progress, completed, selected, not selected.
+    Does not include rejected or shortlisted candidates.
     These are candidates in the interview pipeline.
     """
     from models.candidate import Candidate
@@ -533,13 +533,13 @@ async def get_scheduled_interviews(
             detail=str(e)
         )
     
-    # Get candidates assigned to this job with shortlisted statuses (excluding rejected)
+    # Get candidates assigned to this job with interview statuses (excluding rejected and shortlisted)
     candidates = db.query(Candidate).join(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
         RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
-        Candidate.status.in_(['shortlisted', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'])
+        Candidate.status.in_(['scheduled', 'in progress', 'completed', 'selected', 'not selected'])
     ).order_by(
         Candidate.scheduled_date.asc().nullslast(),
         Candidate.status
