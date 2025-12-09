@@ -1100,42 +1100,81 @@ class SystemDesignService:
         feedback: str,
         scores: Dict[str, float]
     ) -> Dict[str, List[str]]:
-        """Extract key strengths and improvements using simple text parsing."""
+        """Extract key strengths and improvements using improved text parsing."""
         key_strengths = []
         things_to_improve = []
         
         if not feedback:
             return {"key_strengths": [], "things_to_improve": []}
         
-        # Split feedback into sentences
-        sentences = [s.strip() for s in feedback.split('.') if s.strip()]
+        # Split feedback into sentences (handle multiple sentence endings)
+        import re
+        sentences = re.split(r'[.!?]+', feedback)
+        sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
         
-        # Positive indicators
-        positive_keywords = ["great", "excellent", "good", "well", "strong", "solid", "impressive", "correctly", "nice", "effective"]
-        # Improvement indicators
-        improvement_keywords = ["missing", "consider", "improve", "add", "should", "need", "lacks", "could", "better", "however", "but", "although"]
+        # Enhanced positive indicators (more comprehensive)
+        positive_keywords = [
+            "excellent", "great", "good", "well", "strong", "solid", "impressive", 
+            "correctly", "nice", "effective", "demonstrated", "shows", "showed",
+            "methodical", "thoughtful", "comprehensive", "thorough", "good practice",
+            "appropriate", "sound", "solid understanding", "good approach", "right approach",
+            "proper", "adequate", "competent", "skilled", "proficient"
+        ]
         
+        # Enhanced improvement indicators
+        improvement_keywords = [
+            "missing", "consider", "improve", "add", "should", "need", "lacks", 
+            "could", "better", "however", "but", "although", "while", "though",
+            "suggest", "recommend", "explore", "enhance", "refine", "develop",
+            "further", "additionally", "also", "note that", "keep in mind"
+        ]
+        
+        # Extract strengths with context
         for sentence in sentences:
             sentence_lower = sentence.lower()
             
-            # Check for strengths
-            if any(keyword in sentence_lower for keyword in positive_keywords):
-                if len(sentence) < 200:  # Avoid very long sentences
-                    key_strengths.append(sentence)
+            # Check for strengths - look for positive keywords
+            has_positive = any(keyword in sentence_lower for keyword in positive_keywords)
+            
+            if has_positive:
+                # Clean up the sentence
+                cleaned = sentence.strip()
+                # Remove leading "The candidate" or "The design" if it makes it too verbose
+                cleaned = re.sub(r'^(The candidate|The design|Candidate|Design)\s+', '', cleaned, flags=re.IGNORECASE)
+                if len(cleaned) < 200 and len(cleaned) > 15:  # Avoid very long or very short sentences
+                    # Capitalize first letter
+                    cleaned = cleaned[0].upper() + cleaned[1:] if cleaned else cleaned
+                    key_strengths.append(cleaned)
             
             # Check for improvements
-            if any(keyword in sentence_lower for keyword in improvement_keywords):
-                if len(sentence) < 200:
-                    things_to_improve.append(sentence)
+            has_improvement = any(keyword in sentence_lower for keyword in improvement_keywords)
+            
+            if has_improvement and not has_positive:  # Don't double-count
+                cleaned = sentence.strip()
+                cleaned = re.sub(r'^(The candidate|The design|Candidate|Design)\s+', '', cleaned, flags=re.IGNORECASE)
+                if len(cleaned) < 200 and len(cleaned) > 15:
+                    cleaned = cleaned[0].upper() + cleaned[1:] if cleaned else cleaned
+                    things_to_improve.append(cleaned)
         
-        # Also add strengths from high scores
+        # Add strengths from high scores (with better formatting)
         for category, score in scores.items():
+            category_name = category.replace('_', ' ').title()
             if score >= 4.0:
-                category_name = category.replace('_', ' ').title()
                 key_strengths.append(f"Strong performance in {category_name}")
-            elif score <= 2.5:
-                category_name = category.replace('_', ' ').title()
+            elif score >= 3.5:
+                key_strengths.append(f"Good understanding of {category_name}")
+            elif score <= 2.0:
                 things_to_improve.append(f"Needs improvement in {category_name}")
+            elif score <= 2.5:
+                things_to_improve.append(f"Consider enhancing {category_name}")
+        
+        # If no strengths found but scores are decent, add generic ones
+        if not key_strengths and scores:
+            avg_score = sum(scores.values()) / len(scores) if scores else 0
+            if avg_score >= 2.5:
+                key_strengths.append("Demonstrated understanding of system design fundamentals")
+            if avg_score >= 3.0:
+                key_strengths.append("Showed progress in architectural thinking")
         
         # Deduplicate and limit
         return {

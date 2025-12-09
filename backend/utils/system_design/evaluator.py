@@ -46,6 +46,33 @@ class EvaluationEngine:
             self.llm = None
             self.model = None
     
+    def _detect_interview_stage(self, canvas_json: Dict[str, Any], chat_text: str, total_components: int) -> str:
+        """
+        Detect interview stage: early_stage, mid_stage, or late_stage
+        
+        Returns:
+            "early_stage": Requirements gathering, minimal design (0-2 components)
+            "mid_stage": Architecture design in progress (3-10 components)
+            "late_stage": Final design submission (11+ components)
+        """
+        chat_lower = chat_text.lower() if chat_text else ""
+        
+        # Early stage indicators
+        early_indicators = [
+            "requirement", "what should", "where do i start", "how do i begin",
+            "what are the", "functional requirement", "non-functional requirement",
+            "what should i consider", "how do i approach"
+        ]
+        
+        has_early_indicators = any(indicator in chat_lower for indicator in early_indicators)
+        
+        if total_components <= 2 or (total_components <= 3 and has_early_indicators):
+            return "early_stage"
+        elif total_components <= 10:
+            return "mid_stage"
+        else:
+            return "late_stage"
+    
     async def evaluate(
         self,
         canvas_json: Dict[str, Any],
@@ -76,6 +103,10 @@ class EvaluationEngine:
         
         total_components = len(parsed_data["nodes"])
         total_connections = len(parsed_data["edges"])
+        
+        # Detect interview stage
+        interview_stage = self._detect_interview_stage(canvas_json, chat_text, total_components)
+        logger.info(f"[EVALUATION] Detected interview stage: {interview_stage} (components: {total_components})")
         
         # Build detailed component list for LLM (include all if reasonable, otherwise sample)
         component_details = []
@@ -165,6 +196,56 @@ ADDITIONAL EVALUATION CONTEXT (Use this to understand domain-specific nuances, b
 {chr(10).join(context_parts)}
 """
             
+            # Build stage-aware instructions
+            stage_instructions = ""
+            if interview_stage == "early_stage":
+                stage_instructions = """
+INTERVIEW STAGE: EARLY STAGE (Requirements Gathering)
+- The candidate is in the initial phase, likely asking about requirements or just starting the design
+- The design may be minimal (0-3 components) or non-existent
+- This is EXPECTED and CORRECT behavior - candidates should understand requirements first
+
+STAGE-SPECIFIC SCORING ADJUSTMENTS:
+- If candidate is asking good questions about requirements: Score 2.5-3.5 for methodology/process-related categories
+- If candidate shows understanding of problem space: Acknowledge this as a strength
+- Do NOT penalize for incomplete design - this is normal at this stage
+- Focus on evaluating: question quality, problem understanding, methodology, approach
+- For design categories (architecture, scalability, etc.): Score 1.5-2.5 if minimal design, but acknowledge they're in early stage
+- ALWAYS acknowledge good methodology even if design is minimal
+
+STAGE-SPECIFIC FEEDBACK:
+- Acknowledge that taking time to understand requirements is good practice
+- Encourage continuation of the approach
+- Provide guidance on what to consider next, not criticism of what's missing
+- Frame as "good start, here's what to think about next" not "you're missing X"
+"""
+            elif interview_stage == "mid_stage":
+                stage_instructions = """
+INTERVIEW STAGE: MID STAGE (Architecture Design)
+- The candidate has started building the design (3-10 components)
+- They're actively working on the architecture
+- Some components may be missing, but core structure is emerging
+
+STAGE-SPECIFIC SCORING ADJUSTMENTS:
+- Score based on what's present, not what's missing
+- Acknowledge progress made
+- For missing components: Note them but don't harshly penalize if design is still in progress
+- Score 2.5-4.0 range depending on quality of what's been designed so far
+"""
+            else:  # late_stage
+                stage_instructions = """
+INTERVIEW STAGE: LATE STAGE (Final Design)
+- The candidate has a substantial design (11+ components)
+- This appears to be a final or near-final submission
+- Evaluate comprehensively against all criteria
+
+STAGE-SPECIFIC SCORING ADJUSTMENTS:
+- Use full 1-5 scale
+- Evaluate completeness and production-readiness
+- Missing critical components should be noted and scored accordingly
+- Score 1.0-5.0 based on comprehensive evaluation
+"""
+
             system_prompt = f"""You are an experienced system design interviewer evaluating a candidate's design solution.
 Your role is to provide a thorough, fair, and constructive evaluation STRICTLY based on the evaluation criteria provided below.
 
@@ -172,6 +253,8 @@ CRITICAL: You MUST evaluate using ONLY the categories and criteria specified bel
 
 EVALUATION CRITERIA (MANDATORY - Use these exact categories for evaluation, but DO NOT include them in your response):
 {evaluation_criteria}{context_section}
+
+{stage_instructions}
 
 CRITICAL OUTPUT RESTRICTIONS:
 - DO NOT include the evaluation criteria text in your feedback or response
@@ -182,30 +265,36 @@ CRITICAL OUTPUT RESTRICTIONS:
 - Use the additional context to understand domain-specific nuances, but always evaluate based on the criteria above
 
 EVALUATION INSTRUCTIONS:
-1. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
-2. Evaluate how well the candidate addressed EACH specific aspect mentioned in the evaluation criteria above
-3. Extract the exact category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", etc.)
-4. Score each category mentioned in the evaluation criteria on a 1-5 scale
-5. If weightages are specified, consider them when providing overall feedback
-6. Provide specific, actionable feedback that references actual components, connections, or design decisions from their diagram
-7. Be constructive and encouraging - frame feedback as opportunities for improvement
-8. Note any missing critical components or design patterns mentioned in the evaluation criteria
-9. Acknowledge strengths while also identifying areas that need improvement based on the criteria
-10. Use the additional context (if provided) to understand what strong candidates typically discuss for this domain
+1. FIRST: Determine the interview stage based on component count and chat content (early/mid/late)
+2. ADJUST your scoring expectations based on the stage (see stage-specific instructions above)
+3. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
+4. Evaluate how well the candidate addressed EACH specific aspect mentioned in the evaluation criteria above
+5. Extract the exact category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", etc.)
+6. Score each category mentioned in the evaluation criteria on a 1-5 scale, ADJUSTED for interview stage
+7. CRITICAL: Ensure scores ALIGN with feedback - if feedback is positive, scores should reflect that (2.5+ for early stage, 3.0+ for mid/late)
+8. If weightages are specified, consider them when providing overall feedback
+9. Provide specific, actionable feedback that references actual components, connections, or design decisions from their diagram
+10. Be constructive and encouraging - frame feedback as opportunities for improvement
+11. ALWAYS acknowledge strengths explicitly - if you mention "excellent technique" or "good approach", that MUST be reflected in scores
+12. Note any missing critical components or design patterns mentioned in the evaluation criteria, but adjust expectations for stage
+13. Use the additional context (if provided) to understand what strong candidates typically discuss for this domain
 
 FEEDBACK STYLE:
-- Be conversational and friendly, as if you're mentoring a colleague
-- Use specific examples from their diagram (e.g., "I see you included a load balancer here, which is great for...")
+- Write in THIRD PERSON professional style (e.g., "The candidate demonstrated..." not "You showed...")
+- Be conversational and friendly, as if writing a professional assessment report
+- Use specific examples from their diagram (e.g., "The candidate included a load balancer, which demonstrates understanding of...")
 - Balance praise with constructive criticism
 - Focus on the most impactful improvements first based on the evaluation criteria
 - Keep feedback concise but comprehensive (3-5 sentences for feedback, 1-2 for follow-up)
+- ALWAYS include explicit strengths if you mention positive aspects in feedback
 
-SCORING GUIDELINES:
+SCORING GUIDELINES (ADJUSTED FOR STAGE):
 - Use a 1-5 scale for each evaluation dimension specified in the criteria
-- 1-2: Critical issues, fundamental gaps, or missing core components mentioned in criteria
-- 3: Adequate but needs significant improvement in areas specified in criteria
-- 4: Good design with minor gaps or areas for enhancement per criteria
-- 5: Excellent, production-ready design with comprehensive considerations for all criteria points
+- EARLY STAGE: 1.5-3.5 range (acknowledge good methodology even with minimal design)
+- MID STAGE: 2.0-4.5 range (evaluate what's present, acknowledge progress)
+- LATE STAGE: 1.0-5.0 range (comprehensive evaluation)
+- CRITICAL: Scores must align with feedback tone - positive feedback = positive scores
+- If you write "excellent" or "good" in feedback, corresponding scores should be 3.0+ (early), 3.5+ (mid), 4.0+ (late)
 
 IMPORTANT: Your JSON response must include scores for the EXACT categories mentioned in the evaluation criteria above. Do not use generic category names."""
 
@@ -272,7 +361,33 @@ IMPORTANT: Your JSON response must include scores for the EXACT categories menti
         else:
             scores_example_str = '"core_functionality": 3.5,\n    "architecture": 3.0,\n    "scalability": 3.0,\n    "reliability": 3.0,\n    "design_quality": 3.0'
 
+        # Build stage context for user prompt
+        stage_context = ""
+        if interview_stage == "early_stage":
+            stage_context = f"""
+INTERVIEW STAGE CONTEXT: EARLY STAGE
+- Component count: {total_components} (minimal design is expected at this stage)
+- The candidate may be asking about requirements or just starting
+- This is NORMAL and CORRECT - candidates should understand requirements before designing
+- Adjust scoring expectations: acknowledge good methodology (2.5-3.5) even if design is minimal
+"""
+        elif interview_stage == "mid_stage":
+            stage_context = f"""
+INTERVIEW STAGE CONTEXT: MID STAGE
+- Component count: {total_components} (design in progress)
+- The candidate is actively building the architecture
+- Evaluate what's present, acknowledge progress
+"""
+        else:
+            stage_context = f"""
+INTERVIEW STAGE CONTEXT: LATE STAGE
+- Component count: {total_components} (substantial design, likely final submission)
+- Evaluate comprehensively against all criteria
+"""
+
         user_prompt = f"""QUESTION: {question_text}
+
+{stage_context}
 
 FIGURE ANALYSIS (Complete Canvas Analysis):
 {graph_summary}
@@ -289,19 +404,23 @@ CANDIDATE EXPLANATION:
 {sanitized_chat_text if sanitized_chat_text else "(No explanation provided yet)"}
 
 CRITICAL INSTRUCTIONS:
-1. Review the EVALUATION CRITERIA in the system prompt above
+1. Review the EVALUATION CRITERIA and INTERVIEW STAGE instructions in the system prompt above
 2. Extract the EXACT category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", "Reliability & Performance", "Design Quality")
-3. Score EACH category mentioned in the evaluation criteria on a 1-5 scale
+3. Score EACH category mentioned in the evaluation criteria on a 1-5 scale, ADJUSTED for interview stage
 4. Use the EXACT category names (convert to lowercase with underscores for JSON keys, e.g., "Core Functionality" becomes "core_functionality")
 5. Evaluate how well the candidate addressed each specific point mentioned under each category
-6. If weightages are specified, consider them in your overall assessment
+6. CRITICAL: Ensure scores ALIGN with feedback - if feedback mentions "excellent" or "good", scores must reflect that (see stage-specific scoring guidelines)
+7. If weightages are specified, consider them in your overall assessment
+8. ALWAYS include explicit strengths in your feedback if you mention positive aspects
 
 IMPORTANT: 
+- Write feedback in THIRD PERSON professional style ("The candidate demonstrated..." not "You showed...")
 - Reference specific components from the diagram naturally in your feedback
-- Be conversational and friendly - write like you're giving feedback to a colleague
+- Be conversational and friendly - write like a professional assessment report
 - Focus on the most critical aspects relevant to this specific system design problem based on the evaluation criteria
 - Keep feedback concise but helpful (3-5 sentences)
 - Your scores object MUST include all categories from the evaluation criteria
+- ALIGNMENT CHECK: Before submitting, verify that positive feedback words (excellent, good, strong) correspond to scores of 3.0+ (early), 3.5+ (mid), 4.0+ (late)
 
 The entire canvas has been analyzed ({total_components} components, {total_connections} connections).
 
@@ -310,7 +429,7 @@ Provide your response as JSON with the EXACT category names from the evaluation 
   "scores": {{
     {scores_example_str}
   }},
-  "feedback": "Provide natural, conversational feedback (3-5 sentences) that references specific components from the diagram. Be constructive and encouraging. DO NOT list or quote the evaluation criteria - just provide your assessment naturally.",
+  "feedback": "Provide natural, professional feedback in THIRD PERSON (3-5 sentences) that references specific components from the diagram. Write as 'The candidate demonstrated...' or 'The design shows...'. Be constructive and encouraging. ALWAYS explicitly mention strengths if you note positive aspects. DO NOT list or quote the evaluation criteria - just provide your assessment naturally. Ensure scores align with feedback tone.",
   "follow_up": "Ask a thoughtful follow-up question that helps the candidate improve their design. Do not reference the evaluation criteria explicitly."
 }}"""
 
@@ -398,6 +517,24 @@ Provide your response as JSON with the EXACT category names from the evaluation 
                 expected_categories,
                 evaluation_criteria is not None
             )
+            
+            # Add interview stage to metadata
+            if "metadata" not in evaluation:
+                evaluation["metadata"] = {}
+            evaluation["metadata"]["interview_stage"] = interview_stage
+            evaluation["metadata"]["component_count"] = total_components
+            
+            # Ensure feedback is in 3rd person (post-process if needed)
+            feedback = evaluation.get("feedback", "")
+            if feedback and not feedback.startswith(("The candidate", "The design", "Candidate", "Design")):
+                # Try to convert to 3rd person if it's in 2nd person
+                feedback = re.sub(r'\b(You|Your|You\'re|You\'ve)\b', lambda m: {
+                    "You": "The candidate",
+                    "Your": "The candidate's",
+                    "You're": "The candidate is",
+                    "You've": "The candidate has"
+                }.get(m.group(0), m.group(0)), feedback, flags=re.IGNORECASE)
+                evaluation["feedback"] = feedback
             
             return evaluation
             
@@ -723,6 +860,27 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         
         # Use final evaluation feedback as primary feedback if available
         primary_feedback = final_evaluation.get("feedback", "Evaluation completed.") if final_evaluation else "No evaluations available"
+        
+        # Ensure feedback is in 3rd person professional style
+        if primary_feedback and not primary_feedback.startswith(("The candidate", "The design", "Candidate", "Design", "This design", "The system")):
+            # Convert to 3rd person if needed
+            primary_feedback = re.sub(
+                r'\b(You|Your|You\'re|You\'ve|I can see|I\'m|I see)\b',
+                lambda m: {
+                    "You": "The candidate",
+                    "Your": "The candidate's",
+                    "You're": "The candidate is",
+                    "You've": "The candidate has",
+                    "I can see": "The evaluation shows",
+                    "I'm": "The assessment indicates",
+                    "I see": "The review shows"
+                }.get(m.group(0), m.group(0)),
+                primary_feedback,
+                flags=re.IGNORECASE
+            )
+            # Capitalize first letter if needed
+            if primary_feedback and not primary_feedback[0].isupper():
+                primary_feedback = primary_feedback[0].upper() + primary_feedback[1:]
         
         return {
             "question_uuid": session.question_id,  # question_id is the question_uuid
