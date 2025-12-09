@@ -165,8 +165,13 @@ const JobDetailsPage = () => {
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
-  const getScoreColor = (score: number) => {
-    return score >= 60 ? 'text-green-600' : 'text-red-600';
+  const getScoreColor = (status: string) => {
+    // If shortlisted, always show green regardless of score
+    if (status.toLowerCase() === 'shortlisted') {
+      return 'text-green-600';
+    }
+    // If not shortlisted (e.g., 'rejected'), always show red regardless of score
+    return 'text-red-600';
   };
 
   const getInterviewStatusColor = (status: string) => {
@@ -527,7 +532,7 @@ const JobDetailsPage = () => {
                               <td className="py-3 px-4 text-base text-gray-900 font-mono text-sm">{resume.candidate_id}</td>
                               <td className="py-3 px-4 text-base text-gray-900">{resume.name}</td>
                               <td className="py-3 px-4 text-base text-gray-600">{resume.email_id}</td>
-                              <td className={`py-3 px-4 text-base font-medium ${getScoreColor(resume.resume_score)}`}>
+                              <td className={`py-3 px-4 text-base font-medium ${getScoreColor(resume.status)}`}>
                                 {resume.resume_score.toFixed(1)}
                               </td>
                               <td className="py-3 px-4">

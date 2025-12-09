@@ -115,7 +115,7 @@ const TestScheduledPage = () => {
 
     // Start test session in the background (fire-and-forget)
     // This loads questions into Redis but doesn't block navigation
-    startTest(user.candidateId, token)
+    startTest(user.candidateId, token, 180) // 180 minutes (3 hours) total duration
       .then(() => {
         console.log('Test started, data loaded to Redis');
       })

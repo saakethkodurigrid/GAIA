@@ -53,13 +53,32 @@ app = FastAPI(
 )
 
 # Configure CORS middleware for frontend integration
-# Allow all origins - frontend can be configured separately if needed
+# Note: Cannot use allow_origins=["*"] with allow_credentials=True
+# Must specify exact origins when credentials are enabled
+allowed_origins = [
+    settings.FRONTEND_URL,
+    "http://localhost:5173",  # Vite default port
+    "http://localhost:5175",  # Alternative Vite port
+    "http://localhost:3000",  # Common React dev port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:3000",
+]
+
+# Remove duplicates and filter out empty strings
+allowed_origins = list(set([origin for origin in allowed_origins if origin]))
+
+# Log allowed origins for debugging
+logging.getLogger(__name__).info(f"CORS configured with allowed origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure specific origins in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Include API routers

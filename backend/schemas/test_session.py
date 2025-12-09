@@ -9,7 +9,7 @@ from schemas.mcq import SaveMCQAnswerRequest
 
 class StartTestRequest(BaseModel):
     """Request schema for starting a test session."""
-    duration_minutes: int = Field(default=60, ge=1, le=300, description="Test duration in minutes")
+    duration_minutes: int = Field(default=180, ge=1, le=300, description="Test duration in minutes")
 
 
 class StartTestResponse(BaseModel):

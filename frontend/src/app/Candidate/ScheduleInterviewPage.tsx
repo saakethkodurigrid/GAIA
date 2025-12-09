@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
@@ -17,6 +17,53 @@ const ScheduleInterviewPage = () => {
 
   // Get user's timezone abbreviation
   const timezoneAbbr = new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop() || 'IST';
+
+  // Helper function to get minimum allowed date/time (1 hour from now)
+  const getMinimumDateTime = useCallback(() => {
+    const now = new Date();
+    const minDateTime = new Date(now.getTime() + 60 * 60 * 1000); // Add 1 hour
+    return minDateTime;
+  }, []);
+
+  // Helper function to check if a date is in the past (or less than 1 hour from now)
+  const isDateDisabled = (day: number, month: number, year: number) => {
+    const minDateTime = getMinimumDateTime();
+    const dateOnly = new Date(year, month, day);
+    const minDateOnly = new Date(minDateTime.getFullYear(), minDateTime.getMonth(), minDateTime.getDate());
+    
+    // If date is before minimum date, it's disabled
+    if (dateOnly < minDateOnly) {
+      return true;
+    }
+    
+    // If date is today or future, we'll check times separately
+    return false;
+  };
+
+  // Helper function to check if a time slot is valid (at least 1 hour from now)
+  const isTimeSlotDisabled = (time: string, selectedDate: Date | null) => {
+    if (!selectedDate) return false;
+    
+    const minDateTime = getMinimumDateTime();
+    
+    // Parse the time string
+    const [timeStr, period] = time.split(' ');
+    const [hours, minutes] = timeStr.split(':');
+    let hour24 = parseInt(hours, 10);
+    
+    if (period === 'PM' && hour24 !== 12) {
+      hour24 += 12;
+    } else if (period === 'AM' && hour24 === 12) {
+      hour24 = 0;
+    }
+
+    // Create a date with the selected date and time
+    const scheduledDateTime = new Date(selectedDate);
+    scheduledDateTime.setHours(hour24, parseInt(minutes, 10), 0, 0);
+
+    // Check if the scheduled time is at least 1 hour from now
+    return scheduledDateTime < minDateTime;
+  };
 
   // Generate time slots (15-minute intervals from 9:00 AM to 5:00 PM)
   const generateTimeSlots = () => {
@@ -48,6 +95,15 @@ const ScheduleInterviewPage = () => {
   };
 
   const handlePrevMonth = () => {
+    const minDateTime = getMinimumDateTime();
+    const minMonth = minDateTime.getMonth();
+    const minYear = minDateTime.getFullYear();
+    
+    // Don't allow navigation to past months
+    if (currentYear < minYear || (currentYear === minYear && currentMonth <= minMonth)) {
+      return;
+    }
+    
     if (currentMonth === 0) {
       setCurrentMonth(11);
       setCurrentYear(currentYear - 1);
@@ -67,12 +123,35 @@ const ScheduleInterviewPage = () => {
 
   const handleDateClick = (day: number) => {
     const date = new Date(currentYear, currentMonth, day);
+    const minDateTime = getMinimumDateTime();
+    const dateOnly = new Date(currentYear, currentMonth, day);
+    const minDateOnly = new Date(minDateTime.getFullYear(), minDateTime.getMonth(), minDateTime.getDate());
+    
+    // Prevent selecting past dates
+    if (dateOnly < minDateOnly) {
+      setError('Cannot select a date in the past');
+      return;
+    }
+    
     setSelectedDate(date);
     setSelectedTime(null); // Reset time when date changes
+    setError(null); // Clear any previous errors
   };
 
   const handleTimeClick = (time: string) => {
+    if (!selectedDate) {
+      setError('Please select a date first');
+      return;
+    }
+    
+    // Check if this time slot is disabled
+    if (isTimeSlotDisabled(time, selectedDate)) {
+      setError('Selected time must be at least 1 hour from now');
+      return;
+    }
+    
     setSelectedTime(time);
+    setError(null); // Clear any previous errors
   };
 
   const handleConfirmSchedule = async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -100,6 +179,14 @@ const ScheduleInterviewPage = () => {
       // Create a new date with the selected date and time
       const scheduledDateTime = new Date(selectedDate);
       scheduledDateTime.setHours(hour24, parseInt(minutes, 10), 0, 0);
+
+      // Final validation: ensure scheduled time is at least 1 hour from now
+      const minDateTime = getMinimumDateTime();
+      if (scheduledDateTime < minDateTime) {
+        setError('Selected date and time must be at least 1 hour from now');
+        setIsLoading(false);
+        return;
+      }
 
       // Get auth token from localStorage
       const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
@@ -186,13 +273,19 @@ const ScheduleInterviewPage = () => {
     logout();
   };
 
-  // Set initial selected date to today
+  // Set initial selected date to today (or minimum allowed date)
   useEffect(() => {
+    const minDateTime = getMinimumDateTime();
     const today = new Date();
-    setSelectedDate(today);
-    setCurrentMonth(today.getMonth());
-    setCurrentYear(today.getFullYear());
-  }, []);
+    const minDateOnly = new Date(minDateTime.getFullYear(), minDateTime.getMonth(), minDateTime.getDate());
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
+    // Set to today if it's valid, otherwise set to minimum date
+    const initialDate = todayDateOnly >= minDateOnly ? today : minDateTime;
+    setSelectedDate(initialDate);
+    setCurrentMonth(initialDate.getMonth());
+    setCurrentYear(initialDate.getFullYear());
+  }, [getMinimumDateTime]);
 
   // Redirect if already scheduled
 //   useEffect(() => {
@@ -291,15 +384,29 @@ const ScheduleInterviewPage = () => {
                 <div className="border border-gray-200 rounded-lg p-3 h-[420px] flex flex-col">
                   {/* Calendar Header */}
                   <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                    <button
-                      onClick={handlePrevMonth}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      type="button"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
+                    {(() => {
+                      const minDateTime = getMinimumDateTime();
+                      const minMonth = minDateTime.getMonth();
+                      const minYear = minDateTime.getFullYear();
+                      const isPrevDisabled = currentYear <= minYear && currentMonth <= minMonth;
+                      
+                      return (
+                        <button
+                          onClick={handlePrevMonth}
+                          disabled={isPrevDisabled}
+                          className={`p-2 rounded-lg transition-colors ${
+                            isPrevDisabled 
+                              ? 'opacity-50 cursor-not-allowed' 
+                              : 'hover:bg-gray-100'
+                          }`}
+                          type="button"
+                        >
+                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                      );
+                    })()}
                     <h3 className="text-sm font-semibold text-gray-900">
                       {monthNames[currentMonth]} {currentYear}
                     </h3>
@@ -331,15 +438,17 @@ const ScheduleInterviewPage = () => {
                         currentMonth === selectedDate.getMonth() &&
                         currentYear === selectedDate.getFullYear();
                       
+                      const isDisabled = !isCurrentMonth || isDateDisabled(day, currentMonth, currentYear);
+                      
                       return (
                         <button
                           key={index}
-                          onClick={() => isCurrentMonth && handleDateClick(day)}
-                          disabled={!isCurrentMonth}
+                          onClick={() => isCurrentMonth && !isDateDisabled(day, currentMonth, currentYear) && handleDateClick(day)}
+                          disabled={isDisabled}
                           className={`
                             py-1 px-1 text-xs rounded transition-colors
-                            ${!isCurrentMonth ? 'text-gray-300 cursor-not-allowed' : 'text-gray-900 hover:bg-gray-100'}
-                            ${isSelected ? 'bg-gray-200 font-semibold' : ''}
+                            ${isDisabled ? 'text-gray-300 cursor-not-allowed opacity-50' : 'text-gray-900 hover:bg-gray-100'}
+                            ${isSelected && !isDisabled ? 'bg-gray-200 font-semibold' : ''}
                           `}
                           type="button"
                         >
@@ -358,15 +467,19 @@ const ScheduleInterviewPage = () => {
                   <div className="grid grid-cols-2 gap-1.5">
                     {timeSlots.map((time) => {
                       const isSelected = selectedTime === time;
+                      const isDisabled = isTimeSlotDisabled(time, selectedDate);
                       return (
                         <button
                           key={time}
-                          onClick={() => handleTimeClick(time)}
+                          onClick={() => !isDisabled && handleTimeClick(time)}
+                          disabled={isDisabled}
                           className={`
                             py-1.5 px-2 text-xs rounded border transition-colors
-                            ${isSelected 
-                              ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold' 
-                              : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                            ${isDisabled 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50' 
+                              : isSelected 
+                                ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold' 
+                                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
                             }
                           `}
                           type="button"

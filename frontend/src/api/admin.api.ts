@@ -103,7 +103,11 @@ export const listJobs = async (): Promise<ListJobsResponse> => {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to list jobs' }));
-    throw new Error(error.detail || 'Failed to list jobs');
+    const errorMessage = error.detail || 'Failed to list jobs';
+    const apiError = new Error(errorMessage);
+    (apiError as any).status = response.status;
+    (apiError as any).detail = error.detail || errorMessage;
+    throw apiError;
   }
 
   return response.json();
@@ -331,7 +335,11 @@ export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => 
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch interviews' }));
-    throw new Error(error.detail || 'Failed to fetch interviews');
+    const errorMessage = error.detail || 'Failed to fetch interviews';
+    const apiError = new Error(errorMessage);
+    (apiError as any).status = response.status;
+    (apiError as any).detail = error.detail || errorMessage;
+    throw apiError;
   }
 
   return response.json();

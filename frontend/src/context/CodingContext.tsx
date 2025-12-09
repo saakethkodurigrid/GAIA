@@ -9,8 +9,9 @@ import {
 } from '../api/coding.api';
 import { useAuth } from './AuthContext';
 import type { CodingContextType, CodingProblem } from '../types';
+import { getTestStatus } from '../api/candidate.api';
 
-const TIMER_DURATION = 60 * 60; // 60 minutes
+const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours)
 
 const CodingContext = createContext<CodingContextType | undefined>(undefined);
 
@@ -38,6 +39,8 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
+  const [submittedQuestions, setSubmittedQuestions] = useState<Set<string>>(new Set());
+  const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
   // Helper function to parse boilerplate code
   // Backend sends boilerplate as JSON string with language keys: {"python": "...", "cpp": "...", ...}
@@ -111,6 +114,35 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     }
   }, []);
 
+  // Sync timer from backend on mount
+  useEffect(() => {
+    const syncTimer = async () => {
+      const candidateId = user?.candidateId;
+      if (!candidateId) return;
+
+      try {
+        const status = await getTestStatus(candidateId);
+        if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
+          setTimeRemaining(status.remaining_seconds);
+          setIsTimerInitialized(true);
+        } else {
+          setIsTimerInitialized(true);
+        }
+      } catch (error) {
+        console.error('Failed to sync timer from backend:', error);
+        // Continue with local timer if backend sync fails
+        setIsTimerInitialized(true);
+      }
+    };
+
+    syncTimer();
+
+    // Sync every 30 seconds to account for any drift
+    const syncInterval = setInterval(syncTimer, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, [user?.candidateId]);
+
   // Load problems from backend on mount
   useEffect(() => {
     const loadProblems = async () => {
@@ -177,9 +209,9 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     loadProblems();
   }, [user?.candidateId, parseBoilerplateCode]);
 
-  // Timer countdown
+  // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) return;
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -191,7 +223,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeRemaining]);
+  }, [isTimerInitialized, timeRemaining]);
 
   // Load code when switching problems or languages
   useEffect(() => {
@@ -321,54 +353,91 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     await handleRunCode('run_all');
   }, [handleRunCode]);
 
+  // Helper function to find next unsubmitted question
+  const findNextUnsubmittedQuestion = useCallback((currentIndex: number): number | null => {
+    // Start searching from the next question
+    for (let i = currentIndex + 1; i < problems.length; i++) {
+      const problem = problems[i];
+      if (problem?.question_uuid && !submittedQuestions.has(problem.question_uuid)) {
+        return i;
+      }
+    }
+    // If no unsubmitted question found after current, search from beginning
+    for (let i = 0; i < currentIndex; i++) {
+      const problem = problems[i];
+      if (problem?.question_uuid && !submittedQuestions.has(problem.question_uuid)) {
+        return i;
+      }
+    }
+    // All questions are submitted
+    return null;
+  }, [problems, submittedQuestions]);
+
+  // Helper function to check if all questions are submitted
+  const areAllQuestionsSubmitted = useCallback((): boolean => {
+    if (problems.length === 0) return false;
+    return problems.every(problem => 
+      problem?.question_uuid && submittedQuestions.has(problem.question_uuid)
+    );
+  }, [problems, submittedQuestions]);
+
   // Add new function for submitting answer
-  const handleSubmitAnswer = useCallback(async () => {
+  const handleSubmitAnswer = useCallback(async (): Promise<boolean> => {
     const currentProblem = problems[currentProblemIndex];
-    if (!currentProblem || !user?.candidateId) return;
+    if (!currentProblem || !user?.candidateId) return false;
 
     const questionUuid = currentProblem.question_uuid;
     if (!questionUuid) {
       console.error('Question UUID not found');
-      return;
+      return false;
     }
 
-    setIsSubmitting(true);
+    // Prevent duplicate submission
+    if (submittedQuestions.has(questionUuid)) {
+      console.warn('Question already submitted');
+      setOutput('This question has already been submitted.');
+      return false;
+    }
+
+    // Mark question as submitted immediately (optimistic update)
+    setSubmittedQuestions((prev) => new Set([...prev, questionUuid]));
     setOutput('Submitting answer...');
 
-    try {
-      const codeKey = `${questionUuid}-${selectedLanguage}`;
-      const currentCode = code[codeKey] || currentProblem.boilerplate[selectedLanguage];
-      
-      // Map frontend language to backend language
-      // Backend supports: python, javascript, java, cpp, csharp
-      const backendLanguage = selectedLanguage as 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
-      
-      const request: SubmitCodingAnswerRequest = {
-        question_id: questionUuid,
-        language: backendLanguage,
-        code: currentCode,
-      };
+    // Prepare submission data
+    const codeKey = `${questionUuid}-${selectedLanguage}`;
+    const currentCode = code[codeKey] || currentProblem.boilerplate[selectedLanguage];
+    
+    // Map frontend language to backend language
+    const backendLanguage = selectedLanguage as 'python' | 'javascript' | 'java' | 'cpp' | 'csharp';
+    
+    const request: SubmitCodingAnswerRequest = {
+      question_id: questionUuid,
+      language: backendLanguage,
+      code: currentCode,
+    };
 
-      console.log('Submitting answer via backend:', request);
+    console.log('Submitting answer via backend (background):', request);
 
-      const result = await submitCodingAnswer(user.candidateId, request);
+    // Fire API call in background without waiting
+    submitCodingAnswer(user.candidateId, request)
+      .then((result) => {
+        setOutput(
+          `Submitted! Score: ${result.score} | ` +
+          `Passed: ${result.test_cases_passed}/${result.total_test_cases} ` +
+          `(Sample: ${result.sample_test_cases_passed}, Hidden: ${result.hidden_test_cases_passed})`
+        );
+        console.log('Submission successful:', result);
+      })
+      .catch((error) => {
+        console.error('Error submitting answer (background):', error);
+        // Optionally revert the optimistic update on error
+        // For now, we'll keep it submitted but log the error
+        setOutput(`Submission in progress. Error: ${error instanceof Error ? error.message : 'Failed to submit answer'}`);
+      });
 
-      setOutput(
-        `Submitted! Score: ${result.score} | ` +
-        `Passed: ${result.test_cases_passed}/${result.total_test_cases} ` +
-        `(Sample: ${result.sample_test_cases_passed}, Hidden: ${result.hidden_test_cases_passed})`
-      );
-
-      // Show success message
-      alert(`Answer submitted successfully!\nScore: ${result.score}\nTest Cases Passed: ${result.test_cases_passed}/${result.total_test_cases}`);
-    } catch (error) {
-      console.error('Error submitting answer:', error);
-      setOutput(`Error: ${error instanceof Error ? error.message : 'Failed to submit answer'}`);
-      alert(`Failed to submit answer: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [currentProblemIndex, selectedLanguage, problems, code, user?.candidateId]);
+    // Return immediately without waiting for API response
+    return true;
+  }, [currentProblemIndex, selectedLanguage, problems, code, user?.candidateId, submittedQuestions]);
 
   const handleResetCode = useCallback(() => {
     const currentProblem = problems[currentProblemIndex];
@@ -383,9 +452,14 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
 
   const handleGoToProblem = useCallback((index: number) => {
     if (index >= 0 && index < problems.length) {
+      const problem = problems[index];
+      // Prevent navigation to submitted questions
+      if (problem?.question_uuid && submittedQuestions.has(problem.question_uuid)) {
+        return;
+      }
       setCurrentProblemIndex(index);
     }
-  }, [problems.length]);
+  }, [problems, submittedQuestions]);
 
   const getProgressPercentage = useCallback(() => {
     // Calculate progress based on problems attempted
@@ -414,6 +488,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     isSubmitting,
     timeRemaining,
     isLoading,
+    submittedQuestions,
     setLanguage: handleSetLanguage,
     updateCode: handleUpdateCode,
     runCode: () => handleRunCode('run'), // Default to sample test cases
@@ -422,7 +497,9 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     resetCode: handleResetCode,
     goToProblem: handleGoToProblem,
     formatTime,
-    getProgressPercentage
+    getProgressPercentage,
+    findNextUnsubmittedQuestion,
+    areAllQuestionsSubmitted
   };
 
   return <CodingContext.Provider value={value}>{children}</CodingContext.Provider>;

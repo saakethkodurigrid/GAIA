@@ -6,7 +6,7 @@ export const QUESTION_STATUS = {
   MARKED: 'marked'
 } as const;
 
-export const TIMER_DURATION = 60 * 60; // 60 minutes in seconds
+export const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours) in seconds
 
 export const MOCK_QUESTIONS: Question[] = [
   {

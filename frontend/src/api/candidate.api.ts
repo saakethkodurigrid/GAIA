@@ -216,3 +216,121 @@ export const sendHeartbeat = async (
   return response.json();
 };
 
+export interface CompleteTestRequest {
+  completion_method?: 'manual' | 'tab_close' | 'timer_expired' | 'heartbeat_timeout' | 'auto';
+  mcq_answers?: {
+    answers: Array<{
+      question_uuid: string;
+      candidate_answer: string; // Option number as string: "1", "2", "3", or "4"
+    }>;
+  };
+  coding_answers?: Record<string, unknown>; // Optional - not yet implemented
+  system_design_data?: Record<string, unknown>; // Optional - not yet implemented
+  sections_completed?: {
+    mcq?: boolean;
+    coding?: boolean;
+    system_design?: boolean;
+  };
+}
+
+export interface CompleteTestResponse {
+  success: boolean;
+  message: string;
+  completed_at: string | null; // ISO datetime string
+}
+
+/**
+ * Complete a test session and save all answers
+ * This is the final endpoint to mark test as completed
+ */
+export const completeTest = async (
+  candidateId: string,
+  request: CompleteTestRequest
+): Promise<CompleteTestResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  if (!candidateId) {
+    throw new Error('Candidate ID is required');
+  }
+
+  console.log('=== COMPLETE TEST REQUEST ===');
+  console.log('Candidate ID:', candidateId);
+  console.log('Request:', JSON.stringify(request, null, 2));
+  console.log('============================');
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/test/complete`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(request),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to complete test' }));
+    throw new Error(error.detail || 'Failed to complete test');
+  }
+
+  const data = await response.json();
+  console.log('=== COMPLETE TEST RESPONSE ===');
+  console.log('Response:', JSON.stringify(data, null, 2));
+  console.log('=============================');
+  
+  return data;
+};
+
+export interface TestStatusResponse {
+  success: boolean;
+  message: string;
+  status: 'active' | 'completed' | null;
+  remaining_seconds: number;
+  sections_completed: {
+    mcq?: boolean;
+    coding?: boolean;
+    system_design?: boolean;
+  };
+  last_activity: string | null; // ISO datetime string
+}
+
+/**
+ * Get current test status including remaining time
+ * Used to sync timer on page load/refresh
+ */
+export const getTestStatus = async (
+  candidateId: string
+): Promise<TestStatusResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  if (!candidateId) {
+    throw new Error('Candidate ID is required');
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/test/status`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to get test status' }));
+    throw new Error(error.detail || 'Failed to get test status');
+  }
+
+  return response.json();
+};
+

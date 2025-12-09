@@ -14,7 +14,7 @@ class TestSession(Base):
     
     candidate_id = Column(String(36), ForeignKey('candidate.candidate_id'), primary_key=True)
     test_start_time = Column(DateTime, nullable=True)
-    test_duration_minutes = Column(Integer, nullable=True, default=60)
+    test_duration_minutes = Column(Integer, nullable=True, default=180)
     last_heartbeat = Column(DateTime, nullable=True)
     last_activity = Column(DateTime, nullable=True)
     completion_method = Column(String(50), nullable=True)

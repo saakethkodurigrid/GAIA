@@ -7,11 +7,9 @@ import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
 import { useCodingSession } from '../../hooks/useCodingSession';
-import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
-import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const CodingTestPageContent = () => {
-  const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code } = useCoding();
+  const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code, submitAnswer, submittedQuestions, findNextUnsubmittedQuestion } = useCoding();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
   const navigate = useNavigate();
   
@@ -40,13 +38,53 @@ const CodingTestPageContent = () => {
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreenExited, setIsFullscreenExited] = useState(false);
+  const wasFullscreenRef = useRef(false);
 
-  // Monitor fullscreen exit with 5 second countdown
-  const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
-    onFinalAttempt: () => {
-      // This will be called when time runs out
-    },
-  });
+  // Monitor fullscreen exit - just disable buttons, no popup
+  useEffect(() => {
+    const checkFullscreen = (): boolean => {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element | null;
+        mozFullScreenElement?: Element | null;
+        msFullscreenElement?: Element | null;
+      };
+      return !!(
+        document.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+    };
+
+    wasFullscreenRef.current = checkFullscreen();
+
+    const handleFullscreenChange = () => {
+      const isFullscreen = checkFullscreen();
+
+      // If user exits fullscreen, disable navigation
+      if (wasFullscreenRef.current && !isFullscreen) {
+        setIsFullscreenExited(true);
+      } else if (!wasFullscreenRef.current && isFullscreen) {
+        // User returned to fullscreen - re-enable navigation
+        setIsFullscreenExited(false);
+      }
+
+      wasFullscreenRef.current = isFullscreen;
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
 
   // Handle resize
   useEffect(() => {
@@ -121,19 +159,31 @@ const CodingTestPageContent = () => {
             
             {/* Question Navigation Bar */}
             <div className="mb-6 flex gap-2">
-              {Array.from({ length: totalProblems }).map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => goToProblem(index)}
-                  className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${
-                    currentProblemIndex === index
-                      ? 'bg-amber-50 border-2 border-yellow-500 text-gray-900 shadow-md'
-                      : 'bg-amber-50 border-2 border-yellow-500 text-gray-900'
-                  }`}
-                >
-                  {index + 1}
-                </button>
-              ))}
+              {Array.from({ length: totalProblems }).map((_, index) => {
+                const problem = problems[index];
+                const isSubmitted = !!(problem?.question_uuid && submittedQuestions?.has(problem.question_uuid));
+                const isCurrent = currentProblemIndex === index;
+                const isDisabled = isSubmitted || isFullscreenExited;
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => goToProblem(index)}
+                    disabled={isDisabled}
+                    className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${
+                      isSubmitted
+                        ? 'bg-green-50 border-2 border-green-500 text-gray-900 cursor-not-allowed opacity-75'
+                        : isFullscreenExited
+                        ? 'bg-gray-100 border-2 border-gray-400 text-gray-500 cursor-not-allowed opacity-50'
+                        : isCurrent
+                        ? 'bg-amber-50 border-2 border-yellow-500 text-gray-900 shadow-md'
+                        : 'bg-amber-50 border-2 border-yellow-500 text-gray-900 hover:bg-amber-100'
+                    }`}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
             </div>
 
             {currentProblem && (
@@ -252,32 +302,40 @@ const CodingTestPageContent = () => {
               
               {/* Action Buttons */}
               <div className="flex-shrink-0 flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-200 bg-white">
-                <button
-                  onClick={runCode}
-                  disabled={isRunning}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
-                  Run Code
-                </button>
-                <button
-                  onClick={runAllTestCases}
-                  disabled={isRunning}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
-                  Run All Testcases
-                </button>
-                <button
-                  onClick={() => setShowSubmitModal(true)}
-                  className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors"
-                >
-                  Submit Solution
-                </button>
+                {(() => {
+                  const isCurrentQuestionSubmitted = !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid));
+                  return (
+                    <>
+                      <button
+                        onClick={runCode}
+                        disabled={isRunning || isCurrentQuestionSubmitted}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                        </svg>
+                        Run Code
+                      </button>
+                      <button
+                        onClick={runAllTestCases}
+                        disabled={isRunning || isCurrentQuestionSubmitted}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                        </svg>
+                        Run All Testcases
+                      </button>
+                      <button
+                        onClick={() => setShowSubmitModal(true)}
+                        disabled={isRunning || isCurrentQuestionSubmitted}
+                        className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Submit Solution
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -327,7 +385,25 @@ const CodingTestPageContent = () => {
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Submit Section</h2>
             <p className="text-gray-600 mb-2">
-              You have attempted <span className="font-semibold text-gray-900">{getAttemptedCount()}</span> out of <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
+              {(() => {
+                const submittedCount = problems.filter(p => 
+                  p?.question_uuid && submittedQuestions?.has(p.question_uuid)
+                ).length;
+                const allSubmitted = submittedCount === totalProblems;
+                
+                if (allSubmitted) {
+                  return (
+                    <>
+                      You have submitted all <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    You have attempted <span className="font-semibold text-gray-900">{getAttemptedCount()}</span> out of <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
+                  </>
+                );
+              })()}
             </p>
             <p className="text-gray-600 mb-6">Do you wish to submit this section?</p>
             <div className="flex gap-3 justify-end">
@@ -376,10 +452,64 @@ const CodingTestPageContent = () => {
               </button>
               <button
                 onClick={() => {
-                  console.log('Solution submitted');
-                  setShowSubmitModal(false);
+                  const isCurrentQuestionSubmitted = !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid));
+                  
+                  if (isCurrentQuestionSubmitted) {
+                    setShowSubmitModal(false);
+                    return;
+                  }
+                  
+                  if (submitAnswer && currentProblem?.question_uuid) {
+                    // Call submit (fires in background, returns immediately)
+                    submitAnswer();
+                    setShowSubmitModal(false);
+                    
+                    // Check if all questions will be submitted (including current one)
+                    const willBeAllSubmitted = problems.every(problem => {
+                      if (!problem?.question_uuid) return false;
+                      if (problem.question_uuid === currentProblem.question_uuid) {
+                        return true; // Current question will be submitted
+                      }
+                      return submittedQuestions?.has(problem.question_uuid);
+                    });
+                    
+                    if (willBeAllSubmitted) {
+                      // All questions will be submitted - show submit section modal
+                      setShowSubmitSectionModal(true);
+                    } else if (findNextUnsubmittedQuestion) {
+                      // Find next unsubmitted question (excluding current one which will be submitted)
+                      const tempSubmitted = new Set(submittedQuestions);
+                      tempSubmitted.add(currentProblem.question_uuid);
+                      
+                      // Find next unsubmitted question
+                      let nextIndex: number | null = null;
+                      for (let i = currentProblemIndex + 1; i < problems.length; i++) {
+                        const problem = problems[i];
+                        if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
+                          nextIndex = i;
+                          break;
+                        }
+                      }
+                      // If no unsubmitted question found after current, search from beginning
+                      if (nextIndex === null) {
+                        for (let i = 0; i < currentProblemIndex; i++) {
+                          const problem = problems[i];
+                          if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
+                            nextIndex = i;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      if (nextIndex !== null && nextIndex !== undefined) {
+                        // Navigate to next unsubmitted question
+                        goToProblem(nextIndex);
+                      }
+                    }
+                  }
                 }}
-                className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+                disabled={isRunning || !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid))}
+                className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Submit
               </button>
@@ -388,12 +518,6 @@ const CodingTestPageContent = () => {
         </div>
       )}
 
-      {/* Fullscreen Violation Modal */}
-      <FullscreenViolationModal
-        isOpen={showViolation}
-        countdown={countdown}
-        onRedirect={handleRedirect}
-      />
     </div>
   );
 };

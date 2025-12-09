@@ -8,6 +8,8 @@ import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 import { getFaceDetectionLogs } from '../../utils/faceDetection';
+import { completeTest, getTestStatus } from '../../api/candidate.api';
+import { fetchQuestions } from '../../api/questions.api';
 
 // Helper functions for localStorage
 const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
@@ -28,11 +30,44 @@ const TestOverviewPage = () => {
   const { user, logout } = useAuth();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
-  const [timeRemaining, setTimeRemaining] = useState(3600); // 60 minutes in seconds
+  const [timeRemaining, setTimeRemaining] = useState(10800); // 180 minutes (3 hours) in seconds
   const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
+  const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
-  // Countdown timer logic
+  // Fetch timer from backend on mount and periodically sync
   useEffect(() => {
+    const syncTimer = async () => {
+      if (!user?.candidateId) return;
+
+      try {
+        const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+        if (!token) return;
+
+        const status = await getTestStatus(user.candidateId);
+        if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
+          setTimeRemaining(status.remaining_seconds);
+          setIsTimerInitialized(true);
+        }
+      } catch (error) {
+        console.error('Failed to sync timer from backend:', error);
+        // Continue with local timer if backend sync fails
+        setIsTimerInitialized(true);
+      }
+    };
+
+    // Sync immediately on mount
+    syncTimer();
+
+    // Sync every 30 seconds to account for any drift
+    const syncInterval = setInterval(syncTimer, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, [user?.candidateId]);
+
+  // Countdown timer logic (only start after initial sync)
+  useEffect(() => {
+    if (!isTimerInitialized) return;
+
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 0) return 0;
@@ -41,7 +76,7 @@ const TestOverviewPage = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTimerInitialized]);
 
   // Check for submitted sections when component mounts or when navigating back
   useEffect(() => {
@@ -97,7 +132,7 @@ const TestOverviewPage = () => {
     }
   };
 
-  const handleSubmitTest = () => {
+  const handleSubmitTest = async () => {
     // Get and print face detection logs
     const logs = getFaceDetectionLogs();
     console.log('=== Face Detection Logs ===');
@@ -146,8 +181,77 @@ const TestOverviewPage = () => {
     }
     console.log('==========================');
 
-    // Navigate to test completed page with replace to prevent back navigation
-    navigate('/test/completed', { replace: true });
+    // Get candidate ID
+    if (!user?.candidateId) {
+      console.error('Candidate ID not found');
+      alert('Error: Candidate ID not found. Please login again.');
+      return;
+    }
+
+    try {
+      // Get MCQ questions and answers if available
+      let mcqAnswerItems: Array<{ question_uuid: string; candidate_answer: string }> = [];
+      
+      try {
+        // Fetch MCQ questions
+        const mcqQuestions = await fetchQuestions(user.candidateId);
+        
+        // Get saved answers from localStorage
+        const STORAGE_KEY = 'mcq_answers';
+        const storedAnswersStr = localStorage.getItem(STORAGE_KEY);
+        const answers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
+        
+        // Convert to API format
+        mcqAnswerItems = mcqQuestions
+          .filter((q) => {
+            const answer = answers[q.id];
+            return answer !== undefined && answer !== null && q.question_uuid;
+          })
+          .map((q) => {
+            const answer = answers[q.id];
+            return {
+              question_uuid: q.question_uuid!,
+              candidate_answer: String(answer), // Convert to string: "1", "2", "3", or "4"
+            };
+          });
+        
+        console.log('MCQ Answers collected:', mcqAnswerItems.length, 'answers');
+      } catch (error) {
+        console.warn('Could not fetch MCQ answers:', error);
+        // Continue without MCQ answers - backend will fetch from Redis
+      }
+
+      // Get sections completed from localStorage
+      const submittedSections = getSubmittedSections();
+
+      // Prepare request body
+      const requestBody = {
+        completion_method: 'manual' as const,
+        mcq_answers: mcqAnswerItems.length > 0 ? {
+          answers: mcqAnswerItems
+        } : undefined,
+        sections_completed: {
+          mcq: submittedSections.mcq,
+          coding: submittedSections.coding,
+          system_design: submittedSections.systemDesign,
+        },
+      };
+
+      // Call the complete test API
+      const response = await completeTest(user.candidateId, requestBody);
+      
+      if (response.success) {
+        console.log('Test completed successfully:', response);
+        // Navigate to test completed page with replace to prevent back navigation
+        navigate('/test/completed', { replace: true });
+      } else {
+        throw new Error(response.message || 'Failed to complete test');
+      }
+    } catch (error) {
+      console.error('Error completing test:', error);
+      alert(`Failed to complete test: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Optionally, still navigate to completed page or show error modal
+    }
   };
 
   return (

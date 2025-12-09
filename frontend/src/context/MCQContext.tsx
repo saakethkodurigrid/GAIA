@@ -4,7 +4,7 @@ import { fetchQuestions } from '../api/questions.api';
 import { QUESTION_STATUS, TIMER_DURATION } from '../utils/constants';
 import type { MCQContextType, Question } from '../types';
 import { useAuth } from './AuthContext';
-import { sendHeartbeat } from '../api/candidate.api';
+import { sendHeartbeat, getTestStatus } from '../api/candidate.api';
 import { submitAssessment } from '../api/questions.api';
 
 const MCQContext = createContext<MCQContextType | undefined>(undefined);
@@ -52,6 +52,36 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
   const [questionStatuses, setQuestionStatuses] = useState<Record<number, string>>({});
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTimerInitialized, setIsTimerInitialized] = useState(false);
+
+  // Sync timer from backend on mount
+  useEffect(() => {
+    const syncTimer = async () => {
+      const candidateId = user?.candidateId;
+      if (!candidateId) return;
+
+      try {
+        const status = await getTestStatus(candidateId);
+        if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
+          setTimeRemaining(status.remaining_seconds);
+          setIsTimerInitialized(true);
+        } else {
+          setIsTimerInitialized(true);
+        }
+      } catch (error) {
+        console.error('Failed to sync timer from backend:', error);
+        // Continue with local timer if backend sync fails
+        setIsTimerInitialized(true);
+      }
+    };
+
+    syncTimer();
+
+    // Sync every 30 seconds to account for any drift
+    const syncInterval = setInterval(syncTimer, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, [user?.candidateId]);
 
   // Load questions on mount and initialize from localStorage
   useEffect(() => {
@@ -103,9 +133,9 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
     }
   }, [questions.length, currentQuestionIndex]); // Only run when questions load or index changes
 
-  // Timer countdown
+  // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) return;
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -117,7 +147,7 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeRemaining]);
+  }, [isTimerInitialized, timeRemaining]);
 
   // Heartbeat interval - send every 2 minutes to keep test session alive
   useEffect(() => {

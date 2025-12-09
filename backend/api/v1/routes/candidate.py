@@ -667,7 +667,7 @@ async def update_heartbeat(
         
         # Calculate remaining time
         elapsed = now - test_session.test_start_time
-        remaining = timedelta(minutes=test_session.test_duration_minutes or 60) - elapsed
+        remaining = timedelta(minutes=test_session.test_duration_minutes or 180) - elapsed
         remaining_seconds = max(0, int(remaining.total_seconds()))
         
         return HeartbeatResponse(
@@ -962,7 +962,7 @@ async def get_test_status(
     # Calculate remaining time
     if candidate.status == 'in progress' and test_session.test_start_time:
         elapsed = datetime.utcnow() - test_session.test_start_time
-        remaining = timedelta(minutes=test_session.test_duration_minutes or 60) - elapsed
+        remaining = timedelta(minutes=test_session.test_duration_minutes or 180) - elapsed
         remaining_seconds = max(0, int(remaining.total_seconds()))
     else:
         remaining_seconds = 0

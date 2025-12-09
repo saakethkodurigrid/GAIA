@@ -11,8 +11,9 @@ import {
   endSession
 } from '../api/systemDesign.api';
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
+import { getTestStatus } from '../api/candidate.api';
 
-const TIMER_DURATION = 60 * 60; // 60 minutes
+const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours)
 
 const SystemDesignContext = createContext<SystemDesignContextType | undefined>(undefined);
 
@@ -29,10 +30,40 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
   const [isLoading, setIsLoading] = useState(true);
   const [questionUuid, setQuestionUuid] = useState<string | null>(null);
+  const [isTimerInitialized, setIsTimerInitialized] = useState(false);
   const sessionCreatedRef = useRef(false);
   const proactivePromptIntervalRef = useRef<number | null>(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+
+  // Sync timer from backend on mount
+  useEffect(() => {
+    const syncTimer = async () => {
+      const candidateId = user?.candidateId;
+      if (!candidateId) return;
+
+      try {
+        const status = await getTestStatus(candidateId);
+        if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
+          setTimeRemaining(status.remaining_seconds);
+          setIsTimerInitialized(true);
+        } else {
+          setIsTimerInitialized(true);
+        }
+      } catch (error) {
+        console.error('Failed to sync timer from backend:', error);
+        // Continue with local timer if backend sync fails
+        setIsTimerInitialized(true);
+      }
+    };
+
+    syncTimer();
+
+    // Sync every 30 seconds to account for any drift
+    const syncInterval = setInterval(syncTimer, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, [user?.candidateId]);
 
   // Create session and load question on mount
   useEffect(() => {
@@ -310,9 +341,9 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     };
   }, [questionUuid]);
 
-  // Timer countdown
+  // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) return;
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -324,7 +355,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeRemaining]);
+  }, [isTimerInitialized, timeRemaining]);
 
   const formatTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60);

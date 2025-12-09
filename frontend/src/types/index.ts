@@ -82,15 +82,18 @@ export interface CodingContextType {
   isSubmitting?: boolean;  // Add this for submit state
   timeRemaining: number;
   isLoading: boolean;
+  submittedQuestions?: Set<string>;  // Track submitted questions by question_uuid
   setLanguage: (lang: 'python' | 'javascript' | 'java' | 'cpp' | 'csharp') => void;
   updateCode: (code: string) => void;
   runCode: () => Promise<void>;  // Runs sample test cases
   runAllTestCases?: () => Promise<void>;  // New: runs all test cases
-  submitAnswer?: () => Promise<void>;  // New: submits final answer
+  submitAnswer?: () => Promise<boolean>;  // New: submits final answer, returns success status
   resetCode: () => void;
   goToProblem: (index: number) => void;
   formatTime: (seconds: number) => string;
   getProgressPercentage: () => number;
+  findNextUnsubmittedQuestion?: (currentIndex: number) => number | null;  // Find next unsubmitted question
+  areAllQuestionsSubmitted?: () => boolean;  // Check if all questions are submitted
 }
 
 export interface SystemDesignProblem {
