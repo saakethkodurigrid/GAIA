@@ -88,7 +88,7 @@ class InterviewService:
                 scheduled_date_str = candidate.scheduled_date.isoformat() if candidate.scheduled_date else ""
                 interview_list.append(
                     InterviewResponse(
-                        candidate_id=candidate.candidate_id,
+                        candidate_id=candidate.candidate_reference_number,  # Return reference number only
                         candidate_name=candidate.name,
                         candidate_email=candidate.email_id,
                         job_id=job.job_reference_number or job.job_id,  # Return reference number, fallback to UUID if None
@@ -204,7 +204,7 @@ class InterviewService:
                 scheduled_date_str = candidate.scheduled_date.isoformat() if candidate.scheduled_date else ""
                 interview_list.append(
                     InterviewResponse(
-                        candidate_id=candidate.candidate_id,
+                        candidate_id=candidate.candidate_reference_number,  # Return reference number only
                         candidate_name=candidate.name,
                         candidate_email=candidate.email_id,
                         job_id=job.job_reference_number or job.job_id,  # Return reference number, fallback to UUID if None

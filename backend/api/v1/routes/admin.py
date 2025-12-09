@@ -303,8 +303,8 @@ async def add_candidates_batch(
     6. Assigns candidates to the specified job
     
     Request Format:
-    - Form fields: candidate_0_name, candidate_0_email, candidate_1_name, candidate_1_email, ...
-    - files: List of resume files matching the order of candidates (files[0] for candidate_0, etc.)
+    - Form field: candidates_data (JSON string) containing array: [{"name": "...", "email": "..."}, ...]
+    - files: List of resume files matching the order of candidates (files[0] for candidate[0], etc.)
     
     Args:
         job_id: Job reference number (e.g., JD-783901) of the job to assign candidates to
@@ -326,44 +326,30 @@ async def add_candidates_batch(
     # Parse form data to extract candidate fields
     form_data = await request.form()
     
-    # Extract candidate data from form fields (candidate_0_name, candidate_0_email, etc.)
-    candidates_dict = {}
-    max_index = -1
+    # Extract candidates_data from form (frontend sends as JSON string)
+    candidates_data_str = form_data.get('candidates_data')
     
-    for key, value in form_data.items():
-        if key.startswith('candidate_') and key.endswith('_name'):
-            # Extract index from key (e.g., "candidate_0_name" -> 0)
-            try:
-                index = int(key.replace('candidate_', '').replace('_name', ''))
-                if index not in candidates_dict:
-                    candidates_dict[index] = {}
-                candidates_dict[index]['name'] = value
-                max_index = max(max_index, index)
-            except ValueError:
-                continue
-        elif key.startswith('candidate_') and key.endswith('_email'):
-            # Extract index from key (e.g., "candidate_0_email" -> 0)
-            try:
-                index = int(key.replace('candidate_', '').replace('_email', ''))
-                if index not in candidates_dict:
-                    candidates_dict[index] = {}
-                candidates_dict[index]['email'] = value
-                max_index = max(max_index, index)
-            except ValueError:
-                continue
+    if not candidates_data_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing 'candidates_data' field. Please provide candidate information as JSON."
+        )
     
-    # Build candidates list in order (0, 1, 2, ...)
-    candidates_list = []
-    for idx in range(max_index + 1):
-        if idx in candidates_dict:
-            candidate_data = candidates_dict[idx]
-            if 'name' in candidate_data and 'email' in candidate_data:
-                candidates_list.append(candidate_data)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Missing name or email for candidate at index {idx}"
-                )
+    # Parse JSON string to get candidates list
+    try:
+        candidates_list = json.loads(candidates_data_str)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid JSON format in 'candidates_data': {str(e)}"
+        )
+    
+    # Validate candidates_list is a list
+    if not isinstance(candidates_list, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'candidates_data' must be a JSON array of candidate objects."
+        )
     
     # Validate candidate count
     if len(candidates_list) > 10:
@@ -375,7 +361,7 @@ async def add_candidates_batch(
     if len(candidates_list) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one candidate is required. Please provide candidate_0_name and candidate_0_email."
+            detail="At least one candidate is required in 'candidates_data'."
         )
     
     # Validate files match candidates count
@@ -504,7 +490,7 @@ async def get_resumes_list(
     
     candidate_list = [
         ResumeCandidateResponse(
-            candidate_id=c.candidate_id,
+            candidate_id=c.candidate_reference_number,  # Return reference number only
             name=c.name,
             email_id=c.email_id,
             resume_score=float(c.resume_score) if c.resume_score else 0.0,
@@ -561,7 +547,7 @@ async def get_scheduled_interviews(
     
     candidate_list = [
         ScheduledInterviewCandidateResponse(
-            candidate_id=c.candidate_id,
+            candidate_id=c.candidate_reference_number,  # Return reference number only
             name=c.name,
             email_id=c.email_id,
             interview_status=c.status,
@@ -616,7 +602,7 @@ async def get_completed_interviews(
     # For now, using resume_score as placeholder
     candidate_list = [
         CompletedInterviewCandidateResponse(
-            candidate_id=c.candidate_id,
+            candidate_id=c.candidate_reference_number,  # Return reference number only
             name=c.name,
             email_id=c.email_id,
             interview_score=float(c.resume_score) if c.resume_score else None,  # Placeholder - should come from interview analysis
