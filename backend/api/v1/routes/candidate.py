@@ -994,6 +994,42 @@ async def complete_test(
         except Exception as e:
             logger.warning(f"Failed to clear Redis keys for candidate {candidate_id}: {str(e)}")
         
+        # Send assessment report email asynchronously (non-blocking)
+        try:
+            import threading
+            import asyncio
+            from services.email_service import email_service
+            
+            def send_email_async():
+                """Helper function to run async email sending in background thread."""
+                try:
+                    # Create a new database session for the email thread
+                    db_gen = get_db()
+                    db_email = next(db_gen)
+                    try:
+                        asyncio.run(
+                            email_service.send_assessment_report_email(
+                                candidate_id=candidate_id,
+                                candidate_email=candidate.email_id,
+                                candidate_name=candidate.name,
+                                completion_date=now,
+                                db=db_email
+                            )
+                        )
+                    finally:
+                        db_email.close()
+                except Exception as e:
+                    logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+            
+            # Start email sending in background thread
+            email_thread = threading.Thread(target=send_email_async, daemon=True)
+            email_thread.start()
+            
+            logger.info(f"Assessment report email queued for candidate {candidate_id}")
+        except Exception as e:
+            # Don't fail test completion if email fails
+            logger.error(f"Failed to queue assessment report email for candidate {candidate_id}: {str(e)}", exc_info=True)
+        
         # Generate interview summary asynchronously (non-blocking)
         # Run in background thread to avoid blocking test completion
         try:

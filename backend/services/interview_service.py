@@ -589,6 +589,39 @@ class InterviewService:
             # Commit the analysis update
             self.db.commit()
             
+            # Try to send assessment report email if all analyses are ready
+            try:
+                import threading
+                import asyncio
+                from services.email_service import email_service
+                
+                def try_send_email_async():
+                    """Helper function to run async email sending in background thread."""
+                    try:
+                        # Create a new database session for the email thread
+                        from core.database import get_db
+                        db_gen = get_db()
+                        db_email = next(db_gen)
+                        try:
+                            asyncio.run(
+                                email_service.try_send_assessment_report_email_if_ready(
+                                    candidate_id=candidate_id,
+                                    db=db_email
+                                )
+                            )
+                        finally:
+                            db_email.close()
+                    except Exception as e:
+                        logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+                
+                # Start email check in background thread (non-blocking)
+                email_thread = threading.Thread(target=try_send_email_async, daemon=True)
+                email_thread.start()
+                logger.info(f"Triggered email check for candidate {candidate_id} after MCQ analysis update")
+            except Exception as e:
+                # Don't fail if email trigger fails
+                logger.warning(f"Failed to trigger email check for candidate {candidate_id}: {str(e)}")
+            
         except Exception as e:
             logger.error(f"Error updating MCQ analysis for candidate {candidate_id}: {str(e)}", exc_info=True)
             # Don't raise - let the calling method handle it
@@ -750,6 +783,39 @@ class InterviewService:
             
             # Commit the analysis update
             self.db.commit()
+            
+            # Try to send assessment report email if all analyses are ready
+            try:
+                import threading
+                import asyncio
+                from services.email_service import email_service
+                
+                def try_send_email_async():
+                    """Helper function to run async email sending in background thread."""
+                    try:
+                        # Create a new database session for the email thread
+                        from core.database import get_db
+                        db_gen = get_db()
+                        db_email = next(db_gen)
+                        try:
+                            asyncio.run(
+                                email_service.try_send_assessment_report_email_if_ready(
+                                    candidate_id=candidate_id,
+                                    db=db_email
+                                )
+                            )
+                        finally:
+                            db_email.close()
+                    except Exception as e:
+                        logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+                
+                # Start email check in background thread (non-blocking)
+                email_thread = threading.Thread(target=try_send_email_async, daemon=True)
+                email_thread.start()
+                logger.info(f"Triggered email check for candidate {candidate_id} after coding analysis update")
+            except Exception as e:
+                # Don't fail if email trigger fails
+                logger.warning(f"Failed to trigger email check for candidate {candidate_id}: {str(e)}")
             
         except Exception as e:
             logger.error(f"Error updating coding analysis for candidate {candidate_id}: {str(e)}", exc_info=True)

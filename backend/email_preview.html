@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Templates Preview - TechInterview Platform</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%);
+            border-radius: 10px;
+        }
+        .header h1 {
+            color: #0069B4;
+            margin: 0;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e5e5e5;
+        }
+        .tab {
+            padding: 12px 24px;
+            background-color: #f0f0f0;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            background-color: #e0e0e0;
+        }
+        .tab.active {
+            background-color: #0069B4;
+            color: white;
+        }
+        .email-container {
+            display: none;
+            background-color: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+        .email-container.active {
+            display: block;
+        }
+        .email-preview {
+            max-width: 600px;
+            margin: 0 auto;
+            border: 1px solid #ddd;
+            background-color: white;
+        }
+        .email-label {
+            background-color: #0069B4;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 0;
+        }
+        .email-content {
+            width: 100%;
+            border: none;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📧 Email Templates Preview</h1>
+            <p>Preview both email templates with sample data</p>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showEmail('scheduling')">1. Scheduling Invitation Email</button>
+            <button class="tab" onclick="showEmail('test')">2. Test Invitation Email</button>
+        </div>
+        
+        <div id="scheduling" class="email-container active">
+            <div class="email-preview">
+                <div class="email-label">Scheduling Invitation Email</div>
+                <div class="email-content">
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                            <div style="text-align: center; margin-bottom: 20px;">
+                                <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
+                            </div>
+                        </div>
+                        
+                        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <h2 style="color: #0069B4; margin-top: 0;">Interview Invitation</h2>
+                            
+                            <p>Dear John Doe,</p>
+                            
+                            <p>Congratulations! We are pleased to invite you to proceed with the interview process for the position of <strong>Senior Software Engineer</strong>.</p>
+                            
+                            <p>We were impressed with your qualifications and would like to move forward with the next steps. Please click the button below to schedule your interview:</p>
+                            
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="https://example.com/schedule?candidate_id=123" 
+                                   style="display: inline-block; padding: 14px 28px; background-color: #0069B4; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                                    Schedule Your Interview
+                                </a>
+                            </div>
+                            
+                            <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
+                            <p style="color: #0069B4; font-size: 12px; word-break: break-all; background-color: #f5f5f5; padding: 10px; border-radius: 4px;">https://example.com/schedule?candidate_id=123</p>
+                            
+                            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e5e5;">
+                                <p style="margin: 0; color: #666; font-size: 14px;"><strong>What to expect:</strong></p>
+                                <ul style="color: #666; font-size: 14px; margin: 10px 0;">
+                                    <li>Select a convenient date and time for your interview</li>
+                                    <li>Complete the interview process which includes MCQ, Coding, and System Design assessments</li>
+                                    <li>You'll need to sign in with your Google account to proceed</li>
+                                </ul>
+                            </div>
+                            
+                            <p style="margin-top: 30px;">We look forward to speaking with you!</p>
+                            
+                            <p>Best regards,<br>
+                            <strong>TechInterview Platform Team</strong></p>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+                            <p>This is an automated email. Please do not reply to this message.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="test" class="email-container">
+            <div class="email-preview">
+                <div class="email-label">Test Invitation Email</div>
+                <div class="email-content">
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                            <div style="text-align: center; margin-bottom: 20px;">
+                                <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
+                            </div>
+                        </div>
+                        
+                        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <h2 style="color: #0069B4; margin-top: 0;">Test Scheduled - Ready to Begin</h2>
+                            
+                            <p>Dear John Doe,</p>
+                            
+                            <p>Your technical interview for the position of <strong>Senior Software Engineer</strong> has been scheduled successfully!</p>
+                            
+                            <div style="margin: 20px 0; padding: 15px; background-color: #f0f9ff; border-left: 4px solid #0069B4; border-radius: 4px;">
+                                <p style="margin: 0; color: #1e40af; font-weight: 600;">Scheduled Date & Time: January 15, 2024 at 02:30 PM</p>
+                            </div>
+                            
+                            <p>You can now start your assessment by clicking the button below:</p>
+                            
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="https://example.com/test/scheduled?candidate_id=123" 
+                                   style="display: inline-block; padding: 14px 28px; background-color: #0069B4; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                                    Start Your Test
+                                </a>
+                            </div>
+                            
+                            <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
+                            <p style="color: #0069B4; font-size: 12px; word-break: break-all; background-color: #f5f5f5; padding: 10px; border-radius: 4px;">https://example.com/test/scheduled?candidate_id=123</p>
+                            
+                            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e5e5;">
+                                <p style="margin: 0; color: #666; font-size: 14px;"><strong>Important Instructions:</strong></p>
+                                <ul style="color: #666; font-size: 14px; margin: 10px 0;">
+                                    <li>Please be ready 5 minutes before the scheduled time</li>
+                                    <li>Ensure you have a stable internet connection</li>
+                                    <li>The test includes MCQ, Coding, and System Design assessments</li>
+                                    <li>You'll need to sign in with your Google account to proceed</li>
+                                </ul>
+                            </div>
+                            
+                            <p style="margin-top: 30px;">Good luck with your assessment!</p>
+                            
+                            <p>Best regards,<br>
+                            <strong>TechInterview Platform Team</strong></p>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+                            <p>This is an automated email. Please do not reply to this message.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showEmail(type) {
+            // Hide all email containers
+            document.querySelectorAll('.email-container').forEach(container => {
+                container.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected email container
+            document.getElementById(type).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
