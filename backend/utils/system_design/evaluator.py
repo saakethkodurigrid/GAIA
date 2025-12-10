@@ -46,14 +46,19 @@ class EvaluationEngine:
             self.llm = None
             self.model = None
     
-    def _detect_interview_stage(self, canvas_json: Dict[str, Any], chat_text: str, total_components: int) -> str:
+    def _detect_interview_stage(self, canvas_json: Dict[str, Any], chat_text: str, total_components: int, total_connections: int) -> str:
         """
         Detect interview stage: early_stage, mid_stage, or late_stage
         
+        Improved detection considers:
+        - Component count
+        - Connection count (architecture completeness)
+        - Chat content (requirements questions)
+        
         Returns:
-            "early_stage": Requirements gathering, minimal design (0-2 components)
-            "mid_stage": Architecture design in progress (3-10 components)
-            "late_stage": Final design submission (11+ components)
+            "early_stage": Requirements gathering, minimal design (0-2 components OR no connections)
+            "mid_stage": Architecture design in progress (3-10 components WITH connections)
+            "late_stage": Final design submission (11+ components with substantial connections)
         """
         chat_lower = chat_text.lower() if chat_text else ""
         
@@ -65,11 +70,18 @@ class EvaluationEngine:
         ]
         
         has_early_indicators = any(indicator in chat_lower for indicator in early_indicators)
+        has_connections = total_connections > 0
         
-        if total_components <= 2 or (total_components <= 3 and has_early_indicators):
+        # Early stage: minimal components OR no connections (incomplete architecture)
+        if (total_components <= 2) or (total_components <= 3 and (not has_connections or has_early_indicators)):
             return "early_stage"
-        elif total_components <= 10:
+        
+        # Mid stage: some components AND some connections (design taking shape)
+        # Must have at least 2 connections to show architecture
+        elif total_components <= 10 and has_connections and total_connections >= 2:
             return "mid_stage"
+        
+        # Late stage: substantial design with architecture
         else:
             return "late_stage"
     
@@ -104,9 +116,9 @@ class EvaluationEngine:
         total_components = len(parsed_data["nodes"])
         total_connections = len(parsed_data["edges"])
         
-        # Detect interview stage
-        interview_stage = self._detect_interview_stage(canvas_json, chat_text, total_components)
-        logger.info(f"[EVALUATION] Detected interview stage: {interview_stage} (components: {total_components})")
+        # Detect interview stage (now considers connections)
+        interview_stage = self._detect_interview_stage(canvas_json, chat_text, total_components, total_connections)
+        logger.info(f"[EVALUATION] Detected interview stage: {interview_stage} (components: {total_components}, connections: {total_connections})")
         
         # Build detailed component list for LLM (include all if reasonable, otherwise sample)
         component_details = []
@@ -199,51 +211,83 @@ ADDITIONAL EVALUATION CONTEXT (Use this to understand domain-specific nuances, b
             # Build stage-aware instructions
             stage_instructions = ""
             if interview_stage == "early_stage":
-                stage_instructions = """
-INTERVIEW STAGE: EARLY STAGE (Requirements Gathering)
+                stage_instructions = f"""
+INTERVIEW STAGE: EARLY STAGE (Requirements Gathering / Initial Design)
 - The candidate is in the initial phase, likely asking about requirements or just starting the design
-- The design may be minimal (0-3 components) or non-existent
+- Component count: {total_components} components
+- Connection count: {total_connections} connections
 - This is EXPECTED and CORRECT behavior - candidates should understand requirements first
 
+COMPLETENESS EVALUATION:
+- If NO connections (0): This is a very incomplete design - components exist but no architecture
+- If connections < 2: Design lacks architectural structure - treat as very early stage
+- Missing critical components: Score those categories 1.5-2.0 (not higher)
+- A design with components but no connections is NOT mid-stage - it's early-stage
+
 STAGE-SPECIFIC SCORING ADJUSTMENTS:
-- If candidate is asking good questions about requirements: Score 2.5-3.5 for methodology/process-related categories
-- If candidate shows understanding of problem space: Acknowledge this as a strength
-- Do NOT penalize for incomplete design - this is normal at this stage
-- Focus on evaluating: question quality, problem understanding, methodology, approach
-- For design categories (architecture, scalability, etc.): Score 1.5-2.5 if minimal design, but acknowledge they're in early stage
-- ALWAYS acknowledge good methodology even if design is minimal
+- If candidate is asking good questions about requirements: Score 2.0-2.5 for methodology/process-related categories
+- If NO connections: Score architecture-related categories 1.5-2.0 (penalize lack of architecture)
+- If candidate shows understanding of problem space: Score 2.0-2.5 (acknowledge but don't over-score)
+- For design categories (architecture, scalability, etc.): 
+  * With 0 connections: Score 1.5-2.0 (incomplete architecture)
+  * With 1 connection: Score 1.5-2.0 (minimal architecture)
+  * With good questions: Score 2.0-2.5 for methodology
+- Do NOT score above 2.5 for incomplete designs (0-1 connections)
+- ALWAYS acknowledge good methodology but keep scores realistic for incomplete work
 
 STAGE-SPECIFIC FEEDBACK:
 - Acknowledge that taking time to understand requirements is good practice
+- If no connections: Note that the design lacks architectural structure
 - Encourage continuation of the approach
 - Provide guidance on what to consider next, not criticism of what's missing
 - Frame as "good start, here's what to think about next" not "you're missing X"
 """
             elif interview_stage == "mid_stage":
-                stage_instructions = """
+                stage_instructions = f"""
 INTERVIEW STAGE: MID STAGE (Architecture Design)
 - The candidate has started building the design (3-10 components)
-- They're actively working on the architecture
-- Some components may be missing, but core structure is emerging
+- Component count: {total_components} components
+- Connection count: {total_connections} connections
+- They're actively working on the architecture with some structure in place
+
+COMPLETENESS EVALUATION:
+- Design has connections (architecture emerging): This is good progress
+- If connections < component_count / 2: Still incomplete, score on lower end (2.0-3.0)
+- If connections >= component_count / 2: Better structure, score on higher end (2.5-3.5)
+- Missing critical components: Score those categories 2.0-2.5 (not 3.0+)
 
 STAGE-SPECIFIC SCORING ADJUSTMENTS:
-- Score based on what's present, not what's missing
-- Acknowledge progress made
-- For missing components: Note them but don't harshly penalize if design is still in progress
-- Score 2.5-4.0 range depending on quality of what's been designed so far
+- Score based on what's present AND architecture quality
+- Acknowledge progress made but be realistic about completeness
+- For missing components: Note them and score 2.0-2.5 (moderate penalty)
+- Score 2.0-3.5 range depending on:
+  * Quality of what's been designed
+  * Architecture completeness (connection ratio)
+  * Presence of critical components
+- Do NOT score above 3.5 for designs missing critical components
 """
             else:  # late_stage
-                stage_instructions = """
+                stage_instructions = f"""
 INTERVIEW STAGE: LATE STAGE (Final Design)
 - The candidate has a substantial design (11+ components)
+- Component count: {total_components} components
+- Connection count: {total_connections} connections
 - This appears to be a final or near-final submission
 - Evaluate comprehensively against all criteria
+
+COMPLETENESS EVALUATION:
+- Design should have substantial architecture (many connections)
+- If connections < component_count / 3: Architecture is incomplete, score lower (1.5-3.0)
+- Missing critical components: Harsh penalty - score 1.0-2.0 for those categories
+- Evaluate production-readiness and completeness
 
 STAGE-SPECIFIC SCORING ADJUSTMENTS:
 - Use full 1-5 scale
 - Evaluate completeness and production-readiness
-- Missing critical components should be noted and scored accordingly
+- Missing critical components: Score 1.0-2.0 (harsh penalty for final submission)
+- Incomplete architecture: Score architecture-related categories 1.5-2.5
 - Score 1.0-5.0 based on comprehensive evaluation
+- Be strict - this is a final submission, not work in progress
 """
 
             system_prompt = f"""You are an experienced system design interviewer evaluating a candidate's design solution.
@@ -265,9 +309,13 @@ CRITICAL OUTPUT RESTRICTIONS:
 - Use the additional context to understand domain-specific nuances, but always evaluate based on the criteria above
 
 EVALUATION INSTRUCTIONS:
-1. FIRST: Determine the interview stage based on component count and chat content (early/mid/late)
+1. FIRST: Determine the interview stage based on component count, connections, and chat content (early/mid/late)
 2. ADJUST your scoring expectations based on the stage (see stage-specific instructions above)
-3. Analyze both the Excalidraw diagram (figure) and the candidate's explanation in the chat history
+3. CRITICALLY IMPORTANT: Analyze BOTH the Excalidraw diagram (figure) AND the full conversation history
+   - The conversation shows the candidate's thought process, questions, and explanations
+   - Use conversation to understand their methodology, problem-solving approach, and design reasoning
+   - If candidate asked good questions or showed good methodology in chat, acknowledge this in scores
+   - If candidate explained design choices in chat, consider those explanations when evaluating
 4. Evaluate how well the candidate addressed EACH specific aspect mentioned in the evaluation criteria above
 5. Extract the exact category names from the evaluation criteria (e.g., "Core Functionality", "System Architecture", "Scalability", etc.)
 6. Score each category mentioned in the evaluation criteria on a 1-5 scale, ADJUSTED for interview stage
@@ -288,13 +336,25 @@ FEEDBACK STYLE:
 - Keep feedback concise but comprehensive (3-5 sentences for feedback, 1-2 for follow-up)
 - ALWAYS include explicit strengths if you mention positive aspects in feedback
 
-SCORING GUIDELINES (ADJUSTED FOR STAGE):
+SCORING GUIDELINES (ADJUSTED FOR STAGE AND COMPLETENESS):
 - Use a 1-5 scale for each evaluation dimension specified in the criteria
-- EARLY STAGE: 1.5-3.5 range (acknowledge good methodology even with minimal design)
-- MID STAGE: 2.0-4.5 range (evaluate what's present, acknowledge progress)
-- LATE STAGE: 1.0-5.0 range (comprehensive evaluation)
+- EARLY STAGE: 
+  * With 0 connections: 1.5-2.0 range (incomplete architecture)
+  * With 1 connection: 1.5-2.0 range (minimal architecture)
+  * With good questions: 2.0-2.5 for methodology (max 2.5 for incomplete work)
+  * Do NOT score above 2.5 for designs with 0-1 connections
+- MID STAGE: 
+  * With few connections: 2.0-3.0 range (incomplete but progressing)
+  * With good connections: 2.5-3.5 range (better structure)
+  * Missing critical components: 2.0-2.5 (moderate penalty)
+  * Do NOT score above 3.5 for designs missing critical components
+- LATE STAGE: 
+  * Complete design: 3.0-5.0 range
+  * Missing critical components: 1.0-2.0 (harsh penalty)
+  * Incomplete architecture: 1.5-2.5
 - CRITICAL: Scores must align with feedback tone - positive feedback = positive scores
-- If you write "excellent" or "good" in feedback, corresponding scores should be 3.0+ (early), 3.5+ (mid), 4.0+ (late)
+- CRITICAL: Consider completeness - designs with 0 connections or missing critical components should score lower
+- If you write "excellent" or "good" in feedback, ensure scores reflect that BUT also consider completeness
 
 IMPORTANT: Your JSON response must include scores for the EXACT categories mentioned in the evaluation criteria above. Do not use generic category names."""
 
@@ -367,22 +427,28 @@ IMPORTANT: Your JSON response must include scores for the EXACT categories menti
             stage_context = f"""
 INTERVIEW STAGE CONTEXT: EARLY STAGE
 - Component count: {total_components} (minimal design is expected at this stage)
+- Connection count: {total_connections} ({"NO connections - very incomplete architecture" if total_connections == 0 else f"{total_connections} connection(s) - minimal architecture"})
 - The candidate may be asking about requirements or just starting
 - This is NORMAL and CORRECT - candidates should understand requirements before designing
-- Adjust scoring expectations: acknowledge good methodology (2.5-3.5) even if design is minimal
+- CRITICAL: If 0 connections, this is a very incomplete design - score architecture categories 1.5-2.0
+- Adjust scoring expectations: acknowledge good methodology (2.0-2.5) but penalize incomplete architecture (1.5-2.0)
 """
         elif interview_stage == "mid_stage":
             stage_context = f"""
 INTERVIEW STAGE CONTEXT: MID STAGE
 - Component count: {total_components} (design in progress)
+- Connection count: {total_connections} (architecture emerging)
 - The candidate is actively building the architecture
-- Evaluate what's present, acknowledge progress
+- Evaluate what's present AND architecture quality
+- If connections are few relative to components, score on lower end (2.0-3.0)
 """
         else:
             stage_context = f"""
 INTERVIEW STAGE CONTEXT: LATE STAGE
 - Component count: {total_components} (substantial design, likely final submission)
+- Connection count: {total_connections} (should have substantial architecture)
 - Evaluate comprehensively against all criteria
+- Be strict - missing critical components should score 1.0-2.0
 """
 
         user_prompt = f"""QUESTION: {question_text}
@@ -400,8 +466,15 @@ COMPONENTS IN DIAGRAM ({len(component_details)} shown):
 CONNECTIONS IN DIAGRAM ({len(connection_details)} shown):
 {chr(10).join(connection_details) if connection_details else "No connections detected"}
 
-CANDIDATE EXPLANATION:
-{sanitized_chat_text if sanitized_chat_text else "(No explanation provided yet)"}
+CONVERSATION HISTORY (Full Chat Context):
+{sanitized_chat_text if sanitized_chat_text else "(No conversation history available)"}
+
+CRITICAL: The conversation history above shows the candidate's questions, explanations, and the interviewer's guidance. Use this to understand:
+- What the candidate is thinking/asking about
+- Their problem-solving approach
+- Their understanding of requirements
+- Their methodology and thought process
+- Any explanations they provided about their design choices
 
 CRITICAL INSTRUCTIONS:
 1. Review the EVALUATION CRITERIA and INTERVIEW STAGE instructions in the system prompt above
@@ -795,8 +868,15 @@ Provide your response as JSON with the EXACT category names from the evaluation 
         if not latest_canvas and session.canvas_versions:
             latest_canvas = session.canvas_versions[-1].data
         
-        # Get all chat history
-        chat_text = "\n".join([msg.content for msg in session.chat_history]) if session.chat_history else ""
+        # Get all chat history - format with role labels for better context
+        if session.chat_history:
+            chat_lines = []
+            for msg in session.chat_history:
+                role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                chat_lines.append(f"{role_label}: {msg.content}")
+            chat_text = "\n".join(chat_lines)
+        else:
+            chat_text = ""
         
         # Perform comprehensive final evaluation using LLM
         final_evaluation = None

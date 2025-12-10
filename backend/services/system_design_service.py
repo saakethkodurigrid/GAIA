@@ -790,12 +790,18 @@ class SystemDesignService:
             session.last_activity_time = time.time()
             
             # Use more chat context - last 30 messages or all if less than 30
+            # Format with role labels for better context
             if session.chat_history:
                 if len(session.chat_history) <= 30:
                     latest_chat = session.chat_history
                 else:
                     latest_chat = session.chat_history[-30:]
-                chat_text = "\n".join([msg.content for msg in latest_chat])
+                # Format with role labels for better LLM understanding
+                chat_lines = []
+                for msg in latest_chat:
+                    role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                    chat_lines.append(f"{role_label}: {msg.content}")
+                chat_text = "\n".join(chat_lines)
             else:
                 chat_text = ""
             
@@ -872,7 +878,18 @@ class SystemDesignService:
                 ).first()
                 
                 avg_score = sum(evaluation["scores"].values()) / len(evaluation["scores"]) if evaluation["scores"] else 0
-                final_score = int(round(avg_score * 20))  # Convert 1-5 to 0-100
+                # Non-linear conversion: more harsh for incomplete designs, fair for complete ones
+                if avg_score <= 2.5:
+                    # Incomplete designs: harsher conversion (1.8 → 27 instead of 36)
+                    final_score = int(round(avg_score * 15))
+                elif avg_score <= 3.5:
+                    # Standard conversion for mid-range scores
+                    final_score = int(round(avg_score * 20))
+                else:
+                    # High scores: slight bonus (4.5 → 99 instead of 90)
+                    final_score = int(round(avg_score * 22))
+                # Clamp to 0-100 range
+                final_score = max(0, min(100, final_score))
                 
                 if interview_record:
                     # Update existing record
@@ -1193,10 +1210,21 @@ class SystemDesignService:
             # Extract data from final_report
             avg_scores = final_report.get("average_scores", {})
             
-            # Calculate overall score (0-100) from average scores
+            # Calculate overall score (0-100) from average scores with non-linear conversion
             if avg_scores:
                 avg_score = sum(avg_scores.values()) / len(avg_scores)
-                overall_score = int(round(avg_score * 20))  # Convert 1-5 to 0-100
+                # Non-linear conversion: more harsh for incomplete designs, fair for complete ones
+                if avg_score <= 2.5:
+                    # Incomplete designs: harsher conversion (1.8 → 27 instead of 36)
+                    overall_score = int(round(avg_score * 15))
+                elif avg_score <= 3.5:
+                    # Standard conversion for mid-range scores
+                    overall_score = int(round(avg_score * 20))
+                else:
+                    # High scores: slight bonus (4.5 → 99 instead of 90)
+                    overall_score = int(round(avg_score * 22))
+                # Clamp to 0-100 range
+                overall_score = max(0, min(100, overall_score))
             else:
                 overall_score = None
             
