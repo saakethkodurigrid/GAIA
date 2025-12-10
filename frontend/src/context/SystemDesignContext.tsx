@@ -12,6 +12,7 @@ import {
 } from '../api/systemDesign.api';
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
 import { getTestStatus } from '../api/candidate.api';
+import { localStorage as storage } from '../utils/localStorage';
 
 const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours)
 
@@ -27,7 +28,16 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [excalidrawData, setExcalidrawData] = useState<any>(null);
   const [notes, setNotes] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
+  // Initialize timer from localStorage or default
+  const getInitialTime = (): number => {
+    const stored = storage.getRemainingTime();
+    if (stored !== null && stored > 0) {
+      return stored;
+    }
+    return TIMER_DURATION;
+  };
+
+  const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
   const [isLoading, setIsLoading] = useState(true);
   const [questionUuid, setQuestionUuid] = useState<string | null>(null);
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
@@ -36,7 +46,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
-  // Sync timer from backend on mount
+  // Sync timer from backend on mount and update localStorage
   useEffect(() => {
     const syncTimer = async () => {
       const candidateId = user?.candidateId;
@@ -46,17 +56,36 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         const status = await getTestStatus(candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
           setTimeRemaining(status.remaining_seconds);
+          // Update localStorage with backend time
+          storage.setTimerEndTime(status.remaining_seconds);
           setIsTimerInitialized(true);
         } else {
+          // If backend doesn't have active timer, check localStorage
+          const localTime = storage.getRemainingTime();
+          if (localTime !== null && localTime > 0) {
+            setTimeRemaining(localTime);
+          }
           setIsTimerInitialized(true);
         }
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
-        // Continue with local timer if backend sync fails
+        // Fallback to localStorage if backend sync fails
+        const localTime = storage.getRemainingTime();
+        if (localTime !== null && localTime > 0) {
+          setTimeRemaining(localTime);
+        }
         setIsTimerInitialized(true);
       }
     };
 
+    // First, try to use localStorage immediately for faster UI
+    const localTime = storage.getRemainingTime();
+    if (localTime !== null && localTime > 0) {
+      setTimeRemaining(localTime);
+      setIsTimerInitialized(true);
+    }
+
+    // Then sync with backend
     syncTimer();
 
     // Sync every 30 seconds to account for any drift
@@ -343,14 +372,23 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
   // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (!isTimerInitialized || timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) {
+      if (timeRemaining <= 0) {
+        storage.clearTimer();
+      }
+      return;
+    }
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          return 0;
+        const newTime = prev <= 1 ? 0 : prev - 1;
+        // Update localStorage with new remaining time
+        if (newTime > 0) {
+          storage.setTimerEndTime(newTime);
+        } else {
+          storage.clearTimer();
         }
-        return prev - 1;
+        return newTime;
       });
     }, 1000);
 

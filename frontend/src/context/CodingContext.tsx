@@ -10,6 +10,7 @@ import {
 import { useAuth } from './AuthContext';
 import type { CodingContextType, CodingProblem } from '../types';
 import { getTestStatus } from '../api/candidate.api';
+import { localStorage as storage } from '../utils/localStorage';
 
 const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours)
 
@@ -37,10 +38,220 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
+  // Initialize timer from localStorage or default
+  const getInitialTime = (): number => {
+    const stored = storage.getRemainingTime();
+    if (stored !== null && stored > 0) {
+      return stored;
+    }
+    return TIMER_DURATION;
+  };
+
+  const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
   const [isLoading, setIsLoading] = useState(true);
   const [submittedQuestions, setSubmittedQuestions] = useState<Set<string>>(new Set());
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
+
+  // Helper function to normalize constraint text (convert "10 5" to "10^5", "109" to "10^9", etc.)
+  const normalizeConstraintText = useCallback((text: string): string => {
+    // First, handle cases where "10" and exponent are separated by space: "10 5" -> "10^5"
+    let normalized = text.replace(/(\b10)\s+(\d{1,2})\b/g, (_match, base, exp) => {
+      // Convert "10 5" to "10^5", "10 9" to "10^9", etc.
+      return `${base}^${exp}`;
+    });
+    
+    // Then handle cases where "10" and exponent are together: "109" -> "10^9", "105" -> "10^5"
+    // Pattern: "10" followed by 1-2 digits that could be an exponent (typically 1-9, 10-99)
+    normalized = normalized.replace(/\b10(\d{1,2})\b/g, (match, exp) => {
+      const expNum = parseInt(exp, 10);
+      // Only convert if it looks like exponent notation (typically 1-99, but prioritize common ones like 5, 9)
+      if (expNum >= 1 && expNum <= 99) {
+        // Check if the number after "10" makes sense as an exponent
+        // Common exponents: 5, 9, 6, 4, 3, 2, etc.
+        return `10^${exp}`;
+      }
+      return match;
+    });
+    
+    return normalized.trim();
+  }, []);
+
+  // Helper function to parse question HTML/text to extract title, description, and constraints
+  const parseQuestionText = useCallback((questionText: string): { title: string; description: string; constraints: string[] } => {
+    if (!questionText) {
+      return { title: '', description: '', constraints: [] };
+    }
+
+    // Create a temporary DOM element to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = questionText;
+
+    // Extract title - look for h1, h2, h3, or strong tags
+    let title = '';
+    const titleSelectors = ['h1', 'h2', 'h3', 'h4', 'strong', 'b'];
+    for (const selector of titleSelectors) {
+      const titleElement = tempDiv.querySelector(selector);
+      if (titleElement && titleElement.textContent && titleElement.textContent.trim().length > 0) {
+        title = titleElement.textContent.trim();
+        break;
+      }
+    }
+
+    // Extract constraints - look for sections with "Constraints" heading
+    const constraints: string[] = [];
+    let constraintsHeading: Element | null = null;
+    const fullText = tempDiv.textContent || questionText;
+    
+    // Method 1: Look for "Constraints" text in the full text (most reliable)
+    const constraintSectionMatch = fullText.match(/(?:constraints?:?)\s*(.+?)(?=\n\n|\n[A-Z][a-z]{2,}|$)/is);
+    if (constraintSectionMatch && constraintSectionMatch[1]) {
+      const constraintText = constraintSectionMatch[1].trim();
+      
+      // Split constraints by looking for patterns that start with numbers followed by operators
+      // Pattern: number followed by ≤ or < or > or =, then variable/text, then ≤ or < or > or =, then number/exponent
+      // This matches patterns like "1 ≤ n ≤ 10^5", "1 < capacity[i] < 10^6", etc.
+      // First, normalize the text to convert "10 5" to "10^5" and "109" to "10^9"
+      const normalizedText = normalizeConstraintText(constraintText);
+      
+      // Pattern to match complete constraints: "1 ≤ variable ≤ 10^5" or similar
+      // Matches: number, operator, variable (can include brackets), operator, number/exponent
+      const constraintPattern = /(\d+\s+[≤<>=]\s+[^\d≤<>=]+\s+[≤<>=]\s+[^\s]+(?:\^?\d+)?)/g;
+      const constraintMatches = normalizedText.match(constraintPattern);
+      
+      if (constraintMatches && constraintMatches.length > 0) {
+        // Found individual constraints - each match is a separate constraint
+        constraintMatches.forEach(match => {
+          const trimmed = match.trim();
+          if (trimmed.length > 0) {
+            constraints.push(trimmed);
+          }
+        });
+        
+        // Check if there's any remaining text after the last constraint (like "It is guaranteed...")
+        const lastMatch = constraintMatches[constraintMatches.length - 1];
+        const lastIndex = normalizedText.lastIndexOf(lastMatch) + lastMatch.length;
+        const remainingText = normalizedText.substring(lastIndex).trim();
+        if (remainingText.length > 0 && !remainingText.match(/^\d+\s+[≤<>=]/)) {
+          // This is likely a guarantee or additional constraint text
+          constraints.push(remainingText);
+        }
+      } else {
+        // Fallback: Split by looking for number patterns at the start of each constraint
+        // Split on: number followed by ≤/<>= (with space), or newlines
+        // This handles cases where constraints are separated by spaces
+        const items = normalizedText
+          .split(/(?=\d+\s+[≤<>=])|\n|•|→/g)
+          .map(s => s.trim())
+          .filter(s => s.length > 0 && !/^constraints?:?$/i.test(s));
+        
+        items.forEach(item => {
+          // Further split if item contains multiple constraints separated by spaces
+          // Look for pattern: ends with number/exponent, followed by space, then starts with number and operator
+          const subItems = item.split(/(?<=\^?\d+)\s+(?=\d+\s+[≤<>=])/g);
+          subItems.forEach(subItem => {
+            const trimmed = subItem.trim();
+            if (trimmed.length > 0) {
+              constraints.push(trimmed);
+            }
+          });
+        });
+      }
+    }
+
+    // Method 2: Look for heading with "Constraints" text in HTML
+    if (constraints.length === 0) {
+      const allElements = Array.from(tempDiv.querySelectorAll('*'));
+      constraintsHeading = allElements.find(
+        el => {
+          const text = el.textContent?.trim() || '';
+          return /^constraints?:?$/i.test(text) && ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'STRONG', 'B', 'P'].includes(el.tagName);
+        }
+      ) || null;
+      
+      if (constraintsHeading) {
+        // Find the next sibling list or paragraph
+        let nextElement = constraintsHeading.nextElementSibling;
+        while (nextElement) {
+          if (nextElement.tagName === 'UL' || nextElement.tagName === 'OL') {
+            const items = nextElement.querySelectorAll('li');
+            items.forEach(item => {
+              const text = item.textContent?.trim();
+              if (text && text.length > 0) {
+                constraints.push(normalizeConstraintText(text));
+              }
+            });
+            break;
+          } else if (nextElement.tagName === 'P' || nextElement.tagName === 'DIV') {
+            const text = nextElement.textContent?.trim();
+            if (text && text.length > 0) {
+              // Split by newlines, bullets, or arrows
+              const items = text.split(/\n|•|→/).map(s => s.trim()).filter(s => s.length > 0);
+              items.forEach(item => {
+                constraints.push(normalizeConstraintText(item));
+              });
+              if (constraints.length > 0) break;
+            }
+          }
+          nextElement = nextElement.nextElementSibling;
+        }
+      }
+    }
+
+    // Method 3: Look for lists that contain constraint-like patterns
+    if (constraints.length === 0) {
+      const allLists = tempDiv.querySelectorAll('ul, ol');
+      for (const list of Array.from(allLists)) {
+        const listText = list.textContent || '';
+        // Check if list items look like constraints (contain numbers, ranges, operators)
+        if (/≤|>=|<=|>=|\d+\s*≤|\d+\s*>=|\d+\s*<=|\d+\s*>=|^\d+.*≤|^\d+.*>=/i.test(listText)) {
+          const items = list.querySelectorAll('li');
+          items.forEach(item => {
+            const text = item.textContent?.trim();
+            if (text && text.length > 0) {
+              constraints.push(normalizeConstraintText(text));
+            }
+          });
+          if (constraints.length > 0) break;
+        }
+      }
+    }
+
+    // Get description - remove constraints section if found
+    let description = tempDiv.innerHTML;
+    if (constraintSectionMatch) {
+      // Remove the constraints section from description
+      const constraintSection = constraintSectionMatch[0];
+      description = description.replace(new RegExp(constraintSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+    } else if (constraintsHeading) {
+      // Remove the constraints heading and its content
+      const constraintsSection = constraintsHeading.parentElement || constraintsHeading;
+      if (constraintsSection && constraintsSection !== tempDiv) {
+        description = description.replace(constraintsSection.outerHTML, '');
+      } else {
+        description = description.replace(constraintsHeading.outerHTML, '');
+      }
+    }
+
+    // Clean up description
+    description = description.trim();
+    if (!description || description.length < 10) {
+      description = questionText;
+    }
+
+    // Fallback title
+    if (!title) {
+      title = 'Coding Problem';
+    }
+
+    // Clean up constraints - remove duplicates and empty strings, normalize
+    const cleanedConstraints = Array.from(new Set(
+      constraints
+        .filter(c => c.length > 0)
+        .map(c => normalizeConstraintText(c))
+    ));
+
+    return { title, description, constraints: cleanedConstraints };
+  }, [normalizeConstraintText]);
 
   // Helper function to parse boilerplate code
   // Backend sends boilerplate as JSON string with language keys: {"python": "...", "cpp": "...", ...}
@@ -114,7 +325,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     }
   }, []);
 
-  // Sync timer from backend on mount
+  // Sync timer from backend on mount and update localStorage
   useEffect(() => {
     const syncTimer = async () => {
       const candidateId = user?.candidateId;
@@ -124,17 +335,36 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
         const status = await getTestStatus(candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
           setTimeRemaining(status.remaining_seconds);
+          // Update localStorage with backend time
+          storage.setTimerEndTime(status.remaining_seconds);
           setIsTimerInitialized(true);
         } else {
+          // If backend doesn't have active timer, check localStorage
+          const localTime = storage.getRemainingTime();
+          if (localTime !== null && localTime > 0) {
+            setTimeRemaining(localTime);
+          }
           setIsTimerInitialized(true);
         }
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
-        // Continue with local timer if backend sync fails
+        // Fallback to localStorage if backend sync fails
+        const localTime = storage.getRemainingTime();
+        if (localTime !== null && localTime > 0) {
+          setTimeRemaining(localTime);
+        }
         setIsTimerInitialized(true);
       }
     };
 
+    // First, try to use localStorage immediately for faster UI
+    const localTime = storage.getRemainingTime();
+    if (localTime !== null && localTime > 0) {
+      setTimeRemaining(localTime);
+      setIsTimerInitialized(true);
+    }
+
+    // Then sync with backend
     syncTimer();
 
     // Sync every 30 seconds to account for any drift
@@ -159,25 +389,21 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
         
         // Transform backend format to frontend format
         const transformedProblems: CodingProblem[] = backendQuestions.map((q, index) => {
-          console.log(`=== Parsing boilerplate for question ${index + 1} ===`);
-          console.log('Raw boilerplate_code:', q.boilerplate_code);
-          console.log('Type:', typeof q.boilerplate_code);
-          
+          // Parse question text to extract title, description, and constraints
+          const parsedQuestion = parseQuestionText(q.question);
           const boilerplate = parseBoilerplateCode(q.boilerplate_code);
-          console.log('Parsed boilerplate:', boilerplate);
-          console.log('==========================================');
           
           return {
             id: index + 1, // Frontend ID
             question_uuid: q.question_uuid, // Backend UUID for API calls
-            title: `Coding Problem ${index + 1}`, // Backend doesn't provide title
+            title: parsedQuestion.title || `Coding Problem ${index + 1}`, // Use parsed title or fallback
             difficulty: 'Medium' as const, // Backend doesn't provide difficulty
-            description: q.question,
+            description: parsedQuestion.description || q.question, // Use parsed description or fallback
             examples: q.sample_test_cases.slice(0, 2).map(tc => ({
               input: tc.input,
               output: tc.expected_output,
             })),
-            constraints: [], // Backend doesn't provide constraints
+            constraints: parsedQuestion.constraints, // Use parsed constraints
             boilerplate: boilerplate,
             testCases: q.sample_test_cases.map(tc => ({
               input: tc.input,
@@ -207,18 +433,27 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     };
     
     loadProblems();
-  }, [user?.candidateId, parseBoilerplateCode]);
+  }, [user?.candidateId, parseBoilerplateCode, parseQuestionText, normalizeConstraintText]);
 
   // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (!isTimerInitialized || timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) {
+      if (timeRemaining <= 0) {
+        storage.clearTimer();
+      }
+      return;
+    }
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          return 0;
+        const newTime = prev <= 1 ? 0 : prev - 1;
+        // Update localStorage with new remaining time
+        if (newTime > 0) {
+          storage.setTimerEndTime(newTime);
+        } else {
+          storage.clearTimer();
         }
-        return prev - 1;
+        return newTime;
       });
     }, 1000);
 
@@ -401,6 +636,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
 
     // Mark question as submitted immediately (optimistic update)
     setSubmittedQuestions((prev) => new Set([...prev, questionUuid]));
+    setIsSubmitting(true);
     setOutput('Submitting answer...');
 
     // Prepare submission data
@@ -421,6 +657,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     // Fire API call in background without waiting
     submitCodingAnswer(user.candidateId, request)
       .then((result) => {
+        setIsSubmitting(false);
         setOutput(
           `Submitted! Score: ${result.score} | ` +
           `Passed: ${result.test_cases_passed}/${result.total_test_cases} ` +
@@ -429,6 +666,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
         console.log('Submission successful:', result);
       })
       .catch((error) => {
+        setIsSubmitting(false);
         console.error('Error submitting answer (background):', error);
         // Optionally revert the optimistic update on error
         // For now, we'll keep it submitted but log the error

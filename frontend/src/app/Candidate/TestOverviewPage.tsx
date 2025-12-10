@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useVideo } from '../../context/VideoContext';
+import { useCheatingDetectionContext } from '../../context/CheatingDetectionContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
-import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
+import { useFullscreenWarning, getFullscreenExitCount } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
-import { getFaceDetectionLogs } from '../../utils/faceDetection';
 import { completeTest, getTestStatus } from '../../api/candidate.api';
 import { fetchQuestions } from '../../api/questions.api';
+import { localStorage as storage } from '../../utils/localStorage';
 
 // Helper functions for localStorage
 const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
@@ -30,7 +31,18 @@ const TestOverviewPage = () => {
   const { user, logout } = useAuth();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
-  const [timeRemaining, setTimeRemaining] = useState(10800); // 180 minutes (3 hours) in seconds
+  const cheatingDetectionContext = useCheatingDetectionContext();
+  
+  // Initialize timer from localStorage or default
+  const getInitialTime = (): number => {
+    const stored = storage.getRemainingTime();
+    if (stored !== null && stored > 0) {
+      return stored;
+    }
+    return 10800; // 180 minutes (3 hours) in seconds
+  };
+
+  const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
   const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
@@ -40,22 +52,42 @@ const TestOverviewPage = () => {
       if (!user?.candidateId) return;
 
       try {
-        const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+        const token = window.localStorage.getItem('auth_token') || window.localStorage.getItem('google_id_token');
         if (!token) return;
 
         const status = await getTestStatus(user.candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
           setTimeRemaining(status.remaining_seconds);
+          // Update localStorage with backend time
+          storage.setTimerEndTime(status.remaining_seconds);
+          setIsTimerInitialized(true);
+        } else {
+          // If backend doesn't have active timer, check localStorage
+          const localTime = storage.getRemainingTime();
+          if (localTime !== null && localTime > 0) {
+            setTimeRemaining(localTime);
+          }
           setIsTimerInitialized(true);
         }
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
-        // Continue with local timer if backend sync fails
+        // Fallback to localStorage if backend sync fails
+        const localTime = storage.getRemainingTime();
+        if (localTime !== null && localTime > 0) {
+          setTimeRemaining(localTime);
+        }
         setIsTimerInitialized(true);
       }
     };
 
-    // Sync immediately on mount
+    // First, try to use localStorage immediately for faster UI
+    const localTime = storage.getRemainingTime();
+    if (localTime !== null && localTime > 0) {
+      setTimeRemaining(localTime);
+      setIsTimerInitialized(true);
+    }
+
+    // Then sync with backend
     syncTimer();
 
     // Sync every 30 seconds to account for any drift
@@ -70,8 +102,14 @@ const TestOverviewPage = () => {
 
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 0) return 0;
-        return prev - 1;
+        const newTime = prev <= 0 ? 0 : prev - 1;
+        // Update localStorage with new remaining time
+        if (newTime > 0) {
+          storage.setTimerEndTime(newTime);
+        } else {
+          storage.clearTimer();
+        }
+        return newTime;
       });
     }, 1000);
 
@@ -132,54 +170,19 @@ const TestOverviewPage = () => {
     }
   };
 
-  const handleSubmitTest = async () => {
-    // Get and print face detection logs
-    const logs = getFaceDetectionLogs();
-    console.log('=== Face Detection Logs ===');
-    console.log('Total detection events:', logs.length);
+  const handleSubmitTest = () => {
+    // Get cheating event counts from context
+    const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
     
-    if (logs.length > 0) {
-      // Calculate summary statistics
-      const faceCountSummary: Record<number, number> = {};
-      let maxFaces = 0;
-      let totalFaces = 0;
-      
-      logs.forEach((log) => {
-        const count = log.faceCount;
-        faceCountSummary[count] = (faceCountSummary[count] || 0) + 1;
-        totalFaces += count;
-        if (count > maxFaces) {
-          maxFaces = count;
-        }
-      });
-      
-      const averageFaces = totalFaces / logs.length;
-      
-      // Print summary
-      console.log('\n--- Face Detection Summary ---');
-      console.log(`Total events: ${logs.length}`);
-      console.log(`Maximum faces detected: ${maxFaces}`);
-      console.log(`Average faces per detection: ${averageFaces.toFixed(2)}`);
-      console.log('\nFace count breakdown:');
-      Object.entries(faceCountSummary)
-        .sort(([a], [b]) => Number(a) - Number(b))
-        .forEach(([faceCount, occurrences]) => {
-          console.log(`  ${faceCount} face(s): ${occurrences} time(s)`);
-        });
-      
-      // Print detailed logs
-      console.log('\n--- Detailed Logs ---');
-      logs.forEach((log, index) => {
-        console.log(`Log ${index + 1}:`, {
-          timestamp: new Date(log.timestamp).toLocaleString(),
-          faceCount: log.faceCount,
-          message: log.message,
-        });
-      });
-    } else {
-      console.log('No multiple face detections logged.');
-    }
-    console.log('==========================');
+    // Get and print fullscreen exit count
+    const fullscreenExitCount = getFullscreenExitCount();
+    
+    // Print cheating logs
+    console.log('=== Cheating Detection Logs ===');
+    console.log(`Multiple faces detection: ${cheatingCounts.multipleFacesDetected}`);
+    console.log(`Tab change: ${cheatingCounts.tabChange}`);
+    console.log(`Exit from full screen: ${fullscreenExitCount}`);
+    console.log('================================');
 
     // Get candidate ID
     if (!user?.candidateId) {
@@ -188,70 +191,76 @@ const TestOverviewPage = () => {
       return;
     }
 
-    try {
-      // Get MCQ questions and answers if available
-      let mcqAnswerItems: Array<{ question_uuid: string; candidate_answer: string }> = [];
-      
+    // Capture candidate ID for use in background task
+    const candidateId = user.candidateId;
+
+    // Navigate immediately to test completed page
+    navigate('/test/completed', { replace: true });
+
+    // Run API call in the background (fire-and-forget)
+    (async () => {
       try {
-        // Fetch MCQ questions
-        const mcqQuestions = await fetchQuestions(user.candidateId);
+        // Get MCQ questions and answers if available
+        let mcqAnswerItems: Array<{ question_uuid: string; candidate_answer: string }> = [];
         
-        // Get saved answers from localStorage
-        const STORAGE_KEY = 'mcq_answers';
-        const storedAnswersStr = localStorage.getItem(STORAGE_KEY);
-        const answers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
+        try {
+          // Fetch MCQ questions
+          const mcqQuestions = await fetchQuestions(candidateId);
+          
+          // Get saved answers from localStorage
+          const STORAGE_KEY = 'mcq_answers';
+          const storedAnswersStr = localStorage.getItem(STORAGE_KEY);
+          const answers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
+          
+          // Convert to API format
+          mcqAnswerItems = mcqQuestions
+            .filter((q) => {
+              const answer = answers[q.id];
+              return answer !== undefined && answer !== null && q.question_uuid;
+            })
+            .map((q) => {
+              const answer = answers[q.id];
+              return {
+                question_uuid: q.question_uuid!,
+                candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based: "1", "2", "3", or "4"
+              };
+            });
+          
+          console.log('MCQ Answers collected:', mcqAnswerItems.length, 'answers');
+        } catch (error) {
+          console.warn('Could not fetch MCQ answers:', error);
+          // Continue without MCQ answers - backend will fetch from Redis
+        }
+
+        // Get sections completed from localStorage
+        const submittedSections = getSubmittedSections();
+
+        // Prepare request body
+        const requestBody = {
+          completion_method: 'manual' as const,
+          mcq_answers: mcqAnswerItems.length > 0 ? {
+            answers: mcqAnswerItems
+          } : undefined,
+          sections_completed: {
+            mcq: submittedSections.mcq,
+            coding: submittedSections.coding,
+            system_design: submittedSections.systemDesign,
+          },
+        };
+
+        // Call the complete test API in the background
+        const response = await completeTest(candidateId, requestBody);
         
-        // Convert to API format
-        mcqAnswerItems = mcqQuestions
-          .filter((q) => {
-            const answer = answers[q.id];
-            return answer !== undefined && answer !== null && q.question_uuid;
-          })
-          .map((q) => {
-            const answer = answers[q.id];
-            return {
-              question_uuid: q.question_uuid!,
-              candidate_answer: String(answer), // Convert to string: "1", "2", "3", or "4"
-            };
-          });
-        
-        console.log('MCQ Answers collected:', mcqAnswerItems.length, 'answers');
+        if (response.success) {
+          console.log('Test completed successfully:', response);
+        } else {
+          console.error('Test completion failed:', response.message || 'Unknown error');
+        }
       } catch (error) {
-        console.warn('Could not fetch MCQ answers:', error);
-        // Continue without MCQ answers - backend will fetch from Redis
+        console.error('Error completing test (background):', error);
+        // Error is logged but doesn't affect user experience since navigation already happened
       }
-
-      // Get sections completed from localStorage
-      const submittedSections = getSubmittedSections();
-
-      // Prepare request body
-      const requestBody = {
-        completion_method: 'manual' as const,
-        mcq_answers: mcqAnswerItems.length > 0 ? {
-          answers: mcqAnswerItems
-        } : undefined,
-        sections_completed: {
-          mcq: submittedSections.mcq,
-          coding: submittedSections.coding,
-          system_design: submittedSections.systemDesign,
-        },
-      };
-
-      // Call the complete test API
-      const response = await completeTest(user.candidateId, requestBody);
-      
-      if (response.success) {
-        console.log('Test completed successfully:', response);
-        // Navigate to test completed page with replace to prevent back navigation
-        navigate('/test/completed', { replace: true });
-      } else {
-        throw new Error(response.message || 'Failed to complete test');
-      }
-    } catch (error) {
-      console.error('Error completing test:', error);
-      alert(`Failed to complete test: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      // Optionally, still navigate to completed page or show error modal
-    }
+    })();
   };
 
   return (

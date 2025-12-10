@@ -108,7 +108,16 @@ function AppRoutes() {
       <Route path="/test/instructions" element={<ProtectedRoute><TestInstructionsPage /></ProtectedRoute>} />
       <Route path="/test/ready" element={<ProtectedRoute><TestReadyPage /></ProtectedRoute>} />
       <Route path="/test/permissions" element={<ProtectedRoute><TestPermissionsPage /></ProtectedRoute>} />
-      <Route path="/test-overview" element={<ProtectedRoute><TestOverviewPage /></ProtectedRoute>} />
+      <Route
+        path="/test-overview"
+        element={
+          <ProtectedRoute>
+            <CheatingDetectionProvider enabled={true}>
+              <TestOverviewPage />
+            </CheatingDetectionProvider>
+          </ProtectedRoute>
+        }
+      />
       <Route path="/test/completed" element={<ProtectedRoute><TestCompletedPage /></ProtectedRoute>} />
       <Route path="/candidate/analysis" element={<AnalysisPage />} />
       

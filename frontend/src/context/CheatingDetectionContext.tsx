@@ -15,6 +15,10 @@ interface CheatingDetectionContextType {
   events: CheatingEvent[];
   clearEvents: () => void;
   getEvents: () => CheatingEvent[];
+  getCheatingEventCounts: () => {
+    multipleFacesDetected: number;
+    tabChange: number;
+  };
 }
 
 const CheatingDetectionContext = createContext<CheatingDetectionContextType | undefined>(
@@ -34,7 +38,10 @@ export const CheatingDetectionProvider = ({
   const cheatingDetection = useCheatingDetection(videoStream, enabled);
 
   return (
-    <CheatingDetectionContext.Provider value={cheatingDetection}>
+    <CheatingDetectionContext.Provider value={{
+      ...cheatingDetection,
+      getCheatingEventCounts: cheatingDetection.getCheatingEventCounts,
+    }}>
       {children}
     </CheatingDetectionContext.Provider>
   );

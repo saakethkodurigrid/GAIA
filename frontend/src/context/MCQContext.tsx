@@ -6,6 +6,7 @@ import type { MCQContextType, Question } from '../types';
 import { useAuth } from './AuthContext';
 import { sendHeartbeat, getTestStatus } from '../api/candidate.api';
 import { submitAssessment } from '../api/questions.api';
+import { localStorage as storage } from '../utils/localStorage';
 
 const MCQContext = createContext<MCQContextType | undefined>(undefined);
 
@@ -50,11 +51,20 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [savedAnswers, setSavedAnswers] = useState<Record<number, number>>({});
   const [questionStatuses, setQuestionStatuses] = useState<Record<number, string>>({});
-  const [timeRemaining, setTimeRemaining] = useState(TIMER_DURATION);
+  // Initialize timer from localStorage or default
+  const getInitialTime = (): number => {
+    const stored = storage.getRemainingTime();
+    if (stored !== null && stored > 0) {
+      return stored;
+    }
+    return TIMER_DURATION;
+  };
+
+  const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
   const [isLoading, setIsLoading] = useState(true);
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
-  // Sync timer from backend on mount
+  // Sync timer from backend on mount and update localStorage
   useEffect(() => {
     const syncTimer = async () => {
       const candidateId = user?.candidateId;
@@ -64,17 +74,36 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
         const status = await getTestStatus(candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
           setTimeRemaining(status.remaining_seconds);
+          // Update localStorage with backend time
+          storage.setTimerEndTime(status.remaining_seconds);
           setIsTimerInitialized(true);
         } else {
+          // If backend doesn't have active timer, check localStorage
+          const localTime = storage.getRemainingTime();
+          if (localTime !== null && localTime > 0) {
+            setTimeRemaining(localTime);
+          }
           setIsTimerInitialized(true);
         }
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
-        // Continue with local timer if backend sync fails
+        // Fallback to localStorage if backend sync fails
+        const localTime = storage.getRemainingTime();
+        if (localTime !== null && localTime > 0) {
+          setTimeRemaining(localTime);
+        }
         setIsTimerInitialized(true);
       }
     };
 
+    // First, try to use localStorage immediately for faster UI
+    const localTime = storage.getRemainingTime();
+    if (localTime !== null && localTime > 0) {
+      setTimeRemaining(localTime);
+      setIsTimerInitialized(true);
+    }
+
+    // Then sync with backend
     syncTimer();
 
     // Sync every 30 seconds to account for any drift
@@ -135,14 +164,23 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
 
   // Timer countdown (only start after initial sync)
   useEffect(() => {
-    if (!isTimerInitialized || timeRemaining <= 0) return;
+    if (!isTimerInitialized || timeRemaining <= 0) {
+      if (timeRemaining <= 0) {
+        storage.clearTimer();
+      }
+      return;
+    }
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          return 0;
+        const newTime = prev <= 1 ? 0 : prev - 1;
+        // Update localStorage with new remaining time
+        if (newTime > 0) {
+          storage.setTimerEndTime(newTime);
+        } else {
+          storage.clearTimer();
         }
-        return prev - 1;
+        return newTime;
       });
     }, 1000);
 
@@ -198,7 +236,7 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
               })
               .map((q) => ({
                 question_uuid: q.question_uuid!,
-                candidate_answer: String(answers[q.id]),
+                candidate_answer: String(answers[q.id] + 1), // Add 1 to convert from 0-based to 1-based
               }));
 
             if (answerItems.length > 0) {

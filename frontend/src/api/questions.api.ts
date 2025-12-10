@@ -127,10 +127,10 @@ export const submitAssessment = async (
     })
     .map((q) => {
       const answer = answers[q.id];
-      // Convert option number to string (frontend uses 1-based indexing: 1, 2, 3, 4)
+      // Convert 0-based index to 1-based option number (frontend stores 0,1,2,3 but backend expects 1,2,3,4)
       return {
         question_uuid: q.question_uuid!,
-        candidate_answer: String(answer), // Convert to string as backend expects
+        candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based
       };
     });
 

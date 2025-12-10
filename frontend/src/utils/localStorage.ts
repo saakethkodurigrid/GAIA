@@ -35,6 +35,36 @@ export const localStorage = {
   markTourCompleted: (tourType: string): void => {
     const key = `tour_completed_${tourType}`;
     localStorage.set(key, 'true');
+  },
+
+  // Timer localStorage functions
+  getTimerEndTime: function(): number | null {
+    const stored = this.get('timer_end_time');
+    if (stored) {
+      const endTime = parseInt(stored, 10);
+      if (!isNaN(endTime) && endTime > Date.now()) {
+        return endTime;
+      }
+    }
+    return null;
+  },
+
+  setTimerEndTime: function(remainingSeconds: number): void {
+    const endTime = Date.now() + (remainingSeconds * 1000);
+    this.set('timer_end_time', endTime.toString());
+  },
+
+  getRemainingTime: function(): number | null {
+    const endTime = this.getTimerEndTime();
+    if (endTime) {
+      const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+      return remaining;
+    }
+    return null;
+  },
+
+  clearTimer: function(): void {
+    this.remove('timer_end_time');
   }
 };
 

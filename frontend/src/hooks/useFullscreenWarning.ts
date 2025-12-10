@@ -6,6 +6,7 @@ interface UseFullscreenWarningOptions {
 }
 
 const WARNING_STORAGE_KEY = 'fullscreenWarning';
+const EXIT_COUNT_STORAGE_KEY = 'fullscreenExitCount';
 const WARNING_DURATION = 5000; // 5 seconds in milliseconds
 
 interface WarningState {
@@ -41,6 +42,37 @@ const getWarningState = (): WarningState | null => {
   } catch (error) {
     console.error('Error reading warning state:', error);
     return null;
+  }
+};
+
+const incrementExitCount = (): number => {
+  try {
+    const stored = localStorage.getItem(EXIT_COUNT_STORAGE_KEY);
+    const currentCount = stored ? parseInt(stored, 10) : 0;
+    const newCount = currentCount + 1;
+    localStorage.setItem(EXIT_COUNT_STORAGE_KEY, newCount.toString());
+    return newCount;
+  } catch (error) {
+    console.error('Error incrementing exit count:', error);
+    return 0;
+  }
+};
+
+export const getFullscreenExitCount = (): number => {
+  try {
+    const stored = localStorage.getItem(EXIT_COUNT_STORAGE_KEY);
+    return stored ? parseInt(stored, 10) : 0;
+  } catch (error) {
+    console.error('Error reading exit count:', error);
+    return 0;
+  }
+};
+
+export const clearFullscreenExitCount = (): void => {
+  try {
+    localStorage.removeItem(EXIT_COUNT_STORAGE_KEY);
+  } catch (error) {
+    console.error('Error clearing exit count:', error);
   }
 };
 
@@ -131,6 +163,10 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
 
       // Only trigger if we were in fullscreen and now we're not
       if (wasFullscreenRef.current && !isFullscreen) {
+        // Increment exit count
+        const exitCount = incrementExitCount();
+        console.log(`[Fullscreen Warning] User exited fullscreen. Total exits: ${exitCount}`);
+        
         // Show violation modal with 5 second countdown
         const startTime = Date.now();
         setShowViolation(true);

@@ -345,11 +345,27 @@ export const useCheatingDetection = (videoStream: MediaStream | null, enabled: b
     return events;
   }, [events]);
 
+  // Get cheating event counts function
+  const getCheatingEventCounts = useCallback(() => {
+    const multipleFacesCount = events.filter(
+      (event) => event.type === 'multiple_faces'
+    ).length;
+    const tabChangeCount = events.filter(
+      (event) => event.type === 'tab_switch'
+    ).length;
+    
+    return {
+      multipleFacesDetected: multipleFacesCount,
+      tabChange: tabChangeCount,
+    };
+  }, [events]);
+
   return {
     status,
     events,
     clearEvents,
     getEvents,
+    getCheatingEventCounts,
   };
 };
 
