@@ -98,6 +98,10 @@ from sqlalchemy.orm import Session
 
 scheduler = AsyncIOScheduler()
 
+# Register scheduler with scheduler manager to avoid circular imports
+from core.scheduler_manager import set_scheduler
+set_scheduler(scheduler)
+
 async def sync_redis_to_postgresql():
     """Background job to sync Redis data to PostgreSQL periodically."""
     logger = logging.getLogger(__name__)
@@ -115,7 +119,7 @@ async def sync_redis_to_postgresql():
             
             # Skip if no active tests
             if active_count == 0:
-                logger.info("No active tests found, skipping Redis sync")
+                logger.debug("No active tests found, skipping Redis sync")
                 return
             
             logger.info(f"Found {active_count} active test(s), proceeding with Redis sync")
@@ -173,7 +177,7 @@ async def check_and_auto_complete_stale_tests():
             
             # Skip if no active tests
             if active_count == 0:
-                logger.info("No active tests found, skipping stale test cleanup")
+                logger.debug("No active tests found, skipping stale test cleanup")
                 return
             
             logger.info(f"Found {active_count} active test(s), proceeding with stale test cleanup")
@@ -211,7 +215,12 @@ async def startup_event():
         )
         
         scheduler.start()
-        logging.getLogger(__name__).info("Background scheduler started: Redis sync and stale test cleanup jobs scheduled")
+        
+        # Initially pause jobs since no tests are active at startup
+        scheduler.pause_job('redis_sync_job')
+        scheduler.pause_job('stale_test_cleanup_job')
+        
+        logging.getLogger(__name__).info("Background scheduler started: Jobs will activate when tests begin")
         
     except Exception as e:
         logging.getLogger(__name__).error(f"Failed to start background scheduler: {str(e)}")

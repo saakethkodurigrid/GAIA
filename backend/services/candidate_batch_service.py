@@ -17,7 +17,6 @@ from models.job import Job
 from utils.resume.file_extractor import file_extractor
 from utils.resume.resume_scorer import resume_scorer
 from utils.mcq.pii_scrubber import pii_scrubber
-from presidio_analyzer import AnalyzerEngine
 from services.email_service import email_service
 from services.candidate_service import CandidateService
 from core.config import settings
@@ -31,7 +30,6 @@ class CandidateBatchService:
     def __init__(self, db: Session):
         """Initialize service with database session."""
         self.db = db
-        self.pii_analyzer = AnalyzerEngine()
     
     def extract_pii_for_candidate_fields(self, text: str) -> Dict[str, Optional[str]]:
         """
@@ -52,8 +50,8 @@ class CandidateBatchService:
         }
         
         try:
-            # Detect PII entities
-            results = self.pii_analyzer.analyze(text=text, language='en')
+            # Detect PII entities - use global pii_scrubber analyzer to avoid duplicate initialization
+            results = pii_scrubber.analyzer.analyze(text=text, language='en')
             
             # Extract first occurrence of each PII type
             for result in results:

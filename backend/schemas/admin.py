@@ -186,3 +186,17 @@ class CompletedInterviewsListResponse(BaseModel):
     count: int
     candidates: List[CompletedInterviewCandidateResponse] = []
 
+
+class InterviewAnalysisResponse(BaseModel):
+    """Response schema for interview analysis data."""
+    success: bool
+    message: str
+    candidate_id: str
+    mcq_analysis: Optional[Dict[str, Any]] = None
+    coding_analysis: Optional[Dict[str, Any]] = None
+    system_design_analysis: Optional[Dict[str, Any]] = None
+    cheat_metrics: Optional[Dict[str, Any]] = None
+    overall_percentage: Optional[int] = None
+    result: Optional[str] = None  # 'PASS' or 'FAIL'
+    overall_summary: Optional[str] = None
+

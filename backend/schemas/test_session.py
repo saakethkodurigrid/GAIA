@@ -33,6 +33,13 @@ class HeartbeatResponse(BaseModel):
     remaining_seconds: int = Field(default=0, description="Remaining time in seconds")
 
 
+class IntegrityData(BaseModel):
+    """Schema for test integrity monitoring data."""
+    multiple_face: str = Field(..., description="Multiple face detection: 'yes' or 'no'", pattern="^(yes|no)$")
+    full_screen_exits: int = Field(..., ge=0, description="Number of full screen exits")
+    tab_change: int = Field(..., ge=0, description="Number of tab changes")
+
+
 class CompleteTestRequest(BaseModel):
     """Request schema for completing a test session.
     
@@ -57,6 +64,10 @@ class CompleteTestRequest(BaseModel):
     sections_completed: Optional[Dict[str, bool]] = Field(
         None,
         description="Sections completion status: {'mcq': true, 'coding': false, 'system_design': false}"
+    )
+    integrity: Optional[IntegrityData] = Field(
+        None,
+        description="Test integrity monitoring data: multiple_face, full_screen_exits, tab_change"
     )
 
 

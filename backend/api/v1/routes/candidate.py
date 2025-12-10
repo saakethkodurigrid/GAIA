@@ -16,7 +16,7 @@ from models.coding_question_bank import CodingQuestionBank
 from models.interview_coding import InterviewCoding
 from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
-from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
+from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse, InterviewSummaryResponse
 from schemas.admin import AssignedQuestionResponse
 from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse
 from schemas.test_session import (
@@ -33,6 +33,7 @@ from services.test_data_loader_service import TestDataLoaderService
 from services.redis_sync_service import RedisSyncService
 from datetime import datetime, timedelta
 from utils.section_timings import start_section_timing, complete_section_timing
+from core.scheduler_manager import start_scheduler_jobs, stop_scheduler_jobs_if_no_active_tests
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def get_mcq_questions(
     First tries to get questions from Redis (if test data was loaded).
     Falls back to database if Redis is unavailable or data not found.
     
+    Only accessible when the test is in progress (status = 'in progress').
     Only the authenticated candidate can access their own questions.
     
     Args:
@@ -65,7 +67,7 @@ async def get_mcq_questions(
         HTTPException: 
             - 400: If validation fails or error occurs while retrieving questions
             - 401: If authentication fails
-            - 403: If user is not a candidate or tries to access another candidate's questions
+            - 403: If user is not a candidate, tries to access another candidate's questions, or test is not in progress
     """
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
@@ -73,6 +75,31 @@ async def get_mcq_questions(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. You can only view your own questions."
         )
+    
+    # Check if test is in progress (status must be 'in progress')
+    candidate_status = current_candidate.status.lower() if current_candidate.status else None
+    
+    if candidate_status != 'in progress':
+        if candidate_status in ['shortlisted', 'rejected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned questions are only available during the test."
+            )
+        elif candidate_status == 'scheduled':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned questions are only available during the test."
+            )
+        elif candidate_status in ['completed', 'selected', 'not selected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has been completed. The assigned questions are no longer available."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test is not in progress. The assigned questions are only available during an active test session."
+            )
     
     # Try to get questions from Redis first
     try:
@@ -125,6 +152,7 @@ async def get_coding_questions(
     First tries to get questions from Redis (if test data was loaded).
     Falls back to database if Redis is unavailable or data not found.
     
+    Only accessible when the test is in progress (status = 'in progress').
     Only the authenticated candidate can access their own questions.
     
     Args:
@@ -139,7 +167,7 @@ async def get_coding_questions(
         HTTPException: 
             - 400: If validation fails or error occurs while retrieving questions
             - 401: If authentication fails
-            - 403: If user is not a candidate or tries to access another candidate's questions
+            - 403: If user is not a candidate, tries to access another candidate's questions, or test is not in progress
     """
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
@@ -147,6 +175,31 @@ async def get_coding_questions(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. You can only view your own questions."
         )
+    
+    # Check if test is in progress (status must be 'in progress')
+    candidate_status = current_candidate.status.lower() if current_candidate.status else None
+    
+    if candidate_status != 'in progress':
+        if candidate_status in ['shortlisted', 'rejected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned questions are only available during the test."
+            )
+        elif candidate_status == 'scheduled':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has not started yet. The assigned questions are only available during the test."
+            )
+        elif candidate_status in ['completed', 'selected', 'not selected']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test has been completed. The assigned questions are no longer available."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Test is not in progress. The assigned questions are only available during an active test session."
+            )
     
     # Try to get questions from Redis first
     try:
@@ -401,6 +454,9 @@ async def get_assigned_question(
     """
     Get the assigned system design question for a candidate.
     
+    First tries to get question from Redis (if test data was loaded).
+    Falls back to database if Redis is unavailable or data not found.
+    
     Only accessible when the test is in progress (status = 'in progress').
     This endpoint can only be accessed during an active test session.
     
@@ -450,6 +506,22 @@ async def get_assigned_question(
                 detail="Test is not in progress. The assigned question is only available during an active test session."
             )
     
+    # Try to get question from Redis first
+    try:
+        loader_service = TestDataLoaderService(db)
+        redis_question = loader_service.get_system_design_question_from_redis(candidate_id)
+        
+        if redis_question:
+            # Convert Redis data to response format
+            return AssignedQuestionResponse(
+                candidate_id=candidate_id,
+                question_uuid=redis_question.get("question_uuid"),
+                question=redis_question.get("question")
+            )
+    except Exception as e:
+        logger.warning(f"Failed to get system design question from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
+    
+    # Fallback to database
     assignment_service = QuestionAssignmentService(db)
     question_details = assignment_service.get_assigned_question_details(candidate_id)
     
@@ -528,6 +600,9 @@ async def start_test(
         # Start new test session - set all fields BEFORE creating/committing
         now = datetime.utcnow()
         
+        # Update scheduled_date to current time when test starts (regardless of what was scheduled)
+        candidate.scheduled_date = now
+        
         if not test_session:
             # Create new test session with all required fields set
             test_session = TestSession(
@@ -558,6 +633,9 @@ async def start_test(
         candidate.status = 'in progress'
         
         db.commit()  # ✅ Now commit with all fields set
+        
+        # Start scheduler jobs when test begins
+        start_scheduler_jobs()
         
         # Load all test data (MCQ, Coding, System Design) into Redis
         try:
@@ -859,6 +937,15 @@ async def complete_test(
         # TODO: Save coding answers if provided
         # TODO: Save system design answers if provided
         
+        # Update cheat metrics in interview_analysis_table from integrity data
+        if request.integrity:
+            try:
+                interview_service = InterviewService(db)
+                interview_service._update_cheat_metrics(candidate_id, request.integrity)
+            except Exception as e:
+                # Don't fail test completion if cheat metrics update fails
+                logger.warning(f"Failed to update cheat metrics for candidate {candidate_id}: {str(e)}")
+        
         # Update candidate test completion
         now = datetime.utcnow()
         candidate.status = 'completed'
@@ -887,12 +974,50 @@ async def complete_test(
         
         db.commit()
         
+        # Check if we should stop scheduler jobs (only if no other active tests)
+        stop_scheduler_jobs_if_no_active_tests()
+        
         # Clear Redis keys after successful completion
         try:
             loader_service = TestDataLoaderService(db)
             loader_service.clear_test_data_from_redis(candidate_id)
         except Exception as e:
             logger.warning(f"Failed to clear Redis keys for candidate {candidate_id}: {str(e)}")
+        
+        # Generate interview summary asynchronously (non-blocking)
+        # Run in background thread to avoid blocking test completion
+        try:
+            import threading
+            import asyncio
+            
+            def generate_summary_async():
+                """Helper function to run async summary generation in background thread."""
+                try:
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Create new database session for background task
+                    from core.database import SessionLocal
+                    background_db = SessionLocal()
+                    try:
+                        background_interview_service = InterviewService(background_db)
+                        loop.run_until_complete(
+                            background_interview_service.generate_and_save_interview_summary(candidate_id)
+                        )
+                    finally:
+                        background_db.close()
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"Error in background summary generation thread: {str(e)}")
+            
+            # Start summary generation in background thread
+            summary_thread = threading.Thread(target=generate_summary_async, daemon=True)
+            summary_thread.start()
+            logger.info(f"Started background summary generation for candidate {candidate_id}")
+        except Exception as e:
+            logger.warning(f"Failed to start summary generation for candidate {candidate_id}: {str(e)}")
+            # Continue - summary generation is non-critical
         
         return CompleteTestResponse(
             success=True,
@@ -1558,6 +1683,14 @@ async def submit_coding_answer(
         except Exception as e:
             logger.warning(f"Failed to update last_activity: {str(e)}")
         
+        # Step 9.5: Calculate and save coding analysis to interview_analysis_table
+        try:
+            interview_service = InterviewService(db)
+            interview_service._update_coding_analysis(candidate_id)
+        except Exception as e:
+            # Don't fail the submission if analysis update fails
+            logger.warning(f"Failed to update coding analysis for candidate {candidate_id}: {str(e)}")
+        
         logger.info(
             f"Coding answer submitted for candidate {candidate_id}, question {request.question_id}: "
             f"Score={total_score}, TestCasesPassed={test_cases_passed}/{total_test_cases}"
@@ -1581,6 +1714,120 @@ async def submit_coding_answer(
     except Exception as e:
         db.rollback()
         logger.error(f"Error submitting coding answer for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/{candidate_id}/interview-summary", response_model=InterviewSummaryResponse)
+async def get_interview_summary(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get interview summary with candidate details.
+    
+    Returns comprehensive interview analysis including:
+    - Candidate information (name, email, role, etc.)
+    - Overall summary (4-line LLM-generated summary)
+    - MCQ analysis
+    - Coding analysis
+    - System design analysis
+    - Integrity/cheat metrics
+    
+    Only the authenticated candidate can view their own summary.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        InterviewSummaryResponse with candidate details and all analysis data
+        
+    Raises:
+        HTTPException: 
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to access another candidate's summary
+            - 404: If candidate or analysis not found
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view your own interview summary."
+        )
+    
+    try:
+        # Get candidate details
+        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found"
+            )
+        
+        # Get interview analysis
+        from models.interview_analysis_table import InterviewAnalysisTable
+        interview_analysis = db.query(InterviewAnalysisTable).filter(
+            InterviewAnalysisTable.candidate_id == candidate_id
+        ).first()
+        
+        if not interview_analysis:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview analysis not found. The test may not be completed yet."
+            )
+        
+        # Get job information for candidate role
+        from models.recruiter_admin_candidate import RecruiterAdminCandidate
+        from models.job import Job
+        assignment = db.query(RecruiterAdminCandidate).filter(
+            RecruiterAdminCandidate.candidate_id == candidate_id
+        ).first()
+        
+        job_role = None
+        if assignment:
+            job = db.query(Job).filter(Job.job_id == assignment.job_id).first()
+            if job:
+                job_role = job.job_role
+        
+        # Build candidate details
+        candidate_details = {
+            "candidate_id": candidate.candidate_id,
+            "candidate_reference_number": candidate.candidate_reference_number,
+            "name": candidate.name,
+            "email": candidate.email_id,
+            "role": job_role or "N/A",
+            "status": candidate.status,
+            "scheduled_date": candidate.scheduled_date.isoformat() if candidate.scheduled_date else None,
+            "test_completed_at": candidate.test_session.test_completed_at.isoformat() if candidate.test_session and candidate.test_session.test_completed_at else None
+        }
+        
+        # Convert JSONB fields to dict (they're already dicts, but ensure they're serializable)
+        mcq_analysis = interview_analysis.mcq_analysis if interview_analysis.mcq_analysis else None
+        coding_analysis = interview_analysis.coding_analysis if interview_analysis.coding_analysis else None
+        system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
+        cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
+        
+        return InterviewSummaryResponse(
+            success=True,
+            message="Interview summary retrieved successfully",
+            candidate=candidate_details,
+            summary=interview_analysis.overall_summary,
+            mcq_analysis=mcq_analysis,
+            coding_analysis=coding_analysis,
+            system_design_analysis=system_design_analysis,
+            cheat_metrics=cheat_metrics
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving interview summary for candidate {candidate_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

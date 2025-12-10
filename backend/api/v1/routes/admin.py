@@ -1,6 +1,7 @@
 """
 Admin API routes for managing recruiters and admins.
 """
+import logging
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
@@ -27,12 +28,15 @@ from schemas.admin import (
     ScheduledInterviewsListResponse,
     ScheduledInterviewCandidateResponse,
     CompletedInterviewsListResponse,
-    CompletedInterviewCandidateResponse
+    CompletedInterviewCandidateResponse,
+    InterviewAnalysisResponse
 )
 from services.job_service import JobService
 from services.interview_service import InterviewService
 from services.candidate_batch_service import CandidateBatchService
 from core.dependencies import get_current_recruiter_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -618,4 +622,91 @@ async def get_completed_interviews(
         count=len(candidate_list),
         candidates=candidate_list
     )
+
+
+@router.get("/candidates/{candidate_id}/interview-analysis", response_model=InterviewAnalysisResponse)
+async def get_candidate_interview_analysis(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get interview analysis data for a specific candidate.
+    
+    Returns all analysis fields from interview_analysis_table:
+    - MCQ analysis (score, time_taken, attempted, correct by difficulty)
+    - Coding analysis (total_score, time_taken, total_submitted, total_correct, partially_correct)
+    - System design analysis (score, summary, key_strengths, areas_of_improvement)
+    - Cheat metrics (tab_change, full_screen_exits, multiple_face)
+    - Overall percentage
+    - Result (PASS/FAIL)
+    - Overall summary (4-line LLM-generated summary)
+    
+    Only accessible by recruiters and admins.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        current_user: Authenticated recruiter/admin (from dependency)
+        db: Database session
+        
+    Returns:
+        InterviewAnalysisResponse with all analysis data
+        
+    Raises:
+        HTTPException: 
+            - 401: If authentication fails
+            - 403: If user is not authorized
+            - 404: If candidate or analysis not found
+    """
+    try:
+        # Verify candidate exists
+        from models.candidate import Candidate
+        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found"
+            )
+        
+        # Get interview analysis
+        from models.interview_analysis_table import InterviewAnalysisTable
+        interview_analysis = db.query(InterviewAnalysisTable).filter(
+            InterviewAnalysisTable.candidate_id == candidate_id
+        ).first()
+        
+        if not interview_analysis:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview analysis not found for this candidate. The test may not be completed yet."
+            )
+        
+        # Extract all fields from interview_analysis_table
+        # JSONB fields are already dicts, ensure they're serializable
+        mcq_analysis = interview_analysis.mcq_analysis if interview_analysis.mcq_analysis else None
+        coding_analysis = interview_analysis.coding_analysis if interview_analysis.coding_analysis else None
+        system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
+        cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
+        
+        return InterviewAnalysisResponse(
+            success=True,
+            message="Interview analysis retrieved successfully",
+            candidate_id=candidate_id,
+            mcq_analysis=mcq_analysis,
+            coding_analysis=coding_analysis,
+            system_design_analysis=system_design_analysis,
+            cheat_metrics=cheat_metrics,
+            overall_percentage=interview_analysis.overall_percentage,
+            result=interview_analysis.result,
+            overall_summary=interview_analysis.overall_summary
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving interview analysis for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 

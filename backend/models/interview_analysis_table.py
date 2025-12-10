@@ -22,6 +22,7 @@ class InterviewAnalysisTable(Base):
     cheat_metrics = Column(JSONB, nullable=True)
     overall_percentage = Column(Integer, nullable=True)
     result = Column(String(10), nullable=True)
+    overall_summary = Column(String, nullable=True)
     
     # Relationships
     candidate = relationship('Candidate', backref='interview_analysis')

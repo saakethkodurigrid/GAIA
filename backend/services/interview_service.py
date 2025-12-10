@@ -12,6 +12,9 @@ from models.candidate import Candidate
 from models.recruiter_admin_candidate import RecruiterAdminCandidate
 from models.job import Job
 from models.interview_mcq import InterviewMCQ
+from models.interview_coding import InterviewCoding
+from models.coding_question_bank import CodingQuestionBank
+from models.interview_analysis_table import InterviewAnalysisTable
 from schemas.admin import ListInterviewsResponse, InterviewResponse
 from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse, GenerateMCQRequest
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
@@ -426,6 +429,13 @@ class InterviewService:
                         print(f"    Correct: {is_correct}")
             print("=========================================================")
             
+            # Calculate and save MCQ analysis to interview_analysis_table
+            try:
+                self._update_mcq_analysis(candidate_id)
+            except Exception as e:
+                # Don't fail the save operation if analysis update fails
+                logger.warning(f"Failed to update MCQ analysis for candidate {candidate_id}: {str(e)}")
+            
             # Build response message
             if failed_count == 0:
                 message = f"Successfully saved {saved_count} answer(s). Total Score: {total_score} points ({correct_answers} correct, {incorrect_answers} incorrect)"
@@ -461,9 +471,565 @@ class InterviewService:
                 incorrect_answers=incorrect_answers
             )
     
-    async def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+    def _update_mcq_analysis(self, candidate_id: str) -> None:
         """
-        Save test schedule for a candidate and assign system design question, coding questions, and generate MCQ questions.
+        Calculate and update MCQ analysis in interview_analysis_table.
+        
+        Calculates:
+        - score: Normalized score out of 100 (actual_score / max_possible_score * 100)
+        - time_taken: Duration in seconds from test_session.section_timings
+        - attempted: Count of attempted questions by difficulty
+        - correct: Count of correct answers by difficulty
+        
+        Args:
+            candidate_id: UUID of the candidate
+        """
+        try:
+            # Define difficulty scoring weights (same as in save_mcq_answers)
+            DIFFICULTY_SCORES = {
+                "hard": 3,
+                "medium": 2,
+                "easy": 1
+            }
+            
+            # Get all MCQ questions for this candidate
+            all_mcqs = self.db.query(InterviewMCQ).filter(
+                InterviewMCQ.candidate_id == candidate_id
+            ).all()
+            
+            if not all_mcqs:
+                logger.warning(f"No MCQ questions found for candidate {candidate_id}")
+                return
+            
+            # Initialize counters
+            attempted = {"easy": 0, "medium": 0, "hard": 0}
+            correct = {"easy": 0, "medium": 0, "hard": 0}
+            total_score = 0
+            max_possible_score = 0
+            
+            # Calculate scores and counts
+            for mcq in all_mcqs:
+                difficulty = (mcq.difficulty or "medium").lower()
+                difficulty_score = DIFFICULTY_SCORES.get(difficulty, 1)
+                
+                # Add to max possible score (all questions)
+                max_possible_score += difficulty_score
+                
+                # Check if question was attempted
+                if mcq.candidate_answer is not None:
+                    # Count as attempted
+                    attempted[difficulty] = attempted.get(difficulty, 0) + 1
+                    
+                    # Check if answer is correct
+                    if mcq.candidate_answer == mcq.correct_answer:
+                        total_score += difficulty_score
+                        correct[difficulty] = correct.get(difficulty, 0) + 1
+            
+            # Calculate normalized score (0-100)
+            if max_possible_score > 0:
+                normalized_score = round((total_score / max_possible_score) * 100, 2)
+            else:
+                normalized_score = 0.0
+            
+            # Get time taken from test_session
+            candidate = self.db.query(Candidate).filter(
+                Candidate.candidate_id == candidate_id
+            ).first()
+            
+            time_taken = 0
+            if candidate and candidate.test_session and candidate.test_session.section_timings:
+                section_timings = candidate.test_session.section_timings
+                if isinstance(section_timings, dict) and "mcq" in section_timings:
+                    mcq_timing = section_timings["mcq"]
+                    if isinstance(mcq_timing, dict) and "duration_seconds" in mcq_timing:
+                        time_taken = mcq_timing["duration_seconds"]
+                    # If duration_seconds not available, calculate from started_at
+                    elif isinstance(mcq_timing, dict) and "started_at" in mcq_timing:
+                        try:
+                            started_at_str = mcq_timing["started_at"]
+                            started_at = datetime.fromisoformat(started_at_str)
+                            time_taken = int((datetime.utcnow() - started_at).total_seconds())
+                        except Exception as e:
+                            logger.warning(f"Failed to calculate time_taken from started_at: {str(e)}")
+            
+            # Build MCQ analysis JSON
+            mcq_analysis = {
+                "score": float(normalized_score),
+                "time_taken": int(time_taken),
+                "attempted": {
+                    "easy": int(attempted.get("easy", 0)),
+                    "medium": int(attempted.get("medium", 0)),
+                    "hard": int(attempted.get("hard", 0))
+                },
+                "correct": {
+                    "easy": int(correct.get("easy", 0)),
+                    "medium": int(correct.get("medium", 0)),
+                    "hard": int(correct.get("hard", 0))
+                }
+            }
+            
+            # Get or create interview_analysis record
+            interview_analysis = self.db.query(InterviewAnalysisTable).filter(
+                InterviewAnalysisTable.candidate_id == candidate_id
+            ).first()
+            
+            if interview_analysis:
+                # Update existing record
+                interview_analysis.mcq_analysis = mcq_analysis
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Updated mcq_analysis for candidate {candidate_id}")
+            else:
+                # Create new record
+                interview_analysis = InterviewAnalysisTable(
+                    candidate_id=candidate_id,
+                    mcq_analysis=mcq_analysis
+                )
+                self.db.add(interview_analysis)
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record with mcq_analysis for candidate {candidate_id}")
+            
+            # Commit the analysis update
+            self.db.commit()
+            
+        except Exception as e:
+            logger.error(f"Error updating MCQ analysis for candidate {candidate_id}: {str(e)}", exc_info=True)
+            # Don't raise - let the calling method handle it
+            raise
+    
+    def _update_coding_analysis(self, candidate_id: str) -> None:
+        """
+        Calculate and update coding analysis in interview_analysis_table.
+        
+        Calculates:
+        - total_score: Normalized score out of 100 (with difficulty weightage)
+        - time_taken: Duration in seconds from test_session.section_timings
+        - total_submitted: Count of submitted coding questions
+        - total_correct: Count of questions where all test cases passed
+        - partially_correct: Count of questions where some but not all test cases passed
+        
+        Args:
+            candidate_id: UUID of the candidate
+        """
+        try:
+            # Define difficulty scoring weights (same as MCQ)
+            DIFFICULTY_SCORES = {
+                "hard": 3,
+                "medium": 2,
+                "easy": 1
+            }
+            
+            # Get all coding records for this candidate (both submitted and not attempted)
+            all_coding_records = self.db.query(InterviewCoding).filter(
+                InterviewCoding.candidate_id == candidate_id
+            ).all()
+            
+            # Filter to get only submitted questions (where score is not None)
+            coding_submissions = [record for record in all_coding_records if record.score is not None]
+            
+            if not all_coding_records:
+                logger.warning(f"No coding questions assigned for candidate {candidate_id}")
+                # Still create analysis with zeros
+                coding_analysis = {
+                    "total_score": 0.0,
+                    "time_taken": 0,
+                    "total_submitted": 0,
+                    "total_correct": 0,
+                    "partially_correct": 0
+                }
+            else:
+                # Initialize counters
+                total_submitted = len(coding_submissions)  # Only count questions with score (submitted)
+                total_correct = 0
+                partially_correct = 0
+                total_weighted_actual_score = 0
+                total_weighted_max_score = 0
+                
+                # Process all assigned questions to calculate max possible score
+                # (including not attempted ones for proper normalization)
+                for coding_record in all_coding_records:
+                    # Get question details from CodingQuestionBank
+                    question = self.db.query(CodingQuestionBank).filter(
+                        CodingQuestionBank.uuid == coding_record.question_uuid
+                    ).first()
+                    
+                    if not question:
+                        logger.warning(f"Question {coding_record.question_uuid} not found in CodingQuestionBank")
+                        continue
+                    
+                    # Get difficulty (from question or coding_record)
+                    difficulty = (question.difficulty or coding_record.difficulty or "medium").lower()
+                    difficulty_weight = DIFFICULTY_SCORES.get(difficulty, 1)
+                    
+                    # Calculate max possible score for this question
+                    # Count sample_test_cases and test_cases
+                    sample_test_cases = question.sample_test_cases
+                    test_cases = question.test_cases
+                    
+                    num_sample = len(sample_test_cases) if isinstance(sample_test_cases, list) else 0
+                    num_hidden = len(test_cases) if isinstance(test_cases, list) else 0
+                    
+                    max_base_score = (num_sample * 5) + (num_hidden * 10)
+                    max_weighted_score = max_base_score * difficulty_weight
+                    
+                    # Add max score to total (for all assigned questions)
+                    total_weighted_max_score += max_weighted_score
+                    
+                    # Only process actual scores for submitted questions
+                    if coding_record.score is not None:
+                        # Get actual score from submission
+                        actual_score = coding_record.score or 0
+                        actual_weighted_score = actual_score * difficulty_weight
+                        
+                        # Add to totals
+                        total_weighted_actual_score += actual_weighted_score
+                        
+                        # Get total test cases for this question
+                        total_test_cases = num_sample + num_hidden
+                        test_cases_passed = coding_record.test_cases_passed or 0
+                        
+                        # Check if correct or partially correct
+                        if test_cases_passed == total_test_cases and total_test_cases > 0:
+                            total_correct += 1
+                        elif 0 < test_cases_passed < total_test_cases:
+                            partially_correct += 1
+                
+                # Calculate normalized score (0-100)
+                if total_weighted_max_score > 0:
+                    normalized_score = round((total_weighted_actual_score / total_weighted_max_score) * 100, 2)
+                else:
+                    normalized_score = 0.0
+                
+                # Build coding analysis JSON
+                coding_analysis = {
+                    "total_score": float(normalized_score),
+                    "time_taken": 0,  # Will be set below
+                    "total_submitted": int(total_submitted),
+                    "total_correct": int(total_correct),
+                    "partially_correct": int(partially_correct)
+                }
+            
+            # Get time taken from test_session
+            candidate = self.db.query(Candidate).filter(
+                Candidate.candidate_id == candidate_id
+            ).first()
+            
+            time_taken = 0
+            if candidate and candidate.test_session and candidate.test_session.section_timings:
+                section_timings = candidate.test_session.section_timings
+                if isinstance(section_timings, dict) and "coding" in section_timings:
+                    coding_timing = section_timings["coding"]
+                    if isinstance(coding_timing, dict) and "duration_seconds" in coding_timing:
+                        time_taken = coding_timing["duration_seconds"]
+                    # If duration_seconds not available, calculate from started_at
+                    elif isinstance(coding_timing, dict) and "started_at" in coding_timing:
+                        try:
+                            started_at_str = coding_timing["started_at"]
+                            started_at = datetime.fromisoformat(started_at_str)
+                            time_taken = int((datetime.utcnow() - started_at).total_seconds())
+                        except Exception as e:
+                            logger.warning(f"Failed to calculate time_taken from started_at: {str(e)}")
+            
+            # Update time_taken in analysis
+            coding_analysis["time_taken"] = int(time_taken)
+            
+            # Get or create interview_analysis record
+            interview_analysis = self.db.query(InterviewAnalysisTable).filter(
+                InterviewAnalysisTable.candidate_id == candidate_id
+            ).first()
+            
+            if interview_analysis:
+                # Update existing record
+                interview_analysis.coding_analysis = coding_analysis
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Updated coding_analysis for candidate {candidate_id}")
+            else:
+                # Create new record
+                interview_analysis = InterviewAnalysisTable(
+                    candidate_id=candidate_id,
+                    coding_analysis=coding_analysis
+                )
+                self.db.add(interview_analysis)
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record with coding_analysis for candidate {candidate_id}")
+            
+            # Commit the analysis update
+            self.db.commit()
+            
+        except Exception as e:
+            logger.error(f"Error updating coding analysis for candidate {candidate_id}: {str(e)}", exc_info=True)
+            # Don't raise - let the calling method handle it
+            raise
+    
+    def _update_cheat_metrics(self, candidate_id: str, integrity_data) -> None:
+        """
+        Update cheat metrics in interview_analysis_table from integrity data.
+        
+        Transforms IntegrityData from CompleteTestRequest into cheat_metrics JSONB format
+        and saves it to interview_analysis_table.
+        
+        Args:
+            candidate_id: UUID of the candidate
+            integrity_data: IntegrityData object from CompleteTestRequest with:
+                - multiple_face: "yes" or "no"
+                - full_screen_exits: int
+                - tab_change: int
+        """
+        try:
+            if not integrity_data:
+                logger.warning(f"No integrity data provided for candidate {candidate_id}, skipping cheat_metrics update")
+                return
+            
+            # Transform integrity data to cheat_metrics format
+            cheat_metrics = {
+                "multiple_face": integrity_data.multiple_face if hasattr(integrity_data, 'multiple_face') else "no",
+                "full_screen_exits": integrity_data.full_screen_exits if hasattr(integrity_data, 'full_screen_exits') else 0,
+                "tab_change": integrity_data.tab_change if hasattr(integrity_data, 'tab_change') else 0
+            }
+            
+            # Get or create interview_analysis record
+            interview_analysis = self.db.query(InterviewAnalysisTable).filter(
+                InterviewAnalysisTable.candidate_id == candidate_id
+            ).first()
+            
+            if interview_analysis:
+                # Update existing record
+                interview_analysis.cheat_metrics = cheat_metrics
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Updated cheat_metrics for candidate {candidate_id}")
+            else:
+                # Create new record
+                interview_analysis = InterviewAnalysisTable(
+                    candidate_id=candidate_id,
+                    cheat_metrics=cheat_metrics
+                )
+                self.db.add(interview_analysis)
+                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record with cheat_metrics for candidate {candidate_id}")
+            
+            # Note: Don't commit here - let the calling method handle the transaction
+            # This allows cheat_metrics to be part of the same transaction as test completion
+            
+        except Exception as e:
+            logger.error(f"Error updating cheat metrics for candidate {candidate_id}: {str(e)}", exc_info=True)
+            # Don't raise - let the calling method handle it (non-critical update)
+            # Just log the error and continue
+    
+    async def generate_and_save_interview_summary(self, candidate_id: str) -> None:
+        """
+        Generate interview summary using LLM and save it to interview_analysis_table.
+        
+        This function:
+        1. Fetches all analysis data from interview_analysis_table
+        2. Extracts metadata for MCQ, Coding, System Design, and Integrity
+        3. Calls the LLM summary generator
+        4. Saves the summary to overall_summary field
+        
+        Args:
+            candidate_id: UUID of the candidate
+        """
+        try:
+            # Get interview analysis record
+            interview_analysis = self.db.query(InterviewAnalysisTable).filter(
+                InterviewAnalysisTable.candidate_id == candidate_id
+            ).first()
+            
+            if not interview_analysis:
+                logger.warning(f"No interview analysis found for candidate {candidate_id}, cannot generate summary")
+                return
+            
+            # Extract MCQ metadata
+            mcq_analysis = interview_analysis.mcq_analysis or {}
+            mcq_metadata = {
+                "score": mcq_analysis.get("score", 0),
+                "time_taken": mcq_analysis.get("time_taken", 0),
+                "attempted": mcq_analysis.get("attempted", {"easy": 0, "medium": 0, "hard": 0}),
+                "correct": mcq_analysis.get("correct", {"easy": 0, "medium": 0, "hard": 0})
+            }
+            
+            # Extract Coding metadata
+            coding_analysis = interview_analysis.coding_analysis or {}
+            coding_metadata = {
+                "total_score": coding_analysis.get("total_score", 0),
+                "time_taken": coding_analysis.get("time_taken", 0),
+                "total_submitted": coding_analysis.get("total_submitted", 0),
+                "total_correct": coding_analysis.get("total_correct", 0),
+                "partially_correct": coding_analysis.get("partially_correct", 0)
+            }
+            
+            # Extract System Design metadata
+            system_design_analysis = interview_analysis.system_design_analysis or {}
+            system_design_metadata = {
+                "score": system_design_analysis.get("score", 0),
+                "summary": system_design_analysis.get("summary", "N/A"),
+                "key_strengths": system_design_analysis.get("key_strengths", []),
+                "areas_of_improvement": system_design_analysis.get("things_to_improve", []),
+                "time_taken": system_design_analysis.get("time_taken", 0)  # May not be stored, will be 0 if not available
+            }
+            
+            # Extract Integrity metadata from cheat_metrics
+            cheat_metrics = interview_analysis.cheat_metrics or {}
+            integrity_metadata = {
+                "tab_switch_count": cheat_metrics.get("tab_change", 0),
+                "fullscreen_exits_count": cheat_metrics.get("full_screen_exits", 0),
+                "multiple_faces": cheat_metrics.get("multiple_face", "no") == "yes"
+            }
+            
+            # Import and call the summary generator
+            from utils.analysis_summary import generate_interview_summary
+            
+            # Generate summary using LLM
+            summary = await generate_interview_summary(
+                mcq_metadata=mcq_metadata,
+                coding_metadata=coding_metadata,
+                system_design_metadata=system_design_metadata,
+                integrity_metadata=integrity_metadata
+            )
+            
+            # Save summary to interview_analysis_table
+            interview_analysis.overall_summary = summary
+            self.db.commit()
+            
+            logger.info(f"[INTERVIEW_ANALYSIS] ✅ Generated and saved overall_summary for candidate {candidate_id}")
+            
+        except Exception as e:
+            logger.error(f"Error generating interview summary for candidate {candidate_id}: {str(e)}", exc_info=True)
+            # Don't raise - this is non-critical, don't break test completion
+            self.db.rollback()
+    
+    async def _assign_questions_and_generate_mcq(self, candidate_id: str, candidate: Candidate, scheduled_date_for_message: datetime) -> tuple:
+        """
+        Helper function to assign questions and generate MCQ questions.
+        Shared logic between schedule-based and immediate start flows.
+        
+        Args:
+            candidate_id: UUID of the candidate
+            candidate: Candidate object
+            scheduled_date_for_message: datetime to use in response message
+            
+        Returns:
+            Tuple of (error_messages list, system_design_result, mcq_result, coding_result)
+        """
+        # Get job information for MCQ generation
+        assignment = self.db.query(RecruiterAdminCandidate).filter(
+            RecruiterAdminCandidate.candidate_id == candidate_id
+        ).first()
+        print("--------------------------------")
+        if assignment:
+            print(f"Assignment - recruiter_admin_email: {assignment.recruiter_admin_email}")
+            print(f"Assignment - candidate_id: {assignment.candidate_id}")
+            print(f"Assignment - job_id: {assignment.job_id}")
+            print(f"Assignment - assigned_at: {assignment.assigned_at}")
+            print(f"Assignment - job: {assignment.job}")
+            print(f"Assignment - job_description: {assignment.job.job_description}")
+            print(f"Assignment - job_role: {assignment.job.job_role}")
+
+        else:
+            print("Assignment: None")
+            
+        print(f"Candidate - candidate_id: {candidate.candidate_id}")
+        print(f"Candidate - name: {candidate.name}")
+        print(f"Candidate - email_id: {candidate.email_id}")
+        print(f"Candidate - status: {candidate.status}")
+        print(f"Candidate - scheduled_date: {candidate.scheduled_date}")
+        print(f"Candidate - resume: {candidate.resume}")
+        print("--------------------------------")
+        # Parallel tasks: System Design Question Assignment, MCQ Generation, and Coding Question Assignment
+        system_design_result = None
+        mcq_result = None
+        coding_result = None
+        error_messages = []
+        
+        # Task 1: Assign system design question to candidate
+        try:
+            from services.question_assignment_service import QuestionAssignmentService
+            assignment_service = QuestionAssignmentService(self.db)
+            system_design_result = assignment_service.assign_question_to_candidate(
+                candidate_id=candidate_id,
+                question_uuid=None  # Auto-select based on job role
+            )
+            if not system_design_result.get("success"):
+                error_messages.append(f"System design question assignment failed: {system_design_result.get('message', 'Unknown error')}")
+        except Exception as e:
+            error_messages.append(f"System design question assignment error: {str(e)}")
+        
+        # Task 2: Assign coding questions to candidate
+        try:
+            from services.coding_question_assignment_service import CodingQuestionAssignmentService
+            from core.config import settings
+            coding_service = CodingQuestionAssignmentService(self.db)
+            coding_result = coding_service.assign_coding_questions_to_candidate(
+                candidate_id=candidate_id,
+                use_random=settings.RANDOM_CODING_QUESTIONS
+            )
+            if not coding_result.get("success"):
+                error_messages.append(f"Coding question assignment failed: {coding_result.get('message', 'Unknown error')}")
+        except Exception as e:
+            error_messages.append(f"Coding question assignment error: {str(e)}")
+        
+        # Task 3: Generate and save MCQ questions (if resume and job description are available)
+        if candidate.resume and assignment and assignment.job:
+            print("Inside if condition..............")
+            try:
+                print("Inside try block..............")
+                try:
+                    from services.mcq_generation_service import MCQGenerationService
+                    try:
+                        mcq_service = MCQGenerationService(self.db)
+                    except Exception as e:
+                        print(f"MCQ service initialization error: {str(e)}")
+                    print("MCQ service initialized..............")
+                except Exception as e:
+                    print(f"MCQ service initialization error: {str(e)}")
+                # if candidate.resume is None and assignment.job is None:
+                #     from services.sample_data_for_mcq import job_description, resume
+                #     mcq_request = GenerateMCQRequest(
+                #         resume=resume,
+                #         job_description=job_description,
+                #         grade="T2"  # Default to T2, can be made configurable later
+                #     )
+                # else:
+                    # Create request for MCQ generation
+                print("Generating MCQ questions..............")
+                print(f"Candidate - resume: {candidate.resume}")
+                print(f"Assignment - job_description: {assignment.job.job_description}")
+                print(f"Assignment - job_role: {assignment.job.job_role}")
+                print(f"Assignment - job_grade: {assignment.job.grade}")
+                print("--------------------------------")
+                # Get grade from job, validate it's T2 or T3 for MCQ generation, default to T2 if invalid
+                job_grade = assignment.job.grade if assignment.job.grade in ["T2", "T3"] else "T2"
+                mcq_request = GenerateMCQRequest(
+                    resume=candidate.resume,
+                    job_description=assignment.job.job_description,
+                    grade=job_grade
+                )
+                print(f"MCQ request: {mcq_request}")
+                # Generate questions
+                generation_result = await mcq_service.generate_questions(mcq_request)
+                questions = generation_result.get("questions", [])
+                
+                if questions:
+                    # Save generated questions to database
+                    save_result = mcq_service.save_generated_questions(
+                        candidate_id=candidate_id,
+                        questions=questions
+                    )
+                    if save_result.get("success"):
+                        mcq_result = {
+                            "success": True,
+                            "message": f"Generated and saved {save_result.get('saved_count', 0)} MCQ questions"
+                        }
+                    else:
+                        error_messages.append(f"MCQ generation succeeded but saving failed: {save_result.get('message', 'Unknown error')}")
+                else:
+                    error_messages.append("MCQ generation returned no questions")
+                    
+            except Exception as e:
+                error_messages.append(f"MCQ generation error: {str(e)}")
+        else:
+            if not candidate.resume:
+                error_messages.append("MCQ generation skipped: Candidate resume not available")
+            elif not assignment or not assignment.job:
+                error_messages.append("MCQ generation skipped: Job assignment or job description not available")
+        
+        return error_messages, system_design_result, mcq_result, coding_result
+
+    async def save_test_schedule_with_scheduled_date(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+        """
+        Save test schedule for a candidate according to scheduled_date (SCHEDULE-BASED FLOW).
         
         This method:
         1. Updates the candidate's scheduled_date and status to 'scheduled'
@@ -493,7 +1059,7 @@ class InterviewService:
             
             # Allow scheduling for candidates in any status (removed status check)
             
-            # Update candidate's scheduled_date and status
+            # Update candidate's scheduled_date and status (SCHEDULE-BASED: uses request.scheduled_date)
             candidate.scheduled_date = request.scheduled_date
             candidate.status = 'scheduled'
             
@@ -539,127 +1105,10 @@ class InterviewService:
                 # Don't fail scheduling if email fails
                 logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
             
-            # Get job information for MCQ generation
-            assignment = self.db.query(RecruiterAdminCandidate).filter(
-                RecruiterAdminCandidate.candidate_id == candidate_id
-            ).first()
-            print("--------------------------------")
-            if assignment:
-                print(f"Assignment - recruiter_admin_email: {assignment.recruiter_admin_email}")
-                print(f"Assignment - candidate_id: {assignment.candidate_id}")
-                print(f"Assignment - job_id: {assignment.job_id}")
-                print(f"Assignment - assigned_at: {assignment.assigned_at}")
-                print(f"Assignment - job: {assignment.job}")
-                print(f"Assignment - job_description: {assignment.job.job_description}")
-                print(f"Assignment - job_role: {assignment.job.job_role}")
-
-            else:
-                print("Assignment: None")
-                
-            print(f"Candidate - candidate_id: {candidate.candidate_id}")
-            print(f"Candidate - name: {candidate.name}")
-            print(f"Candidate - email_id: {candidate.email_id}")
-            print(f"Candidate - status: {candidate.status}")
-            print(f"Candidate - scheduled_date: {candidate.scheduled_date}")
-            print(f"Candidate - resume: {candidate.resume}")
-            print("--------------------------------")
-            # Parallel tasks: System Design Question Assignment, MCQ Generation, and Coding Question Assignment
-            system_design_result = None
-            mcq_result = None
-            coding_result = None
-            error_messages = []
-            
-            # Task 1: Assign system design question to candidate
-            try:
-                from services.question_assignment_service import QuestionAssignmentService
-                assignment_service = QuestionAssignmentService(self.db)
-                system_design_result = assignment_service.assign_question_to_candidate(
-                    candidate_id=candidate_id,
-                    question_uuid=None  # Auto-select based on job role
-                )
-                if not system_design_result.get("success"):
-                    error_messages.append(f"System design question assignment failed: {system_design_result.get('message', 'Unknown error')}")
-            except Exception as e:
-                error_messages.append(f"System design question assignment error: {str(e)}")
-            
-            # Task 2: Assign coding questions to candidate
-            try:
-                from services.coding_question_assignment_service import CodingQuestionAssignmentService
-                from core.config import settings
-                coding_service = CodingQuestionAssignmentService(self.db)
-                coding_result = coding_service.assign_coding_questions_to_candidate(
-                    candidate_id=candidate_id,
-                    use_random=settings.RANDOM_CODING_QUESTIONS
-                )
-                if not coding_result.get("success"):
-                    error_messages.append(f"Coding question assignment failed: {coding_result.get('message', 'Unknown error')}")
-            except Exception as e:
-                error_messages.append(f"Coding question assignment error: {str(e)}")
-            
-            # Task 3: Generate and save MCQ questions (if resume and job description are available)
-            if candidate.resume and assignment and assignment.job:
-                print("Inside if condition..............")
-                try:
-                    print("Inside try block..............")
-                    try:
-                        from services.mcq_generation_service import MCQGenerationService
-                        try:
-                            mcq_service = MCQGenerationService(self.db)
-                        except Exception as e:
-                            print(f"MCQ service initialization error: {str(e)}")
-                        print("MCQ service initialized..............")
-                    except Exception as e:
-                        print(f"MCQ service initialization error: {str(e)}")
-                    # if candidate.resume is None and assignment.job is None:
-                    #     from services.sample_data_for_mcq import job_description, resume
-                    #     mcq_request = GenerateMCQRequest(
-                    #         resume=resume,
-                    #         job_description=job_description,
-                    #         grade="T2"  # Default to T2, can be made configurable later
-                    #     )
-                    # else:
-                        # Create request for MCQ generation
-                    print("Generating MCQ questions..............")
-                    print(f"Candidate - resume: {candidate.resume}")
-                    print(f"Assignment - job_description: {assignment.job.job_description}")
-                    print(f"Assignment - job_role: {assignment.job.job_role}")
-                    print(f"Assignment - job_grade: {assignment.job.grade}")
-                    print("--------------------------------")
-                    # Get grade from job, validate it's T2 or T3 for MCQ generation, default to T2 if invalid
-                    job_grade = assignment.job.grade if assignment.job.grade in ["T2", "T3"] else "T2"
-                    mcq_request = GenerateMCQRequest(
-                        resume=candidate.resume,
-                        job_description=assignment.job.job_description,
-                        grade=job_grade
-                    )
-                    print(f"MCQ request: {mcq_request}")
-                    # Generate questions
-                    generation_result = await mcq_service.generate_questions(mcq_request)
-                    questions = generation_result.get("questions", [])
-                    
-                    if questions:
-                        # Save generated questions to database
-                        save_result = mcq_service.save_generated_questions(
-                            candidate_id=candidate_id,
-                            questions=questions
-                        )
-                        if save_result.get("success"):
-                            mcq_result = {
-                                "success": True,
-                                "message": f"Generated and saved {save_result.get('saved_count', 0)} MCQ questions"
-                            }
-                        else:
-                            error_messages.append(f"MCQ generation succeeded but saving failed: {save_result.get('message', 'Unknown error')}")
-                    else:
-                        error_messages.append("MCQ generation returned no questions")
-                        
-                except Exception as e:
-                    error_messages.append(f"MCQ generation error: {str(e)}")
-            else:
-                if not candidate.resume:
-                    error_messages.append("MCQ generation skipped: Candidate resume not available")
-                elif not assignment or not assignment.job:
-                    error_messages.append("MCQ generation skipped: Job assignment or job description not available")
+            # Assign questions and generate MCQ (shared logic)
+            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
+                candidate_id, candidate, request.scheduled_date
+            )
             
             # Build response message
             base_message = f"Test scheduled successfully for {request.scheduled_date.isoformat()}"
@@ -680,4 +1129,134 @@ class InterviewService:
                 message=f"Failed to save test schedule. An unexpected error occurred: {str(e)}",
                 scheduled_date=None
             )
+
+    async def save_test_schedule_immediate_start(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+        """
+        Save test schedule for a candidate WITHOUT using scheduled_date (IMMEDIATE START FLOW).
+        
+        This method:
+        1. Updates the candidate's status to 'scheduled' (scheduled_date is NOT set here - will be set when test starts)
+        2. Calls QuestionAssignmentService to assign a system design question (parallel)
+        3. Calls CodingQuestionAssignmentService to assign coding questions (parallel)
+        4. Generates MCQ questions using RAG (parallel)
+        
+        NOTE: scheduled_date will be set to current time when test actually starts (in start_test endpoint).
+        
+        Args:
+            candidate_id: UUID of the candidate
+            request: ScheduleTestRequest with scheduled_date (used for email only, not saved to DB)
+            
+        Returns:
+            ScheduleTestResponse with success status and scheduled_date
+        """
+        try:
+            # Verify candidate exists
+            candidate = self.db.query(Candidate).filter(
+                Candidate.candidate_id == candidate_id
+            ).first()
+            
+            if not candidate:
+                return ScheduleTestResponse(
+                    success=False,
+                    message=f"Candidate with ID {candidate_id} not found",
+                    scheduled_date=None
+                )
+            
+            # Allow scheduling for candidates in any status (removed status check)
+            
+            # IMMEDIATE START FLOW: Do NOT save scheduled_date here - it will be set when test starts
+            # candidate.scheduled_date = request.scheduled_date  # COMMENTED OUT - will be set at test start
+            candidate.status = 'scheduled'
+            
+            # Commit the schedule update first
+            self.db.commit()
+            
+            # Send test invitation email AUTOMATICALLY after successful scheduling
+            try:
+                # Get job information for email
+                assignment = self.db.query(RecruiterAdminCandidate).filter(
+                    RecruiterAdminCandidate.candidate_id == candidate_id
+                ).first()
+                
+                if assignment:
+                    job = self.db.query(Job).filter(Job.job_id == assignment.job_id).first()
+                    job_role = job.job_role if job else "Technical Interview"
+                    
+                    # Send test invitation email (async, non-blocking)
+                    # Use threading to run async function in background
+                    import threading
+                    
+                    def send_email_async():
+                        """Helper function to run async email sending in background thread."""
+                        try:
+                            asyncio.run(
+                                email_service.send_test_invitation_email(
+                                    candidate_email=candidate.email_id,
+                                    candidate_name=candidate.name,
+                                    candidate_id=candidate_id,
+                                    job_role=job_role,
+                                    scheduled_date=request.scheduled_date
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in background email thread: {str(e)}")
+                    
+                    # Start email sending in background thread
+                    email_thread = threading.Thread(target=send_email_async, daemon=True)
+                    email_thread.start()
+                    
+                    logger.info(f"Test invitation email queued for candidate {candidate_id}")
+            except Exception as e:
+                # Don't fail scheduling if email fails
+                logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
+            
+            # Assign questions and generate MCQ (shared logic)
+            # Use request.scheduled_date for message, but it's not saved to DB
+            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
+                candidate_id, candidate, request.scheduled_date
+            )
+            
+            # Build response message
+            base_message = f"Test scheduled successfully (scheduled_date will be set when test starts)"
+            if error_messages:
+                base_message += f". Warnings: {'; '.join(error_messages)}"
+            
+            return ScheduleTestResponse(
+                success=True,
+                message=base_message,
+                scheduled_date=request.scheduled_date.isoformat() if request.scheduled_date else None
+            )
+            
+        except Exception as e:
+            # Rollback on error
+            self.db.rollback()
+            return ScheduleTestResponse(
+                success=False,
+                message=f"Failed to save test schedule. An unexpected error occurred: {str(e)}",
+                scheduled_date=None
+            )
+
+    async def save_test_schedule(self, candidate_id: str, request: ScheduleTestRequest) -> ScheduleTestResponse:
+        """
+        Save test schedule for a candidate and assign system design question, coding questions, and generate MCQ questions.
+        
+        This is a wrapper that calls the appropriate function based on the flow you want to use.
+        Currently set to use IMMEDIATE START FLOW (scheduled_date set when test starts).
+        
+        To switch between flows, change the function call below:
+        - save_test_schedule_immediate_start: scheduled_date set when test starts (current)
+        - save_test_schedule_with_scheduled_date: scheduled_date set during scheduling (commented out)
+        
+        Args:
+            candidate_id: UUID of the candidate
+            request: ScheduleTestRequest with scheduled_date
+            
+        Returns:
+            ScheduleTestResponse with success status and scheduled_date
+        """
+        # IMMEDIATE START FLOW: scheduled_date will be set when test starts
+        return await self.save_test_schedule_immediate_start(candidate_id, request)
+        
+        # SCHEDULE-BASED FLOW: scheduled_date is set during scheduling (commented out)
+        # return await self.save_test_schedule_with_scheduled_date(candidate_id, request)
 

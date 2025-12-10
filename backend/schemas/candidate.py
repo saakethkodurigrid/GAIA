@@ -17,3 +17,15 @@ class ScheduleTestResponse(BaseModel):
     message: str
     scheduled_date: Optional[str] = None  # ISO format datetime string
 
+
+class InterviewSummaryResponse(BaseModel):
+    """Response schema for interview summary with candidate details."""
+    success: bool
+    message: str
+    candidate: dict = Field(..., description="Candidate details")
+    summary: Optional[str] = Field(None, description="Overall interview summary (4-line LLM-generated summary)")
+    mcq_analysis: Optional[dict] = Field(None, description="MCQ analysis data")
+    coding_analysis: Optional[dict] = Field(None, description="Coding analysis data")
+    system_design_analysis: Optional[dict] = Field(None, description="System design analysis data")
+    cheat_metrics: Optional[dict] = Field(None, description="Integrity/cheat metrics")
+
