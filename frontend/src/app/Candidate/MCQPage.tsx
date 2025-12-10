@@ -9,6 +9,7 @@ import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
+import { localStorage as storage } from '../../utils/localStorage';
 
 const MCQPageContent = () => {
   const { formatTime, timeRemaining, isLoading, answers, questions, savedAnswers } = useMCQ();
@@ -16,6 +17,17 @@ const MCQPageContent = () => {
   const navigate = useNavigate();
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [hasAutoSubmitted, setHasAutoSubmitted] = useState(false);
+
+  // Track section entry time using timer value
+  useEffect(() => {
+    // Only start timing if not already started (to avoid resetting on re-renders)
+    const existingTiming = storage.getSectionTiming('mcq');
+    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
+      // Use current timer value when entering section
+      storage.startSectionTiming('mcq', timeRemaining);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
 
   const handleSubmit = useCallback((submittedAnswers: Record<number, number>) => {
     // Format responses: questionId-optionIndex or null
@@ -52,10 +64,16 @@ const MCQPageContent = () => {
       console.error('Error marking MCQ as submitted:', error);
     }
     
+    // End section timing and calculate duration using current timer value
+    const durationMinutes = storage.endSectionTiming('mcq', timeRemaining);
+    if (durationMinutes !== null) {
+      console.log(`MCQ section completed in ${durationMinutes} minutes`);
+    }
+    
     // Close modal and navigate to test overview page
     setShowSubmitModal(false);
     navigate('/test-overview', { replace: true });
-  }, [questions, navigate]);
+  }, [questions, navigate, timeRemaining]);
 
   // Auto-submit when timer reaches zero
   useEffect(() => {

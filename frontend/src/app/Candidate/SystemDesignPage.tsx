@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { SystemDesignProvider, useSystemDesign } from '../../context/SystemDesignContext';
 import { useVideo } from '../../context/VideoContext';
 import DesignHeader from '../../components/SystemDesign/DesignHeader';
@@ -8,10 +9,23 @@ import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
+import { localStorage as storage } from '../../utils/localStorage';
 const SystemDesignPageContent = () => {
-  const { problem, isLoading, submitSolution } = useSystemDesign();
+  const { problem, isLoading, submitSolution, timeRemaining } = useSystemDesign();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
+
+  // Track section entry time using timer value
+  useEffect(() => {
+    // Only start timing if not already started (to avoid resetting on re-renders)
+    const existingTiming = storage.getSectionTiming('systemDesign');
+    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
+      // Use current timer value when entering section
+      storage.startSectionTiming('systemDesign', timeRemaining);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
+
   const handleSubmit = async () => {
     // Mark System Design section as submitted in localStorage immediately
     try {
@@ -22,6 +36,12 @@ const SystemDesignPageContent = () => {
       localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
     } catch (error) {
       console.error('Error marking System Design as submitted:', error);
+    }
+    
+    // End section timing and calculate duration using current timer value
+    const durationMinutes = storage.endSectionTiming('systemDesign', timeRemaining);
+    if (durationMinutes !== null) {
+      console.log(`System Design section completed in ${durationMinutes} minutes`);
     }
     
     // Navigate immediately to test overview without waiting for evaluation

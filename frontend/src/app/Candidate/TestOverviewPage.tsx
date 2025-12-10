@@ -171,6 +171,50 @@ const TestOverviewPage = () => {
   };
 
   const handleSubmitTest = () => {
+    // End timings for any active sections (sections that were started but not submitted)
+    const endActiveSection = (sectionName: 'mcq' | 'coding' | 'systemDesign'): number | null => {
+      const timing = storage.getSectionTiming(sectionName);
+      if (!timing || timing.startTimeRemaining === null || timing.startTimeRemaining === undefined) return null;
+      
+      // If already ended, return the stored duration
+      if (timing.durationMinutes !== null) {
+        return timing.durationMinutes;
+      }
+      
+      // End the timing using current timer value and return the duration
+      return storage.endSectionTiming(sectionName, timeRemaining);
+    };
+    
+    // End all active sections
+    endActiveSection('mcq');
+    endActiveSection('coding');
+    endActiveSection('systemDesign');
+    
+    // Get all section timings
+    const sectionTimings = storage.getAllSectionTimings();
+    const mcqMinutes = sectionTimings.mcq;
+    const codingMinutes = sectionTimings.coding;
+    const systemDesignMinutes = sectionTimings.systemDesign;
+    
+    // Store in localStorage
+    const timingData = {
+      mcq: mcqMinutes,
+      coding: codingMinutes,
+      systemDesign: systemDesignMinutes
+    };
+    try {
+      localStorage.setItem('section_timings_final', JSON.stringify(timingData));
+    } catch (error) {
+      console.error('Error storing section timings:', error);
+    }
+    
+    // Print section timings to console
+    console.log('=== Section Timings ===');
+    console.log(`MCQ Section: ${mcqMinutes !== null ? `${mcqMinutes} minutes` : 'Not attempted'}`);
+    console.log(`Coding Section: ${codingMinutes !== null ? `${codingMinutes} minutes` : 'Not attempted'}`);
+    console.log(`System Design Section: ${systemDesignMinutes !== null ? `${systemDesignMinutes} minutes` : 'Not attempted'}`);
+    console.log('=======================');
+    
     // Get cheating event counts from context
     const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
     

@@ -7,6 +7,7 @@ import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
 import { useCodingSession } from '../../hooks/useCodingSession';
+import { localStorage as storage } from '../../utils/localStorage';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code, submitAnswer, submittedQuestions, findNextUnsubmittedQuestion } = useCoding();
@@ -40,6 +41,17 @@ const CodingTestPageContent = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreenExited, setIsFullscreenExited] = useState(false);
   const wasFullscreenRef = useRef(false);
+
+  // Track section entry time using timer value
+  useEffect(() => {
+    // Only start timing if not already started (to avoid resetting on re-renders)
+    const existingTiming = storage.getSectionTiming('coding');
+    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
+      // Use current timer value when entering section
+      storage.startSectionTiming('coding', timeRemaining);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
 
   // Monitor fullscreen exit - just disable buttons, no popup
   useEffect(() => {
@@ -425,6 +437,13 @@ const CodingTestPageContent = () => {
                   } catch (error) {
                     console.error('Error marking Coding as submitted:', error);
                   }
+                  
+                  // End section timing and calculate duration using current timer value
+                  const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
+                  if (durationMinutes !== null) {
+                    console.log(`Coding section completed in ${durationMinutes} minutes`);
+                  }
+                  
                   setShowSubmitSectionModal(false);
                   navigate('/test-overview');
                 }}
