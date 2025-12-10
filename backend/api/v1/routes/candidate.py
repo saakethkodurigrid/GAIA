@@ -713,13 +713,14 @@ async def update_heartbeat(
             Candidate.status == 'in progress'
         ).first()
         
-        if not candidate or not candidate.test_session or not candidate.test_session.test_start_time:
+        # Query test_session directly to avoid relationship issues (InstrumentedList)
+        test_session = db.query(TestSession).filter(TestSession.candidate_id == candidate_id).first()
+        
+        if not candidate or not test_session or not test_session.test_start_time:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No active test session found"
             )
-        
-        test_session = candidate.test_session
         now = datetime.utcnow()
         
         # SOFT SAVE: Update Redis heartbeat (fast)
@@ -1072,7 +1073,10 @@ async def get_test_status(
     
     candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
     
-    if not candidate or not candidate.test_session or not candidate.test_session.test_start_time:
+    # Query test_session directly to avoid relationship issues (InstrumentedList)
+    test_session = db.query(TestSession).filter(TestSession.candidate_id == candidate_id).first()
+    
+    if not candidate or not test_session or not test_session.test_start_time:
         return TestStatusResponse(
             success=False,
             message="No test session found",
@@ -1081,8 +1085,6 @@ async def get_test_status(
             sections_completed={},
             last_activity=None
         )
-    
-    test_session = candidate.test_session
     
     # Calculate remaining time
     if candidate.status == 'in progress' and test_session.test_start_time:
