@@ -5,7 +5,7 @@ import json
 import logging
 import time
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_candidate
@@ -392,7 +392,8 @@ async def save_mcq_answers(
 
 @router.post("/schedule-test", response_model=ScheduleTestResponse)
 async def schedule_test(
-    request: ScheduleTestRequest,
+    candidate_id: str = Query(..., description="Candidate UUID from invitation link", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: ScheduleTestRequest = ...,
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -405,6 +406,7 @@ async def schedule_test(
     3. Automatically assigns a system design question to the candidate
     
     Args:
+        candidate_id: Candidate UUID from invitation link (REQUIRED)
         request: ScheduleTestRequest with scheduled_date (datetime)
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -416,24 +418,31 @@ async def schedule_test(
         HTTPException: 
             - 400: If validation fails, candidate not found, or invalid status
             - 401: If authentication fails
-            - 403: If user is not a candidate
+            - 403: If user is not a candidate or candidate_id mismatch
     """
     try:
-        logger.info(f"Schedule test request received for candidate {current_candidate.candidate_id}")
+        logger.info(f"Schedule test request received for candidate {candidate_id}")
         logger.info(f"Request scheduled_date: {request.scheduled_date}, type: {type(request.scheduled_date)}")
         logger.info(f"Current candidate status: {current_candidate.status}")
         
+        # Verify that the candidate_id from query matches the authenticated candidate
+        if current_candidate.candidate_id != candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Candidate ID does not match authenticated candidate."
+            )
+        
         interview_service = InterviewService(db)
-        response = await interview_service.save_test_schedule(current_candidate.candidate_id, request)
+        response = await interview_service.save_test_schedule(candidate_id, request)
         
         if not response.success:
-            logger.warning(f"Schedule test failed for candidate {current_candidate.candidate_id}: {response.message}")
+            logger.warning(f"Schedule test failed for candidate {candidate_id}: {response.message}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=response.message
             )
         
-        logger.info(f"Schedule test successful for candidate {current_candidate.candidate_id}")
+        logger.info(f"Schedule test successful for candidate {candidate_id}")
         return response
     except HTTPException:
         raise

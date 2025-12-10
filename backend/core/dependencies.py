@@ -151,8 +151,8 @@ def get_current_candidate(
     """
     Dependency to verify that the current user is an authenticated candidate.
     
-    For schedule/test routes, candidate_id is REQUIRED from invitation link.
-    If candidate_id is not provided, access is blocked.
+    For invitation-based routes (schedule-test, test routes), candidate_id is REQUIRED from invitation link.
+    If candidate_id is not provided for these routes, access is blocked.
     
     Args:
         request: FastAPI Request object to extract path and query parameters
@@ -198,6 +198,11 @@ def get_current_candidate(
     query_candidate_id = request.query_params.get('candidate_id')
     final_candidate_id = path_candidate_id or query_candidate_id
     
+    # Check if this is an invitation-based route that REQUIRES candidate_id
+    path = request.url.path.lower()
+    invitation_routes = ['/schedule-test', '/test/', '/candidate/']
+    is_invitation_route = any(route in path for route in invitation_routes)
+    
     # If candidate_id is provided (from path or query), use UUID-based authentication
     if final_candidate_id:
         # Validate UUID format
@@ -235,8 +240,14 @@ def get_current_candidate(
         
         return candidate
     
-    # If candidate_id is NOT provided, try to find candidate by email from token
-    # This allows routes like /schedule-test to work with just authentication
+    # If candidate_id is NOT provided and this is an invitation-based route, block access
+    if is_invitation_route:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="candidate_id is required for this route. Please use the invitation link provided in your email."
+        )
+    
+    # For non-invitation routes, allow email-based lookup (fallback)
     candidate = db.query(Candidate).filter(
         Candidate.email_id == email
     ).first()
