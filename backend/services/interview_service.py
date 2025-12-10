@@ -1036,6 +1036,7 @@ class InterviewService:
         2. Calls QuestionAssignmentService to assign a system design question (parallel)
         3. Calls CodingQuestionAssignmentService to assign coding questions (parallel)
         4. Generates MCQ questions using RAG (parallel)
+        5. Sends test invitation email AFTER questions are generated and assigned
         
         Args:
             candidate_id: UUID of the candidate
@@ -1066,7 +1067,12 @@ class InterviewService:
             # Commit the schedule update first
             self.db.commit()
             
-            # Send test invitation email AUTOMATICALLY after successful scheduling
+            # Assign questions and generate MCQ (shared logic)
+            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
+                candidate_id, candidate, request.scheduled_date
+            )
+            
+            # Send test invitation email AUTOMATICALLY after questions are generated and assigned
             try:
                 # Get job information for email
                 assignment = self.db.query(RecruiterAdminCandidate).filter(
@@ -1100,15 +1106,10 @@ class InterviewService:
                     email_thread = threading.Thread(target=send_email_async, daemon=True)
                     email_thread.start()
                     
-                    logger.info(f"Test invitation email queued for candidate {candidate_id}")
+                    logger.info(f"Test invitation email queued for candidate {candidate_id} after questions were assigned")
             except Exception as e:
                 # Don't fail scheduling if email fails
                 logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
-            
-            # Assign questions and generate MCQ (shared logic)
-            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
-                candidate_id, candidate, request.scheduled_date
-            )
             
             # Build response message
             base_message = f"Test scheduled successfully for {request.scheduled_date.isoformat()}"
@@ -1139,6 +1140,7 @@ class InterviewService:
         2. Calls QuestionAssignmentService to assign a system design question (parallel)
         3. Calls CodingQuestionAssignmentService to assign coding questions (parallel)
         4. Generates MCQ questions using RAG (parallel)
+        5. Sends test invitation email AFTER questions are generated and assigned
         
         NOTE: scheduled_date will be set to current time when test actually starts (in start_test endpoint).
         
@@ -1171,7 +1173,13 @@ class InterviewService:
             # Commit the schedule update first
             self.db.commit()
             
-            # Send test invitation email AUTOMATICALLY after successful scheduling
+            # Assign questions and generate MCQ (shared logic)
+            # Use request.scheduled_date for message, but it's not saved to DB
+            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
+                candidate_id, candidate, request.scheduled_date
+            )
+            
+            # Send test invitation email AUTOMATICALLY after questions are generated and assigned
             try:
                 # Get job information for email
                 assignment = self.db.query(RecruiterAdminCandidate).filter(
@@ -1205,16 +1213,10 @@ class InterviewService:
                     email_thread = threading.Thread(target=send_email_async, daemon=True)
                     email_thread.start()
                     
-                    logger.info(f"Test invitation email queued for candidate {candidate_id}")
+                    logger.info(f"Test invitation email queued for candidate {candidate_id} after questions were assigned")
             except Exception as e:
                 # Don't fail scheduling if email fails
                 logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
-            
-            # Assign questions and generate MCQ (shared logic)
-            # Use request.scheduled_date for message, but it's not saved to DB
-            error_messages, system_design_result, mcq_result, coding_result = await self._assign_questions_and_generate_mcq(
-                candidate_id, candidate, request.scheduled_date
-            )
             
             # Build response message
             base_message = f"Test scheduled successfully (scheduled_date will be set when test starts)"
