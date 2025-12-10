@@ -18,7 +18,7 @@ class AnthropicProvider(BaseLLMProvider):
     async def chat_completion(
         self,
         messages: List[LLMMessage],
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         tools: Optional[List[Union[ToolDefinition, Dict[str, Any]]]] = None,
         tool_choice: Optional[str] = None,
