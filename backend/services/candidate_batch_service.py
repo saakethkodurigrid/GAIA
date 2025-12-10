@@ -170,7 +170,9 @@ class CandidateBatchService:
                 # Step 3: Calculate resume score (using SCRUBBED resume, NO PII)
                 resume_score = await resume_scorer.calculate_score(
                     scrubbed_resume=scrubbed_resume,  # NO PII
-                    job_description=job.job_description
+                    job_description=job.job_description,
+                    grade=job.grade,  # Pass the grade from job for role-specific evaluation
+                    role_name=job.job_role  # Pass the role name for role-specific experience evaluation
                 )
                 
                 # Determine initial status based on resume score

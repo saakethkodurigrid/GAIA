@@ -31,7 +31,13 @@ class ResumeScorer:
             self.llm = None
             self.model = None
     
-    async def calculate_score(self, scrubbed_resume: str, job_description: str) -> float:
+    async def calculate_score(
+        self, 
+        scrubbed_resume: str, 
+        job_description: str,
+        grade: Optional[str] = None,
+        role_name: Optional[str] = None
+    ) -> float:
         """
         Calculate resume score (0-100) based on match with job description using LLM.
         
@@ -40,6 +46,8 @@ class ResumeScorer:
         Args:
             scrubbed_resume: Resume text with PII removed
             job_description: Job description text
+            grade: Optional grade level (T2, T3, etc.) for role-specific evaluation
+            role_name: Optional role name/title for role-specific experience evaluation
             
         Returns:
             Score from 0-100
@@ -50,7 +58,12 @@ class ResumeScorer:
         # Try LLM-based scoring first
         if self.llm:
             try:
-                llm_score = await self._calculate_with_llm(scrubbed_resume, job_description)
+                llm_score = await self._calculate_with_llm(
+                    scrubbed_resume, 
+                    job_description,
+                    grade=grade,
+                    role_name=role_name
+                )
                 if llm_score is not None:
                     # Ensure score is between 0-100
                     return max(0.0, min(100.0, llm_score))
@@ -63,81 +76,233 @@ class ResumeScorer:
     async def _calculate_with_llm(
         self, 
         scrubbed_resume: str, 
-        job_description: str
+        job_description: str,
+        grade: Optional[str] = None,
+        role_name: Optional[str] = None
     ) -> Optional[float]:
         """
-        Calculate single combined score using LLM.
+        Calculate single combined score using LLM with comprehensive multi-dimensional evaluation.
         
         Args:
             scrubbed_resume: Resume text (scrubbed, no PII)
             job_description: Job description text
+            grade: Optional grade level (T2, T3, etc.) for role-specific evaluation
+            role_name: Optional role name/title for role-specific experience evaluation
             
         Returns:
             Single combined score (0-100) or None if LLM call fails
         """
-        # Extract years from resume and JD for context
-        resume_years = self._extract_years_from_text(scrubbed_resume)
-        jd_years_required = self._extract_years_from_jd(job_description)
+        from utils.grades import get_grade, format_grade_requirements
         
-        prompt = f"""You are an expert recruiter evaluating a candidate's resume against a job description.
+        # Build role context section
+        role_context_text = ""
+        if role_name:
+            role_context_text = f"""
 
-Evaluate the candidate's overall fit and provide a SINGLE combined score (0-100) that considers ALL factors:
+TARGET ROLE: {role_name}
 
-**Factors to Consider:**
+The candidate is being evaluated for the role: **{role_name}**
 
-1. **Skill Match**: How well do the candidate's technical skills, technologies, and tools match the job requirements?
-   - Required skills, preferred skills, technology stack, frameworks, tools, programming languages
-   - Consider both explicit matches and related/equivalent technologies
-   - Weight required skills more heavily than nice-to-have skills
+ROLE-SPECIFIC EXPERIENCE EVALUATION:
+- **CRITICAL**: Check if the candidate has direct experience in the same or very similar role (e.g., if role is "Senior Software Engineer", look for "Software Engineer", "Senior Developer", "Senior Engineer", etc.)
+- If candidate has direct experience in the same/similar role: This is a STRONG POSITIVE indicator - add a bonus of +5 to +15 points to the overall score
+- If candidate has experience in related roles but not the exact role: This is a MODERATE POSITIVE indicator - add a bonus of +2 to +8 points
+- If candidate has no relevant role experience: This is a NEGATIVE indicator - reduce the score by -3 to -10 points
+- Consider role progression (e.g., "Software Engineer" → "Senior Software Engineer" is positive)
+- Consider role variations and synonyms (e.g., "Developer" = "Engineer", "Data Scientist" = "ML Engineer" in some contexts)
 
-2. **Experience Match**: How well does the candidate's experience match the job requirements?
+The role-specific experience should be evaluated in the EXPERIENCE RELEVANCE dimension and can influence the overall score adjustment.
+
+"""
+        
+        # Get grade requirements if grade is provided
+        grade_requirements_text = ""
+        if grade:
+            grade_data = get_grade(grade)
+            if grade_data:
+                grade_requirements_text = f"""
+
+ROLE-SPECIFIC GRADE REQUIREMENTS:
+
+The candidate is being evaluated for the {grade} position. In addition to the job description requirements, evaluate the candidate against the following company grade-specific requirements:
+
+{format_grade_requirements(grade_data)}
+
+IMPORTANT: When scoring, consider BOTH:
+1. How well the candidate matches the job description requirements
+2. How well the candidate meets the {grade} grade-specific requirements above
+
+The grade requirements should influence your scoring, especially in:
+- Experience Relevance dimension (check if candidate meets the grade's experience requirement - T2 requires 1+ years, T3 requires 3+ years)
+- Technical Skills dimension (evaluate depth and breadth against grade expectations - T3 requires stronger expertise and architectural contributions)
+- Soft Skills & Cultural Fit dimension (assess leadership, mentoring, communication per grade level - T3 requires stronger leadership and cross-functional communication)
+- Role-Specific Achievements dimension (evaluate achievements against grade expectations - T3 requires more significant impact and innovation)
+
+If the candidate significantly falls short of grade requirements, this should negatively impact the overall score. Conversely, if the candidate exceeds grade requirements, this should positively impact the score.
+
+"""
+        
+        prompt = f"""ROLE DEFINITION:
+
+You are an expert AI recruitment analyst specializing in candidate-job fit assessment for the Indian market. Your task is to evaluate how well a candidate's resume matches a specific job description using a structured, multi-factor scoring methodology.
+{role_context_text}
+EVALUATION FRAMEWORK:
+
+Analyze the following resume against the provided job description and generate a comprehensive matching score across five critical dimensions:
+{grade_requirements_text}
+INPUT FORMAT:
+
+- TARGET ROLE: {role_name if role_name else "Not specified"}
+- JOB DESCRIPTION: [Provided below]
+- RESUME: [Provided below - PII removed]
+
+SCORING METHODOLOGY:
+
+1. HARD SKILLS MATCH (Weight: 30%)
+   - Extract required technical skills, tools, software, frameworks, programming languages, and certifications from the job description
+   - Map explicitly stated skills in the resume
+   - Consider both exact matches and related/equivalent technologies (e.g., React and Vue.js are related frontend frameworks)
+   - Score: 0-100 based on percentage of required skills present
+   - Apply penalty: -5 points per critical missing skill that is explicitly required
+   - Weight required skills more heavily than preferred/nice-to-have skills
+
+2. EXPERIENCE RELEVANCE (Weight: 25%)
    - **CRITICAL**: Extract the exact years of experience requirement from the JD (e.g., "3+ years", "5-7 years", "minimum 2 years", "at least 4 years")
-   - **CRITICAL**: Extract the candidate's years of experience from the resume
-   - Compare the candidate's years with the JD requirement:
-     * If candidate meets or exceeds requirement: Strong positive impact
-     * If candidate is close (within 1-2 years): Moderate positive impact
+   - **CRITICAL**: Extract the candidate's total years of experience from the resume
+   - **ROLE-SPECIFIC EXPERIENCE**: Check if candidate has direct experience in the same or similar role as the target role. This is a KEY factor:
+     * If candidate has direct experience in the same/similar role: This significantly strengthens their profile - score 85-100 for this dimension
+     * If candidate has experience in related roles: Score 70-84
+     * If candidate has no relevant role experience: Score 50-69 (even if they have relevant skills/experience in other areas)
+   - Compare candidate's years with JD requirement:
+     * If candidate meets or exceeds requirement: Strong positive score (85-100)
+     * If candidate is close (within 1-2 years): Moderate positive score (70-84)
      * If candidate is below requirement: Negative impact (more negative if significantly below)
-   - Also consider: Relevant work experience, project experience, domain expertise, industry experience, quality of experience
+   - Assess industry/domain alignment (e.g., fintech, e-commerce, healthcare)
+   - Evaluate seniority level match (junior, mid-level, senior, lead)
+   - Consider quality and relevance of work experience, not just duration
+   - Score: 0-100 based on alignment and depth, with role-specific experience being a major factor
 
-3. **Role Relevance**: How relevant is the candidate's background to the specific role?
-   - Role type alignment, domain expertise, career progression, responsibilities match, industry fit
-   - Consider if candidate's experience aligns with the role's focus area and responsibilities
+3. SOFT SKILLS & CULTURAL FIT (Weight: 20%)
+   - Identify implied soft skills from JD language (e.g., "collaborative", "self-starter", "leadership", "communication")
+   - Match with demonstrated examples in resume (e.g., "led a team", "collaborated with cross-functional teams")
+   - Look for evidence of: teamwork, leadership, problem-solving, communication, adaptability, ownership
+   - Score: 0-100 based on evidence quality and alignment with JD expectations
 
-4. **Other Factors**: Consider any other relevant factors that impact the candidate's fit
-   - Education background, certifications, achievements, project complexity, leadership experience, etc.
+4. EDUCATION & CREDENTIALS (Weight: 15%)
+   - Verify required degrees/certifications match JD requirements
+   - Assess relevance of educational background to the role
+   - Consider prestige/relevance of institutions (for Indian context: IITs, NITs, tier-1 colleges vs. others)
+   - Evaluate professional certifications and their relevance
+   - Score: 0-100 based on requirements met and relevance
+
+5. ROLE-SPECIFIC ACHIEVEMENTS (Weight: 10%)
+   - Quantify achievements matching JD priorities (e.g., "improved performance by X%", "led team of Y", "reduced costs by Z")
+   - Assess impact metrics and their relevance to the role
+   - Evaluate project complexity and outcomes
+   - Consider awards, recognitions, publications if relevant
+   - Score: 0-100 based on achievement quality and relevance
+
+CALCULATION FORMULA:
+
+BASE OVERALL MATCH SCORE = Σ(Dimension Score × Weight) / 100
+
+ROLE-SPECIFIC EXPERIENCE ADJUSTMENT:
+- If candidate has direct experience in same/similar role: +5 to +15 points
+- If candidate has experience in related roles: +2 to +8 points  
+- If candidate has no relevant role experience: -3 to -10 points
+
+FINAL OVERALL MATCH SCORE = BASE SCORE + ROLE-SPECIFIC EXPERIENCE ADJUSTMENT (capped at 0-100)
 
 **Resume (PII removed):**
-{scrubbed_resume[:3000]}
+```
+{scrubbed_resume}
+```
 
 **Job Description:**
-{job_description[:3000]}
+```
+{job_description}
+```
 
-**Extracted Context (for reference):**
-- Candidate's years of experience (from resume): {resume_years if resume_years else "Not found"}
-- JD years requirement (from job description): {jd_years_required if jd_years_required else "Not specified"}
+OUTPUT REQUIREMENTS:
 
-**Scoring Guidelines:**
-- 90-100: Excellent match - candidate strongly meets or exceeds all requirements
-- 80-89: Very good match - candidate meets most requirements well
-- 70-79: Good match - candidate meets core requirements, some gaps
-- 60-69: Moderate match - candidate has some relevant experience but significant gaps
-- 50-59: Below average match - candidate has limited relevant experience
-- 0-49: Poor match - candidate does not meet most requirements
+Provide your analysis in this exact JSON format:
 
-Provide your evaluation as a JSON object with a single key:
 {{
-    "score": <number 0-100>
+  "overall_match_score": 0-100,
+  "base_score": 0-100,
+  "role_experience_adjustment": -10 to +15,
+  "role_experience_assessment": "direct_match|related_experience|no_relevant_experience",
+  "dimension_scores": {{
+    "hard_skills_match": {{"score": 0-100, "weight": 0.30, "rationale": "2-3 sentence explanation with specific evidence from resume"}},
+    "experience_relevance": {{"score": 0-100, "weight": 0.25, "rationale": "2-3 sentence explanation including years comparison, role-specific experience assessment, and domain alignment"}},
+    "soft_skills_cultural_fit": {{"score": 0-100, "weight": 0.20, "rationale": "2-3 sentence explanation with demonstrated examples"}},
+    "education_credentials": {{"score": 0-100, "weight": 0.15, "rationale": "2-3 sentence explanation of educational alignment"}},
+    "role_specific_achievements": {{"score": 0-100, "weight": 0.10, "rationale": "2-3 sentence explanation of relevant achievements"}}
+  }},
+  "key_strengths": ["strength1", "strength2", "strength3"],
+  "critical_gaps": [{{"gap": "description of gap", "impact": "high|medium|low"}}],
+  "recommendation": "STRONG_MATCH|MODERATE_MATCH|WEAK_MATCH",
+  "confidence_level": "high|medium|low"
 }}
 
-Be precise and objective. Base the score on actual content, not assumptions.
-The score should be a single number that holistically represents the candidate's overall fit considering all factors above.
+SCORING NORMALIZATION:
+
+- 90-100: Exceptional match - candidate strongly meets or exceeds all requirements, including role-specific experience
+- 75-89: Strong match - candidate meets most requirements well, with relevant role experience
+- 60-74: Moderate match - candidate meets core requirements, some gaps, may lack direct role experience
+- 40-59: Weak match - candidate has limited relevant experience, likely lacks role-specific experience
+- 0-39: Poor fit - candidate does not meet most requirements and lacks relevant role experience
+
+CONFIDENCE LEVEL DETERMINANTS:
+
+HIGH CONFIDENCE (>90%):
+- Complete information in both JD and resume
+- Clear skill statements with proficiency levels
+- Quantified achievements
+- Standard formatting
+- Clear role titles in resume matching target role
+
+MEDIUM CONFIDENCE (70-89%):
+- Some ambiguous statements
+- Missing proficiency indicators
+- Non-standard section headers
+- Industry jargon variations
+- Unclear role title matches
+
+LOW CONFIDENCE (<70%):
+- Significant information gaps
+- Unparsed formatting issues
+- Vague accomplishment descriptions
+- Contradictory timeline information
+
+BIAS PREVENTION PROTOCOL:
+
+- Ignore candidate name, gender indicators, age, ethnicity
+- Focus solely on skills, experience, and achievements
+- Do not penalize employment gaps without JD context
+- Evaluate alternative experience paths equally (e.g., freelancing, startups, consulting)
+- Standardize scoring regardless of resume formatting quality
+
+ADDITIONAL INSTRUCTIONS:
+
+- Be objective and data-driven in your assessment
+- Provide specific evidence from the resume to support each score
+- Flag any ambiguity or missing information that affects confidence
+- Consider both explicit requirements and implied needs from the JD
+- For Indian market context: Consider tier-1/tier-2 college distinctions, startup vs. enterprise experience, and relevant certifications
+- Base all scores on actual content, not assumptions
+- Ensure all dimension scores are within 0-100 range
+- Ensure weights sum to 1.0 (100%)
+- **CRITICALLY**: Evaluate role-specific experience carefully - this is a key differentiator for candidate fit
+- When assessing role experience, consider variations, synonyms, and role progression (e.g., Junior → Senior, Engineer → Lead Engineer)
+
 Respond with ONLY the JSON object, no additional text."""
 
         try:
             messages = [
                 LLMMessage(
                     role="system",
-                    content="You are a precise recruiter evaluation assistant. Always respond with valid JSON only. Provide a single combined score (0-100) that considers all factors: skills, experience years comparison, role relevance, and other relevant factors."
+                    content="You are an expert AI recruitment analyst specializing in candidate-job fit assessment. Always respond with valid JSON only. Provide a comprehensive multi-dimensional evaluation with overall_match_score as the primary metric. Pay special attention to role-specific experience when evaluating candidates."
                 ),
                 LLMMessage(role="user", content=prompt)
             ]
@@ -145,7 +310,7 @@ Respond with ONLY the JSON object, no additional text."""
             response = await self.llm.chat_completion(
                 messages=messages,
                 temperature=0.3,  # Low temperature for consistency
-                max_tokens=200
+                max_tokens=2000  # Increased for comprehensive response
             )
             
             content = response.content.strip()
@@ -159,13 +324,21 @@ Respond with ONLY the JSON object, no additional text."""
             # Parse JSON
             result = json.loads(content)
             
-            # Extract single score
-            score = float(result.get("score", 0))
+            # Extract overall_match_score (with backward compatibility for old "score" key)
+            score = float(result.get("overall_match_score", result.get("score", 0)))
             
             # Ensure score is in valid range
             score = max(0.0, min(100.0, score))
             
-            logger.info(f"LLM Combined Score: {score:.1f}")
+            # Log additional details if available
+            if "dimension_scores" in result:
+                logger.info(f"LLM Overall Match Score: {score:.1f}")
+                if "role_experience_assessment" in result:
+                    logger.info(f"Role Experience: {result.get('role_experience_assessment')}, Adjustment: {result.get('role_experience_adjustment', 0)}")
+                logger.debug(f"Dimension scores: {result.get('dimension_scores')}")
+                logger.debug(f"Recommendation: {result.get('recommendation')}, Confidence: {result.get('confidence_level')}")
+            else:
+                logger.info(f"LLM Combined Score: {score:.1f}")
             
             return score
             
@@ -173,7 +346,7 @@ Respond with ONLY the JSON object, no additional text."""
             logger.error(f"Failed to parse LLM JSON response: {e}. Content: {content[:200]}")
             return None
         except KeyError as e:
-            logger.error(f"Missing 'score' key in LLM response: {e}. Response: {result}")
+            logger.error(f"Missing 'overall_match_score' or 'score' key in LLM response: {e}. Response: {result}")
             return None
         except Exception as e:
             logger.error(f"Error in LLM scoring: {e}")
