@@ -54,7 +54,7 @@ const Admin = () => {
           setJobsError('Failed to load jobs');
         }
       } catch (err) {
-        // Check if it's a token expiration error
+        // Check if it's a token expiration error - logout immediately without setting error state
         if (isTokenExpiredError(err)) {
           console.log('Token expired, logging out...');
           logout();
@@ -130,7 +130,7 @@ const Admin = () => {
           setInterviewsError(response.message || 'Failed to load interviews');
         }
       } catch (err) {
-        // Check if it's a token expiration error
+        // Check if it's a token expiration error - logout immediately without setting error state
         if (isTokenExpiredError(err)) {
           console.log('Token expired, logging out...');
           logout();
@@ -240,6 +240,7 @@ const Admin = () => {
                               setJobsError('Failed to load jobs');
                             }
                           } catch (err) {
+                            // Check if it's a token expiration error - logout immediately
                             if (isTokenExpiredError(err)) {
                               logout();
                               return;
@@ -328,6 +329,7 @@ const Admin = () => {
                               setInterviewsError(response.message || 'Failed to load interviews');
                             }
                           } catch (err) {
+                            // Check if it's a token expiration error - logout immediately
                             if (isTokenExpiredError(err)) {
                               logout();
                               return;

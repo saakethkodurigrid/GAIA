@@ -1,5 +1,11 @@
 import { API_BASE_URL } from '../utils/config';
 
+// Type for API errors with status code
+interface ApiError extends Error {
+  status?: number;
+  detail?: string;
+}
+
 const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
@@ -76,7 +82,11 @@ export const addJob = async (request: AddJobRequest): Promise<AddJobResponse> =>
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to add job' }));
-    throw new Error(error.detail || 'Failed to add job');
+    const errorMessage = error.detail || 'Failed to add job';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
   }
 
  
@@ -104,9 +114,9 @@ export const listJobs = async (): Promise<ListJobsResponse> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to list jobs' }));
     const errorMessage = error.detail || 'Failed to list jobs';
-    const apiError = new Error(errorMessage);
-    (apiError as any).status = response.status;
-    (apiError as any).detail = error.detail || errorMessage;
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
     throw apiError;
   }
 
@@ -292,7 +302,11 @@ export const getResumesList = async (jobId: string): Promise<ResumesListResponse
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch resumes' }));
-    throw new Error(error.detail || 'Failed to fetch resumes');
+    const errorMessage = error.detail || 'Failed to fetch resumes';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
   }
 
   return response.json();
@@ -336,9 +350,9 @@ export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch interviews' }));
     const errorMessage = error.detail || 'Failed to fetch interviews';
-    const apiError = new Error(errorMessage);
-    (apiError as any).status = response.status;
-    (apiError as any).detail = error.detail || errorMessage;
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
     throw apiError;
   }
 
@@ -379,7 +393,11 @@ export const getScheduledInterviews = async (jobId: string): Promise<ScheduledIn
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch scheduled interviews' }));
-    throw new Error(error.detail || 'Failed to fetch scheduled interviews');
+    const errorMessage = error.detail || 'Failed to fetch scheduled interviews';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
   }
 
   return response.json();
@@ -420,7 +438,11 @@ export const getCompletedInterviews = async (jobId: string): Promise<CompletedIn
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch completed interviews' }));
-    throw new Error(error.detail || 'Failed to fetch completed interviews');
+    const errorMessage = error.detail || 'Failed to fetch completed interviews';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
   }
 
   return response.json();

@@ -297,7 +297,33 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
       ...prev,
       [questionId]: QUESTION_STATUS.MARKED
     }));
-  }, []);
+    
+    // Automatically move to next question, or wrap to question 1 if on last question
+    if (currentQuestionIndex === questions.length - 1) {
+      // If on last question (e.g., question 25), move to question 1 (index 0)
+      setCurrentQuestionIndex(0);
+      // Initialize selected answer from saved answer if available
+      const firstQuestion = questions[0];
+      if (firstQuestion && savedAnswers[firstQuestion.id] !== undefined && answers[firstQuestion.id] === undefined) {
+        setAnswers((prev) => ({
+          ...prev,
+          [firstQuestion.id]: savedAnswers[firstQuestion.id]
+        }));
+      }
+    } else {
+      // Move to next question
+      const nextIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+      // Initialize selected answer from saved answer if available
+      const nextQuestion = questions[nextIndex];
+      if (nextQuestion && savedAnswers[nextQuestion.id] !== undefined && answers[nextQuestion.id] === undefined) {
+        setAnswers((prev) => ({
+          ...prev,
+          [nextQuestion.id]: savedAnswers[nextQuestion.id]
+        }));
+      }
+    }
+  }, [currentQuestionIndex, questions, savedAnswers, answers]);
 
   const saveAnswer = useCallback((questionId: number) => {
     if (answers[questionId] !== undefined) {

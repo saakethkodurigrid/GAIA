@@ -227,8 +227,14 @@ const ScheduleInterviewPage = () => {
         },
       });
 
+      // Get candidate ID from user object
+      const candidateId = user?.candidateId;
+      if (!candidateId) {
+        throw new Error('Candidate ID not found. Please login again.');
+      }
+
       // Call the API in background (don't await - let it run asynchronously)
-      scheduleTest(scheduledDateTime, token).catch((err) => {
+      scheduleTest(scheduledDateTime, token, candidateId).catch((err) => {
         // Log error but don't block navigation
         console.error('Background schedule test error:', err);
       });

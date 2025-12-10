@@ -28,12 +28,12 @@ const getRedirectPath = (userType?: UserType, status?: CandidateStatus): string 
   // Candidate users -> check status
   if (userType === 'candidate') {
     // If already scheduled, redirect to scheduled page
-    // if (status === 'scheduled') {
-    //   console.log('Redirecting candidate to /test/scheduled (already scheduled)');
-    //   return '/test/scheduled';
-    // }
+    if (status === 'scheduled') {
+      console.log('Redirecting candidate to /test/scheduled (already scheduled)');
+      return '/test/scheduled';
+    }
     // Otherwise, redirect to schedule page
-    // console.log('Redirecting candidate to /schedule (not scheduled yet)');
+    console.log('Redirecting candidate to /schedule (not scheduled yet)');
     return '/schedule';
   }
   

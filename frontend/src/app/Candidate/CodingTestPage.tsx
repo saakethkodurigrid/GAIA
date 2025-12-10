@@ -188,7 +188,7 @@ const CodingTestPageContent = () => {
                         : isFullscreenExited
                         ? 'bg-gray-100 border-2 border-gray-400 text-gray-500 cursor-not-allowed opacity-50'
                         : isCurrent
-                        ? 'bg-amber-50 border-2 border-yellow-500 text-gray-900 shadow-md'
+                        ? 'bg-blue-50 border-4 border-blue-600 text-gray-900 shadow-lg ring-2 ring-blue-300 font-bold'
                         : 'bg-amber-50 border-2 border-yellow-500 text-gray-900 hover:bg-amber-100'
                     }`}
                   >

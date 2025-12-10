@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry } from '../api/admin.api';
+import { isTokenExpiredError } from '../utils/apiErrorHandler';
 
 const JobDetailsPage = () => {
   const { user, logout } = useAuth();
@@ -60,6 +61,12 @@ const JobDetailsPage = () => {
         setResumesError(response.message || 'Failed to fetch resumes');
       }
     } catch (err) {
+      // Check if it's a token expiration error - logout immediately
+      if (isTokenExpiredError(err)) {
+        console.log('Token expired, logging out...');
+        logout();
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch resumes. Please try again.';
       setResumesError(errorMessage);
       setResumes([]);
@@ -89,6 +96,12 @@ const JobDetailsPage = () => {
         setScheduledInterviewsError(response.message || 'Failed to fetch scheduled interviews');
       }
     } catch (err) {
+      // Check if it's a token expiration error - logout immediately
+      if (isTokenExpiredError(err)) {
+        console.log('Token expired, logging out...');
+        logout();
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch scheduled interviews. Please try again.';
       setScheduledInterviewsError(errorMessage);
       setScheduledInterviews([]);
@@ -124,6 +137,12 @@ const JobDetailsPage = () => {
         setCompletedInterviewsError(response.message || 'Failed to fetch completed interviews');
       }
     } catch (err) {
+      // Check if it's a token expiration error - logout immediately
+      if (isTokenExpiredError(err)) {
+        console.log('Token expired, logging out...');
+        logout();
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch completed interviews. Please try again.';
       setCompletedInterviewsError(errorMessage);
       setCompletedInterviews([]);
@@ -359,6 +378,12 @@ const JobDetailsPage = () => {
         setTimeout(() => setUploadError(null), 8000);
       }
     } catch (err) {
+      // Check if it's a token expiration error - logout immediately
+      if (isTokenExpiredError(err)) {
+        console.log('Token expired, logging out...');
+        logout();
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to upload candidates. Please try again.';
       setUploadError(errorMessage);
       setTimeout(() => setUploadError(null), 5000);

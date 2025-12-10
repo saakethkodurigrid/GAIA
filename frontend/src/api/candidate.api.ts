@@ -33,10 +33,16 @@ const toISTString = (date: Date): string => {
  */
 export const scheduleTest = async (
   scheduledDate: Date,
-  token: string
+  token: string,
+  candidateId: string
 ): Promise<ScheduleTestResponse> => {
   // Convert date to IST format string
   const scheduledDateISO = toISTString(scheduledDate);
+  
+  // Validate candidateId
+  if (!candidateId) {
+    throw new Error('Candidate ID is required. Please login again.');
+  }
   
   // Log what's being sent to backend
   console.log('=== API Call: scheduleTest ===');
@@ -44,28 +50,26 @@ export const scheduleTest = async (
   console.log('Input Date ISO:', scheduledDate.toISOString());
   console.log('Input Date Local:', scheduledDate.toString());
   console.log('Converted IST string:', scheduledDateISO);
+  console.log('Candidate ID:', candidateId);
   console.log('Request body:', JSON.stringify({
     scheduled_date: scheduledDateISO,
   }));
-  console.log('API Endpoint:', `${API_BASE_URL}/candidate/schedule-test`);
+  console.log('API Endpoint:', `${API_BASE_URL}/candidate/schedule-test?candidate_id=${candidateId}`);
   console.log('================================');
   
-  // const candidateId = localStorage.getItem('candidate_id') || '';
-  // if (!candidateId) {
-  //   throw new Error('Candidate ID not found. Please login again.');
-  // }
-  const response = await fetch(`${API_BASE_URL}/candidate/schedule-test`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    
-    body: JSON.stringify({
-      scheduled_date: scheduledDateISO,
-      // candidate_id: candidateId,
-    } as ScheduleTestRequest),
-  });
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/schedule-test?candidate_id=${encodeURIComponent(candidateId)}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        scheduled_date: scheduledDateISO,
+      } as ScheduleTestRequest),
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to schedule test' }));
