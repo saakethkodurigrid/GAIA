@@ -542,7 +542,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
 
       console.log('Running code via backend:', request);
 
-      const result = await runCodeViaBackend(user.candidateId, request);
+      const result = await runCodeViaBackend(request, user.candidateId);
 
       // Set output based on summary
       const summaryText = `Tests: ${result.summary.passed}/${result.summary.total_tests} passed (${result.summary.pass_percentage.toFixed(1)}%)`;
@@ -655,7 +655,7 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
     console.log('Submitting answer via backend (background):', request);
 
     // Fire API call in background without waiting
-    submitCodingAnswer(user.candidateId, request)
+    submitCodingAnswer(request, user.candidateId)
       .then((result) => {
         setIsSubmitting(false);
         setOutput(
