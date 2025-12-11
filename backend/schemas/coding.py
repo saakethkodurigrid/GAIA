@@ -75,3 +75,12 @@ class CodingQuestionsResponse(BaseModel):
     count: int = Field(..., description="Number of coding questions")
     questions: List[CodingQuestionResponse] = Field(default_factory=list, description="List of coding questions")
 
+
+class FinalizeCodingSectionResponse(BaseModel):
+    """Response schema for finalizing coding section."""
+    success: bool = Field(..., description="Whether finalization was successful")
+    message: str = Field(..., description="Response message")
+    coding_analysis: Dict[str, Any] = Field(..., description="Complete coding section analysis")
+    duration_seconds: Optional[int] = Field(None, description="Total time spent on coding section in seconds")
+    duration_minutes: Optional[float] = Field(None, description="Total time spent on coding section in minutes")
+
