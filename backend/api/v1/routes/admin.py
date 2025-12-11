@@ -2,6 +2,7 @@
 Admin API routes for managing recruiters and admins.
 """
 import logging
+import base64
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
@@ -674,6 +675,7 @@ async def get_candidate_interview_analysis(
     - Overall percentage
     - Result (PASS/FAIL)
     - Overall summary (4-line LLM-generated summary)
+    - Candidate image (base64 encoded data URL from blob storage)
     
     Only accessible by recruiters and admins.
     
@@ -723,6 +725,20 @@ async def get_candidate_interview_analysis(
         system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
         cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
         
+        # Fetch the candidate's image from blob storage and encode as base64
+        image_data = None
+        try:
+            from services.blob_storage_service import BlobStorageService
+            blob_service = BlobStorageService()
+            image_result = blob_service.get_image(candidate.candidate_id)
+            if image_result:
+                content, content_type, filename = image_result
+                # Encode image as base64 data URL
+                image_data = f"data:{content_type};base64,{base64.b64encode(content).decode('utf-8')}"
+        except Exception as e:
+            logger.warning(f"Could not fetch image for candidate {candidate_id}: {str(e)}")
+            # Continue without image if it fails
+        
         return InterviewAnalysisResponse(
             success=True,
             message="Interview analysis retrieved successfully",
@@ -733,7 +749,8 @@ async def get_candidate_interview_analysis(
             cheat_metrics=cheat_metrics,
             overall_percentage=interview_analysis.overall_percentage,
             result=interview_analysis.result,
-            overall_summary=interview_analysis.overall_summary
+            overall_summary=interview_analysis.overall_summary,
+            image_data=image_data
         )
         
     except HTTPException:
