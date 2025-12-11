@@ -103,3 +103,87 @@ export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => 
   return response.json();
 };
 
+// Interview Analysis Types
+export interface InterviewAnalysisResponse {
+  success: boolean;
+  message: string;
+  candidate_id: string;
+  mcq_analysis?: {
+    score?: number;
+    time_taken?: number;
+    attempted?: {
+      easy: number;
+      medium: number;
+      hard: number;
+    };
+    correct?: {
+      easy: number;
+      medium: number;
+      hard: number;
+    };
+    total_questions?: number;
+    [key: string]: unknown;
+  } | null;
+  coding_analysis?: {
+    total_score?: number;
+    time_taken?: number;
+    total_submitted?: number;
+    total_correct?: number;
+    partially_correct?: number;
+    total_questions?: number;
+    [key: string]: unknown;
+  } | null;
+  system_design_analysis?: {
+    score?: number;
+    summary?: string;
+    key_strengths?: string[];
+    areas_of_improvement?: string[];
+    suggested_learning?: string[];
+    lowest_area?: string;
+    things_to_improve?: string[];
+    average_scores?: {
+      [key: string]: number;
+    };
+    time_taken?: number;
+    [key: string]: unknown;
+  } | null;
+  cheat_metrics?: {
+    tab_change?: number;
+    full_screen_exits?: number;
+    multiple_face?: number;
+    [key: string]: unknown;
+  } | null;
+  overall_percentage?: number | null;
+  result?: 'PASS' | 'FAIL' | null;
+  overall_summary?: string | null;
+}
+
+/**
+ * Get interview analysis data for a specific candidate (Recruiter/Admin only)
+ */
+export const getInterviewAnalysis = async (candidateId: string): Promise<InterviewAnalysisResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/candidates/${candidateId}/interview-analysis`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch interview analysis' }));
+    const errorMessage = error.detail || 'Failed to fetch interview analysis';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
+  }
+
+  return response.json();
+};
+

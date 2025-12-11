@@ -1,78 +1,84 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-
-// Hardcoded data
-const analysisData = {
-  candidate: {
-    name: 'Jhil Kumari',
-    role: 'Backend',
-    score: 76,
-    integrity: 'High',
-    testTime: 132,
-    avatar: 'JK'
-  },
-  assessment: {
-    date: 'November 5, 2025',
-    time: '3:45 PM',
-    verdict: 'Recommended',
-    summary: 'Strong architectural thinking with attention to scalability. Consider exploring more microservices patterns. Strong architectural thinking with attention to scalability. Consider exploring more microservices patterns. Strong architectural thinking with attention to scalability. Consider exploring more microservices patterns.'
-  },
-  sections: {
-    mcq: {
-      title: 'Section 1: Multiple Choice',
-      totalScore: 16,
-      timeTaken: 72,
-      totalAttempted: 15,
-      totalQuestions: 25,
-      correctAnswers: 10,
-      difficultyBreakdown: {
-        attempted: { easy: 6, medium: 2, hard: 2 },
-        correct: { easy: 6, medium: 2, hard: 2 }
-      }
-    },
-    coding: {
-      title: 'Section 2: Coding Challenge',
-      totalScore: 32,
-      timeTaken: 103,
-      submittedQuestions: 3,
-      totalQuestions: 4,
-      totalCorrect: 2,
-      partiallyCorrect: 1,
-      result: 'Power coder'
-    },
-    systemDesign: {
-      title: 'Section 3: System Design',
-      totalScore: 32,
-      timeTaken: 103,
-      summary: 'Strong architectural thinking with attention to scalability. Consider exploring more microservices patterns.',
-      strengths: [
-        'Well-structured system architecture',
-        'Good understanding of database design patterns'
-      ],
-      improvements: [
-        'Explore more advanced caching strategies',
-        'Deep dive into event-driven architecture patterns'
-      ]
-    }
-  },
-  integrity: {
-    level: 'High',
-    fullscreenExits: 3,
-    multipleFaceDetection: 0,
-    noFaceDetected: 2,
-    objectDetection: 1
-  }
-};
+import { getInterviewAnalysis, type InterviewAnalysisResponse } from '../../api/admin.api';
+import { isTokenExpiredError } from '../../utils/apiErrorHandler';
 
 const AnalysisPage = () => {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [analysisData, setAnalysisData] = useState<InterviewAnalysisResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const candidateId = location.state?.candidateId;
+  const candidateName = location.state?.candidateName || 'Unknown';
+  const candidateEmail = location.state?.candidateEmail || '';
+
+  useEffect(() => {
+    if (!candidateId) {
+      setError('No candidate ID provided');
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchAnalysis = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getInterviewAnalysis(candidateId);
+        console.log('Interview Analysis Data:', data);
+        console.log('MCQ Analysis:', data.mcq_analysis);
+        console.log('Coding Analysis:', data.coding_analysis);
+        console.log('System Design Analysis:', data.system_design_analysis);
+        console.log('Cheat Metrics:', data.cheat_metrics);
+        console.log('Overall Summary:', data.overall_summary);
+        setAnalysisData(data);
+        setError(null);
+      } catch (err) {
+        if (isTokenExpiredError(err)) {
+          console.log('Token expired, logging out...');
+          logout();
+          return;
+        }
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch analysis data';
+        console.error('Error fetching analysis:', err);
+        setError(errorMessage);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAnalysis();
+  }, [candidateId, logout]);
 
   const handleLogout = () => {
     logout();
+  };
+
+  // Helper function to get candidate initials
+  const getInitials = (name: string) => {
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Helper function to determine integrity level
+  const getIntegrityLevel = (metrics?: { tab_change?: number; full_screen_exits?: number; multiple_face?: number } | null) => {
+    if (!metrics) return 'Unknown';
+    
+    const totalViolations = (metrics.tab_change || 0) + (metrics.full_screen_exits || 0) + (metrics.multiple_face || 0);
+    
+    if (totalViolations === 0) return 'Very High';
+    if (totalViolations <= 3) return 'High';
+    if (totalViolations <= 6) return 'Medium';
+    return 'Low';
   };
 
   const handleSectionClick = (section: string) => {
@@ -152,8 +158,22 @@ const AnalysisPage = () => {
   };
 
   const renderSectionContent = (section: string) => {
+    if (!analysisData) return null;
+
     switch (section) {
-      case 'mcq':
+      case 'mcq': {
+        const mcqData = analysisData.mcq_analysis;
+        if (!mcqData) return <p className="text-gray-500">No MCQ data available</p>;
+        
+        // Use the actual data structure: attempted and correct objects
+        const mcqAttempted = mcqData.attempted || { easy: 0, medium: 0, hard: 0 };
+        const mcqCorrect = mcqData.correct || { easy: 0, medium: 0, hard: 0 };
+        
+        // Calculate totals
+        const totalAttempted = mcqAttempted.easy + mcqAttempted.medium + mcqAttempted.hard;
+        const totalCorrect = mcqCorrect.easy + mcqCorrect.medium + mcqCorrect.hard;
+        const totalQuestions = mcqData.total_questions || 25; // Default to 25 if not provided
+        
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -161,30 +181,34 @@ const AnalysisPage = () => {
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Total Score: {analysisData.sections.mcq.totalScore}</span>
+                <span className="text-lg font-semibold text-gray-700">Total Score: {mcqData.score ?? 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {analysisData.sections.mcq.timeTaken} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {mcqData.time_taken ?? 'N/A'} mins</span>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               {renderDonutChart(
-                analysisData.sections.mcq.difficultyBreakdown.attempted,
-                `Total attempted questions: ${analysisData.sections.mcq.totalAttempted}/${analysisData.sections.mcq.totalQuestions}`
+                mcqAttempted,
+                `Total attempted questions: ${totalAttempted}/${totalQuestions}`
               )}
               {renderDonutChart(
-                analysisData.sections.mcq.difficultyBreakdown.correct,
-                `Correct answers: ${analysisData.sections.mcq.correctAnswers}`
+                mcqCorrect,
+                `Correct answers: ${totalCorrect}`
               )}
             </div>
           </div>
         );
+      }
 
-      case 'coding':
+      case 'coding': {
+        const codingData = analysisData.coding_analysis;
+        if (!codingData) return <p className="text-gray-500">No coding data available</p>;
+        
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -194,7 +218,7 @@ const AnalysisPage = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
                 </div>
-                <span className="text-lg font-semibold text-gray-700">Total Score: {analysisData.sections.coding.totalScore}</span>
+                <span className="text-lg font-semibold text-gray-700">Total Score: {codingData.total_score ?? 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -202,33 +226,32 @@ const AnalysisPage = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {analysisData.sections.coding.timeTaken} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {codingData.time_taken ?? 'N/A'} mins</span>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <span className="text-base font-semibold text-gray-700">Submitted questions: </span>
-                <span className="text-base text-gray-900">{analysisData.sections.coding.submittedQuestions}/{analysisData.sections.coding.totalQuestions}</span>
+                <span className="text-base text-gray-900">{codingData.total_submitted ?? 0}{codingData.total_questions ? `/${codingData.total_questions}` : ''}</span>
               </div>
               <div>
                 <span className="text-base font-semibold text-gray-700">Total correct answers: </span>
-                <span className="text-base text-gray-900">{analysisData.sections.coding.totalCorrect}</span>
+                <span className="text-base text-gray-900">{codingData.total_correct ?? 0}</span>
               </div>
               <div>
                 <span className="text-base font-semibold text-gray-700">Partially correct answers: </span>
-                <span className="text-base text-gray-900">{analysisData.sections.coding.partiallyCorrect}</span>
+                <span className="text-base text-gray-900">{codingData.partially_correct ?? 0}</span>
               </div>
-            </div>
-
-            <div>
-              <span className="text-base font-semibold text-gray-700">Result: </span>
-              <span className="text-lg font-bold text-green-600">{analysisData.sections.coding.result}</span>
             </div>
           </div>
         );
+      }
 
-      case 'system-design':
+      case 'system-design': {
+        const sdData = analysisData.system_design_analysis;
+        if (!sdData) return <p className="text-gray-500">No system design data available</p>;
+        
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -236,109 +259,165 @@ const AnalysisPage = () => {
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Total Score: {analysisData.sections.systemDesign.totalScore}</span>
+                <span className="text-lg font-semibold text-gray-700">Total Score: {sdData.score ?? 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {analysisData.sections.systemDesign.timeTaken} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {sdData.time_taken ?? 'N/A'} mins</span>
               </div>
             </div>
 
-            <div className="bg-purple-100 rounded-lg p-6 shadow-sm">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-bold text-gray-900">Summary</h3>
-              </div>
-              <p className="text-gray-700 leading-relaxed">{analysisData.sections.systemDesign.summary}</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-white rounded-lg p-6 shadow-sm">
-                <div className="flex items-start gap-3 mb-4">
-                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900">Strengths</h3>
-                </div>
-                <ul className="space-y-2">
-                  {analysisData.sections.systemDesign.strengths.map((strength, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <svg className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span className="text-gray-700">{strength}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-white rounded-lg p-6 shadow-sm">
+            {sdData.summary && (
+              <div className="bg-yellow-50 rounded-lg p-6 shadow-sm">
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900">Areas for Improvement</h3>
+                  <h3 className="text-lg font-bold text-gray-900">Summary</h3>
                 </div>
-                <ul className="space-y-2">
-                  {analysisData.sections.systemDesign.improvements.map((improvement, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <svg className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span className="text-gray-700">{improvement}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-gray-700 leading-relaxed">{sdData.summary}</p>
               </div>
+            )}
+
+            {/* Strengths and Things to Improve */}
+            <div className="grid grid-cols-2 gap-6">
+              {sdData.key_strengths && sdData.key_strengths.length > 0 && (
+                <div className="bg-white rounded-lg p-6 shadow-sm">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Strengths</h3>
+                  </div>
+                  <ul className="space-y-2">
+                    {sdData.key_strengths.map((strength, index) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <svg className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-gray-700">{strength}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {sdData.things_to_improve && sdData.things_to_improve.length > 0 && (
+                <div className="bg-white rounded-lg p-6 shadow-sm">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Things to Improve</h3>
+                  </div>
+                  <ul className="space-y-2">
+                    {sdData.things_to_improve.map((item, index) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <svg className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-gray-700">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         );
+      }
 
-      case 'integrity':
+      case 'integrity': {
+        const cheatData = analysisData.cheat_metrics;
+        if (!cheatData) return <p className="text-gray-500">No integrity data available</p>;
+        
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-lg font-semibold text-gray-700">Integrity: </span>
-                <span className="text-lg font-bold text-green-600">{analysisData.integrity.level}</span>
-              </div>
               <div className="space-y-3">
                 <div>
+                  <span className="text-base font-semibold text-gray-700">Tab changes: </span>
+                  <span className="text-base text-gray-900">{cheatData.tab_change ?? 0}</span>
+                </div>
+                <div>
                   <span className="text-base font-semibold text-gray-700">Fullscreen exits: </span>
-                  <span className="text-base text-gray-900">{analysisData.integrity.fullscreenExits}</span>
+                  <span className="text-base text-gray-900">{cheatData.full_screen_exits ?? 0}</span>
                 </div>
                 <div>
                   <span className="text-base font-semibold text-gray-700">Multiple face detection: </span>
-                  <span className="text-base text-gray-900">{analysisData.integrity.multipleFaceDetection}</span>
-                </div>
-                <div>
-                  <span className="text-base font-semibold text-gray-700">No face detected: </span>
-                  <span className="text-base text-gray-900">{analysisData.integrity.noFaceDetected}</span>
-                </div>
-                <div>
-                  <span className="text-base font-semibold text-gray-700">Object detection: </span>
-                  <span className="text-base text-gray-900">{analysisData.integrity.objectDetection}</span>
+                  <span className="text-base text-gray-900">{(cheatData.multiple_face ?? 0) > 0 ? 'yes' : 'no'}</span>
                 </div>
               </div>
             </div>
           </div>
         );
+      }
 
       default:
         return null;
     }
   };
 
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
+        <Header 
+          showUserInfo={true} 
+          showLogout={true} 
+          showTechInterviewLogo={true} 
+          user={user} 
+          onLogout={handleLogout} 
+        />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mb-4"></div>
+            <p className="text-lg text-gray-700">Loading interview analysis...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error || !analysisData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
+        <Header 
+          showUserInfo={true} 
+          showLogout={true} 
+          showTechInterviewLogo={true} 
+          user={user} 
+          onLogout={handleLogout} 
+        />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-lg text-red-600 mb-4">{error || 'No analysis data available'}</p>
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 font-semibold"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const integrityLevel = getIntegrityLevel(analysisData.cheat_metrics);
+  const overallScore = analysisData.overall_percentage ?? 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
@@ -355,9 +434,15 @@ const AnalysisPage = () => {
         <div className="flex-1">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-3xl font-semibold text-gray-900">Interview Analysis Report</h1>
-            <p className="text-base text-gray-600">
-              Assessment completed on {analysisData.assessment.date} at {analysisData.assessment.time}
-            </p>
+            <button
+              onClick={() => navigate(-1)}
+              className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Back
+            </button>
           </div>
           
           {/* Separator Line */}
@@ -366,128 +451,144 @@ const AnalysisPage = () => {
           {/* Result */}
           <div className="mb-6">
             <span className="text-lg font-semibold text-gray-700">Result: </span>
-            <span className="text-lg font-bold text-green-600">{analysisData.assessment.verdict}</span>
+            <span className={`text-lg font-bold ${analysisData.result === 'PASS' ? 'text-green-600' : 'text-red-600'}`}>
+              {analysisData.result || 'Pending'}
+            </span>
           </div>
 
           {/* Summary */}
-          <div className="bg-white rounded-lg p-6 mb-6 shadow-sm">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
+          {analysisData.overall_summary && (
+            <div className="bg-white rounded-lg p-6 mb-6 shadow-sm">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Summary</h2>
               </div>
-              <h2 className="text-xl font-bold text-gray-900">Summary</h2>
+              <p className="text-gray-700 leading-relaxed">
+                {analysisData.overall_summary.replace(/^\*\*Interview Performance Summary:\*\*\s*/i, '')}
+              </p>
             </div>
-            <p className="text-gray-700 leading-relaxed">{analysisData.assessment.summary}</p>
-          </div>
+          )}
 
           {/* Section Analysis */}
           <div className="mb-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Section Analysis</h2>
 
             {/* Section 1: Multiple Choice */}
-            <div className="bg-white rounded-lg shadow-sm mb-3">
-              <button
-                onClick={() => handleSectionClick('mcq')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <span className="text-lg font-semibold text-gray-900">{analysisData.sections.mcq.title}</span>
-                <svg 
-                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('mcq') ? 'rotate-90' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+            {analysisData.mcq_analysis && (
+              <div className="bg-white rounded-lg shadow-sm mb-3">
+                <button
+                  onClick={() => handleSectionClick('mcq')}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              {expandedSections.has('mcq') && (
-                <div className="px-4 pb-4 border-t border-gray-200">
-                  <div className="pt-4">
-                    {renderSectionContent('mcq')}
+                  <span className="text-lg font-semibold text-gray-900">Section 1: Multiple Choice</span>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('mcq') ? 'rotate-90' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {expandedSections.has('mcq') && (
+                  <div className="px-4 pb-4 border-t border-gray-200">
+                    <div className="pt-4">
+                      {renderSectionContent('mcq')}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Section 2: Coding Challenge */}
-            <div className="bg-white rounded-lg shadow-sm mb-3">
-              <button
-                onClick={() => handleSectionClick('coding')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <span className="text-lg font-semibold text-gray-900">{analysisData.sections.coding.title}</span>
-                <svg 
-                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('coding') ? 'rotate-90' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+            {analysisData.coding_analysis && (
+              <div className="bg-white rounded-lg shadow-sm mb-3">
+                <button
+                  onClick={() => handleSectionClick('coding')}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              {expandedSections.has('coding') && (
-                <div className="px-4 pb-4 border-t border-gray-200">
-                  <div className="pt-4">
-                    {renderSectionContent('coding')}
+                  <span className="text-lg font-semibold text-gray-900">Section 2: Coding Challenge</span>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('coding') ? 'rotate-90' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {expandedSections.has('coding') && (
+                  <div className="px-4 pb-4 border-t border-gray-200">
+                    <div className="pt-4">
+                      {renderSectionContent('coding')}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Section 3: System Design */}
-            <div className="bg-white rounded-lg shadow-sm mb-3">
-              <button
-                onClick={() => handleSectionClick('system-design')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <span className="text-lg font-semibold text-gray-900">{analysisData.sections.systemDesign.title}</span>
-                <svg 
-                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('system-design') ? 'rotate-90' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+            {analysisData.system_design_analysis && (
+              <div className="bg-white rounded-lg shadow-sm mb-3">
+                <button
+                  onClick={() => handleSectionClick('system-design')}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              {expandedSections.has('system-design') && (
-                <div className="px-4 pb-4 border-t border-gray-200">
-                  <div className="pt-4">
-                    {renderSectionContent('system-design')}
+                  <span className="text-lg font-semibold text-gray-900">Section 3: System Design</span>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('system-design') ? 'rotate-90' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {expandedSections.has('system-design') && (
+                  <div className="px-4 pb-4 border-t border-gray-200">
+                    <div className="pt-4">
+                      {renderSectionContent('system-design')}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Integrity */}
-            <div className="bg-white rounded-lg shadow-sm">
-              <button
-                onClick={() => handleSectionClick('integrity')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold text-gray-900">Integrity: </span>
-                  <span className="text-lg font-semibold text-green-600">{analysisData.integrity.level}</span>
-                </div>
-                <svg 
-                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('integrity') ? 'rotate-90' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+            {analysisData.cheat_metrics && (
+              <div className="bg-white rounded-lg shadow-sm">
+                <button
+                  onClick={() => handleSectionClick('integrity')}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              {expandedSections.has('integrity') && (
-                <div className="px-4 pb-4 border-t border-gray-200">
-                  <div className="pt-4">
-                    {renderSectionContent('integrity')}
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-semibold text-gray-900">Integrity: </span>
+                    <span className={`text-lg font-semibold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {integrityLevel}
+                    </span>
                   </div>
-                </div>
-              )}
-            </div>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform ${expandedSections.has('integrity') ? 'rotate-90' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {expandedSections.has('integrity') && (
+                  <div className="px-4 pb-4 border-t border-gray-200">
+                    <div className="pt-4">
+                      {renderSectionContent('integrity')}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -495,30 +596,34 @@ const AnalysisPage = () => {
         <div className="w-80 bg-white rounded-lg p-6 shadow-sm h-fit">
           <div className="flex flex-col items-center mb-6">
             <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center mb-4 relative">
-              <span className="text-3xl font-bold text-gray-800">{analysisData.candidate.avatar}</span>
+              <span className="text-3xl font-bold text-gray-800">{getInitials(candidateName)}</span>
               <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-white"></div>
             </div>
           </div>
           <div className="space-y-3">
             <div>
               <span className="text-sm font-semibold text-gray-600">Name: </span>
-              <span className="text-base font-bold text-gray-900">{analysisData.candidate.name}</span>
+              <span className="text-base font-bold text-gray-900">{candidateName}</span>
             </div>
+            {candidateEmail && (
+              <div>
+                <span className="text-sm font-semibold text-gray-600">Email: </span>
+                <span className="text-base text-gray-700">{candidateEmail}</span>
+              </div>
+            )}
             <div>
-              <span className="text-sm font-semibold text-gray-600">Role: </span>
-              <span className="text-base font-bold text-gray-900">{analysisData.candidate.role}</span>
-            </div>
-            <div>
-              <span className="text-sm font-semibold text-gray-600">Score: </span>
-              <span className="text-base font-bold text-gray-900">{analysisData.candidate.score}</span>
+              <span className="text-sm font-semibold text-gray-600">Overall Score: </span>
+              <span className="text-base font-bold text-gray-900">{overallScore}%</span>
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-600">Integrity: </span>
-              <span className="text-base font-bold text-green-600">{analysisData.candidate.integrity}</span>
+              <span className={`text-base font-bold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+                {integrityLevel}
+              </span>
             </div>
             <div>
-              <span className="text-sm font-semibold text-gray-600">Test time: </span>
-              <span className="text-base font-bold text-gray-900">{analysisData.candidate.testTime} mins</span>
+              <span className="text-sm font-semibold text-gray-600">Candidate ID: </span>
+              <span className="text-xs text-gray-600 break-all">{candidateId}</span>
             </div>
           </div>
         </div>

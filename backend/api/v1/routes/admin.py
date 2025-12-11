@@ -611,8 +611,8 @@ async def get_completed_interviews(
     """
     Get list of candidates for completed interviews view.
     
-    Returns candidates with status 'selected' or 'not selected' for the specified job.
-    These are candidates who have completed interviews and received final decisions.
+    Returns candidates with status 'completed', 'selected' or 'not selected' for the specified job.
+    These are candidates who have completed interviews and may or may not have received final decisions.
     """
     from models.candidate import Candidate
     from models.recruiter_admin_candidate import RecruiterAdminCandidate
@@ -633,7 +633,7 @@ async def get_completed_interviews(
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
         RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
-        Candidate.status.in_(['selected', 'not selected'])
+        Candidate.status.in_(['completed', 'selected', 'not selected'])
     ).order_by(Candidate.resume_score.desc()).all()
     
     # TODO: Get interview scores from interview_analysis_table if available

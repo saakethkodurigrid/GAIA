@@ -264,6 +264,11 @@ export interface CompleteTestRequest {
     coding?: boolean;
     system_design?: boolean;
   };
+  integrity?: {
+    multiple_face: 'yes' | 'no';
+    full_screen_exits: number;
+    tab_change: number;
+  };
 }
 
 export interface CompleteTestResponse {

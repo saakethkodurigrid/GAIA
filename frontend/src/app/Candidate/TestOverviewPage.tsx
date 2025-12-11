@@ -279,6 +279,10 @@ const TestOverviewPage = () => {
         // Get sections completed from localStorage
         const submittedSections = getSubmittedSections();
 
+        // Get cheating detection data
+        const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
+        const fullScreenExits = getFullscreenExitCount();
+
         // Prepare request body
         const requestBody = {
           completion_method: 'manual' as const,
@@ -289,6 +293,11 @@ const TestOverviewPage = () => {
             mcq: submittedSections.mcq,
             coding: submittedSections.coding,
             system_design: submittedSections.systemDesign,
+          },
+          integrity: {
+            multiple_face: cheatingCounts.multipleFacesDetected > 0 ? 'yes' as const : 'no' as const,
+            full_screen_exits: fullScreenExits,
+            tab_change: cheatingCounts.tabChange,
           },
         };
 

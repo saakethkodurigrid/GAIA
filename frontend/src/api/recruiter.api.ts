@@ -408,7 +408,7 @@ export interface CompletedInterviewCandidateResponse {
   name: string;
   email_id: string;
   interview_score: number | null;
-  status: string; // 'selected' or 'not selected'
+  status: string; // 'completed', 'selected', or 'not selected'
   report_link: string | null;
 }
 

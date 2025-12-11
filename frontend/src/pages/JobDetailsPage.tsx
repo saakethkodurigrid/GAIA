@@ -185,12 +185,12 @@ const JobDetailsPage = () => {
   };
 
   const getScoreColor = (status: string) => {
-    // If shortlisted, always show green regardless of score
-    if (status.toLowerCase() === 'shortlisted') {
-      return 'text-green-600';
+    // If rejected, show red
+    if (status.toLowerCase() === 'rejected') {
+      return 'text-red-600';
     }
-    // If not shortlisted (e.g., 'rejected'), always show red regardless of score
-    return 'text-red-600';
+    // For all other statuses (shortlisted, pending, etc.), show green
+    return 'text-green-600';
   };
 
   const getInterviewStatusColor = (status: string) => {
@@ -241,6 +241,8 @@ const JobDetailsPage = () => {
         return 'bg-green-100 text-green-800 border-green-200';
       case 'not selected':
         return 'bg-red-100 text-red-800 border-red-200';
+      case 'completed':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -702,21 +704,21 @@ const JobDetailsPage = () => {
                                 </span>
                               </td>
                               <td className="py-3 px-4">
-                                {interview.report_link ? (
-                                  <a
-                                    href={interview.report_link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-                                  >
-                                    View Report
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                  </a>
-                                ) : (
-                                  <span className="text-gray-400 text-sm">Not available</span>
-                                )}
+                                <button
+                                  onClick={() => navigate('/candidate/analysis', { 
+                                    state: { 
+                                      candidateId: interview.candidate_id,
+                                      candidateName: interview.name,
+                                      candidateEmail: interview.email_id
+                                    } 
+                                  })}
+                                  className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                                >
+                                  View Report
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </button>
                               </td>
                             </tr>
                           ))}
