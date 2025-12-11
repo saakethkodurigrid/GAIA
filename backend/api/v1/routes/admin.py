@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
 from typing import List
 import json
+import json
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_admin
@@ -21,6 +22,7 @@ from schemas.admin import (
     ListInterviewsResponse,
     AddCandidatesBatchResponse,
     CandidateBatchItemResponse,
+    CandidateBatchItemRequest,
     CandidateBatchItemRequest,
     FailedFileResponse,
     ResumesListResponse,
@@ -297,12 +299,17 @@ async def add_candidates_batch(
 ):
     """
     Add candidates in batch (up to 10) to a job.
+    Add candidates in batch (up to 10) to a job.
     
+    This endpoint processes candidate data with resume files:
+    1. Accepts candidate name, email, and resume file for each candidate
+    2. Extracts text from resume files
     This endpoint processes candidate data with resume files:
     1. Accepts candidate name, email, and resume file for each candidate
     2. Extracts text from resume files
     3. Scrubs PII from resume text (for storage and scoring)
     4. Calculates resume score using scrubbed resume (NO PII)
+    5. Creates candidate records with provided name/email and scrubbed resume
     5. Creates candidate records with provided name/email and scrubbed resume
     6. Assigns candidates to the specified job
     
@@ -322,6 +329,7 @@ async def add_candidates_batch(
         
     Raises:
         HTTPException: 
+            - 400: If validation fails, too many candidates, or processing errors
             - 400: If validation fails, too many candidates, or processing errors
             - 401: If authentication fails
             - 403: If user is not a recruiter or admin
@@ -369,11 +377,27 @@ async def add_candidates_batch(
         )
     
     # Validate files match candidates count
+    # if len(files) != len(candidates_list):
+    # Validate files match candidates count
     if len(files) != len(candidates_list):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
         )
+    
+    # Validate and parse candidate data
+    validated_candidates = []
+    for idx, candidate in enumerate(candidates_list):
+        try:
+            validated_candidate = CandidateBatchItemRequest(**candidate)
+            validated_candidates.append(validated_candidate)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid candidate data at index {idx}: {str(e)}"
+            )
+            detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
+        
     
     # Validate and parse candidate data
     validated_candidates = []
@@ -413,6 +437,15 @@ async def add_candidates_batch(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    
+    # Prepare candidate data with files
+    candidate_data_list = []
+    for candidate, file in zip(validated_candidates, files):
+        candidate_data_list.append({
+            "name": candidate.name,
+            "email": candidate.email,
+            "file": file
+        })
     
     # Prepare candidate data with files
     candidate_data_list = []
