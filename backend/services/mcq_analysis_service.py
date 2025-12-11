@@ -45,8 +45,23 @@ async def generate_mcq_analysis(candidate_id: str, db: Session) -> Dict[str, Any
         # Extract metrics from the analysis data
         # Handle different possible structures
         total_questions = mcq_data.get("total_questions", 0)
-        attempted_questions = mcq_data.get("attempted_questions", mcq_data.get("attempted", 0))
-        correct_answers = mcq_data.get("correct_answers", mcq_data.get("correct", 0))
+        
+        # Handle attempted_questions - could be int or dict
+        attempted_raw = mcq_data.get("attempted_questions", mcq_data.get("attempted", 0))
+        if isinstance(attempted_raw, dict):
+            # Sum all difficulty levels: {"easy": 1, "medium": 2, "hard": 1}
+            attempted_questions = sum(attempted_raw.values())
+        else:
+            attempted_questions = attempted_raw
+        
+        # Handle correct_answers - could be int or dict
+        correct_raw = mcq_data.get("correct_answers", mcq_data.get("correct", 0))
+        if isinstance(correct_raw, dict):
+            # Sum all difficulty levels
+            correct_answers = sum(correct_raw.values())
+        else:
+            correct_answers = correct_raw
+        
         total_score = mcq_data.get("total_score", mcq_data.get("score", 0))
         accuracy = mcq_data.get("accuracy", 0)
         
@@ -55,8 +70,20 @@ async def generate_mcq_analysis(candidate_id: str, db: Session) -> Dict[str, Any
             accuracy = (correct_answers / attempted_questions * 100)
         
         # Extract difficulty breakdown
+        # Handle two possible structures:
+        # 1. difficulty_stats: {"easy": {"attempted": 1, "correct": 0}, ...}
+        # 2. attempted/correct as separate dicts: {"easy": 1, "medium": 2, ...}
         difficulty_stats = mcq_data.get("difficulty_stats", mcq_data.get("difficulty_breakdown", {}))
-        if not difficulty_stats:
+        
+        if not difficulty_stats and isinstance(attempted_raw, dict) and isinstance(correct_raw, dict):
+            # Build difficulty_stats from attempted and correct dicts
+            difficulty_stats = {}
+            for diff in ["easy", "medium", "hard"]:
+                difficulty_stats[diff] = {
+                    "attempted": attempted_raw.get(diff, 0),
+                    "correct": correct_raw.get(diff, 0)
+                }
+        elif not difficulty_stats:
             difficulty_stats = {"easy": {"attempted": 0, "correct": 0}, 
                               "medium": {"attempted": 0, "correct": 0},
                               "hard": {"attempted": 0, "correct": 0}}

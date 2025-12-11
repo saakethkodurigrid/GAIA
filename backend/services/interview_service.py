@@ -537,8 +537,14 @@ class InterviewService:
             ).first()
             
             time_taken = 0
-            if candidate and candidate.test_session and candidate.test_session.section_timings:
-                section_timings = candidate.test_session.section_timings
+            # Query test_session directly to avoid relationship issues (InstrumentedList)
+            from models.test_session import TestSession
+            test_session = self.db.query(TestSession).filter(
+                TestSession.candidate_id == candidate_id
+            ).first()
+            
+            if candidate and test_session and test_session.section_timings:
+                section_timings = test_session.section_timings
                 if isinstance(section_timings, dict) and "mcq" in section_timings:
                     mcq_timing = section_timings["mcq"]
                     if isinstance(mcq_timing, dict) and "duration_seconds" in mcq_timing:
