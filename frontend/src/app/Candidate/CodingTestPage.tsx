@@ -8,10 +8,13 @@ import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { localStorage as storage } from '../../utils/localStorage';
+import { finalizeCodingSection } from '../../api/coding.api';
+import { useAuth } from '../../context/AuthContext';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code, submitAnswer, submittedQuestions, findNextUnsubmittedQuestion } = useCoding();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
+  const { user } = useAuth();
   const navigate = useNavigate();
   
   // Calculate attempted questions count
@@ -421,26 +424,44 @@ const CodingTestPageContent = () => {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Mark Coding section as submitted in localStorage
+                onClick={async () => {
                   try {
-                    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
-                    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
-                    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
-                    submitted.coding = true;
-                    localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+                    // Mark Coding section as submitted in localStorage
+                    try {
+                      const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+                      const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+                      const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+                      submitted.coding = true;
+                      localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+                    } catch (error) {
+                      console.error('Error marking Coding as submitted:', error);
+                    }
+                    
+                    // End section timing and calculate duration using current timer value
+                    const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
+                    if (durationMinutes !== null) {
+                      console.log(`Coding section completed in ${durationMinutes} minutes`);
+                    }
+                    
+                    // Call API to finalize coding section and generate analysis
+                    console.log('Finalizing coding section...');
+                    try {
+                      const response = await finalizeCodingSection(user?.candidateId);
+                      console.log('✅ Coding section finalized successfully:', response);
+                      console.log('Coding Analysis:', response.coding_analysis);
+                    } catch (error) {
+                      console.error('⚠️ Error finalizing coding section:', error);
+                      // Don't block navigation on error - analysis will be attempted during test completion
+                    }
+                    
+                    setShowSubmitSectionModal(false);
+                    navigate('/test-overview');
                   } catch (error) {
-                    console.error('Error marking Coding as submitted:', error);
+                    console.error('Error during coding section submission:', error);
+                    // Navigate anyway to allow test to continue
+                    setShowSubmitSectionModal(false);
+                    navigate('/test-overview');
                   }
-                  
-                  // End section timing and calculate duration using current timer value
-                  const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
-                  if (durationMinutes !== null) {
-                    console.log(`Coding section completed in ${durationMinutes} minutes`);
-                  }
-                  
-                  setShowSubmitSectionModal(false);
-                  navigate('/test-overview');
                 }}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
               >
