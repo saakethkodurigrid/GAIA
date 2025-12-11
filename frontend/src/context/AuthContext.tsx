@@ -60,6 +60,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('google_id_token');
     localStorage.removeItem('user_data');
+    localStorage.removeItem('redirect_after_login');
+    localStorage.removeItem('current_candidate_id');
     // Clear all test-related data
     localStorage.removeItem('mcq_answers');
     localStorage.removeItem('submitted_sections');

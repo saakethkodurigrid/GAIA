@@ -8,7 +8,6 @@ const InterviewScheduledConfirmationPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [formattedDate, setFormattedDate] = useState<string>('');
 
   // Initialize scheduled date from location state
@@ -17,7 +16,6 @@ const InterviewScheduledConfirmationPage = () => {
     
     if (scheduledDateFromState) {
       const date = new Date(scheduledDateFromState);
-      setScheduledDate(date);
       
       // Format the date for display
       const formatted = date.toLocaleDateString('en-US', {
@@ -35,9 +33,17 @@ const InterviewScheduledConfirmationPage = () => {
   }, [location.state]);
 
   const handleNext = () => {
-    // Navigate to TestScheduledPage with the scheduled date
-    // Preserve the original scheduledDate format from location.state
-    navigate('/test/scheduled', {
+    // Get candidate_id from localStorage
+    const candidateId = localStorage.getItem('current_candidate_id');
+    
+    // Navigate to TestScheduledPage with the scheduled date and candidate_id in URL
+    const navigationPath = candidateId 
+      ? `/test/scheduled?candidate_id=${candidateId}`
+      : '/test/scheduled';
+    
+    console.log('InterviewScheduledConfirmationPage: Navigating to:', navigationPath);
+    
+    navigate(navigationPath, {
       state: {
         scheduledDate: location.state?.scheduledDate,
       },

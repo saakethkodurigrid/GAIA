@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -12,6 +13,7 @@ interface JobDescription {
   status: 'Active' | 'Closed';
   grade: string;
   jobDescription: string;
+  recruiterName: string;
 }
 
 interface ScheduledInterview {
@@ -23,6 +25,7 @@ interface ScheduledInterview {
 
 const Admin = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [jobsError, setJobsError] = useState<string | null>(null);
@@ -48,6 +51,7 @@ const Admin = () => {
             status: 'Active' as const,
             grade: job.grade,
             jobDescription: job.job_description || '',
+            recruiterName: job.recruiter_name || 'Unknown',
           }));
           setJobDescriptions(mappedJobs);
         } else {
@@ -234,6 +238,7 @@ const Admin = () => {
                                 status: 'Active' as const,
                                 grade: job.grade,
                                 jobDescription: job.job_description || '',
+                                recruiterName: job.recruiter_name || 'Unknown',
                               }));
                               setJobDescriptions(mappedJobs);
                             } else {
@@ -267,8 +272,10 @@ const Admin = () => {
                       <tr className="border-b border-gray-200">
                         <th className="text-left py-3 px-4 text-base font-bold text-gray-700">ID</th>
                         <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Job Title</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Recruiter</th>
                         <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Status</th>
                         <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Grade</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-gray-700">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -276,12 +283,23 @@ const Admin = () => {
                         <tr key={jd.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-3 px-4 text-base text-gray-900">{jd.id}</td>
                           <td className="py-3 px-4 text-base text-gray-900">{jd.jobTitle}</td>
+                          <td className="py-3 px-4 text-base text-gray-900">{jd.recruiterName}</td>
                           <td className="py-3 px-4">
                             <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(jd.status)}`}>
                               {jd.status}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-base text-gray-900">{jd.grade}</td>
+                          <td className="py-3 px-4">
+                            <button 
+                              onClick={() => navigate('/recruiter/job-details', { 
+                                state: { jobId: jd.id, jobTitle: jd.jobTitle, jobDescription: jd.jobDescription } 
+                              })}
+                              className="text-blue-600 hover:text-blue-800 text-base font-medium"
+                            >
+                              View
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

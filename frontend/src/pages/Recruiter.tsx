@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { addJob, listJobs, listTodayInterviews } from '../api/admin.api';
-import type { InterviewResponse } from '../api/admin.api';
+import { addJob, listJobs, listTodayInterviews } from '../api/recruiter.api';
+import type { InterviewResponse } from '../api/recruiter.api';
 
 interface JobDescription {
   id: string;

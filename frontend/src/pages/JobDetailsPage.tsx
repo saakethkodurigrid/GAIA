@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry } from '../api/admin.api';
+import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry } from '../api/recruiter.api';
 import { isTokenExpiredError } from '../utils/apiErrorHandler';
 
 const JobDetailsPage = () => {

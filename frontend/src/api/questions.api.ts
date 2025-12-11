@@ -7,6 +7,11 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
+// Get candidate_id from localStorage
+const getCandidateId = (): string | null => {
+  return localStorage.getItem('current_candidate_id');
+};
+
 // Backend response types
 interface MCQQuestionResponse {
   question_uuid: string;
@@ -23,15 +28,22 @@ interface MCQQuestionsResponse {
 
 // API functions for fetching questions
 export const fetchQuestions = async (candidateId?: string): Promise<Question[]> => {
-  // If candidateId is provided, fetch from backend
-  if (candidateId) {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  
+  // If candidateId is available, fetch from backend
+  if (finalCandidateId) {
     try {
       const token = getAuthToken();
       if (!token) {
         throw new Error('Authentication token not found');
       }
 
-      const response = await fetch(`${API_BASE_URL}/candidate/${candidateId}/mcq-questions`, {
+      console.log('=== Fetching MCQ Questions ===');
+      console.log('Using candidate_id:', finalCandidateId);
+      console.log('==============================');
+
+      const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -107,15 +119,17 @@ interface SaveMCQAnswerResponse {
 export const submitAssessment = async (
   answers: Record<number, number>,
   questions: Question[],
-  candidateId: string
+  candidateId?: string
 ): Promise<SaveMCQAnswerResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found');
-  }
-
-  if (!candidateId) {
-    throw new Error('Candidate ID is required');
   }
 
   // Convert frontend answers format to backend format
@@ -144,13 +158,14 @@ export const submitAssessment = async (
 
   // Log request body being sent to backend
   console.log('=== MCQ SUBMISSION REQUEST (FRONTEND) ===');
-  console.log('URL:', `${API_BASE_URL}/candidate/${candidateId}/mcq-questions/save-answers`);
+  console.log('Using candidate_id:', finalCandidateId);
+  console.log('URL:', `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/save-answers`);
   console.log('Request Body:', JSON.stringify(requestBody, null, 2));
   console.log('Number of answers:', answerItems.length);
   console.log('==========================================');
 
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/mcq-questions/save-answers`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/save-answers`,
     {
       method: 'POST',
       headers: {

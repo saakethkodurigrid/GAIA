@@ -44,6 +44,7 @@ class JobResponse(BaseModel):
     job_role: str
     job_description: str
     recruiter_email_id: str
+    recruiter_name: str
     grade: str
 
 

@@ -34,6 +34,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
   const isAuth = isAuthenticated || (userData !== null);
 
   if (!isAuth) {
+    // Save the current URL (including query params) to redirect back after login
+    const currentUrl = window.location.pathname + window.location.search;
+    console.log('ProtectedRoute: User not authenticated, saving URL:', currentUrl);
+    localStorage.setItem('redirect_after_login', currentUrl);
     return <Navigate to="/auth/login" replace />;
   }
 
@@ -45,6 +49,8 @@ const RootRoute = () => {
   const { isAuthenticated, user } = useAuth();
   const userData = localStorage.getItem('user_data');
   const isAuth = isAuthenticated || (userData !== null);
+
+  console.log('RootRoute triggered - isAuth:', isAuth, 'path:', window.location.pathname);
 
   if (isAuth) {
     // Get user type and status from context or localStorage
@@ -64,26 +70,66 @@ const RootRoute = () => {
       }
     }
 
+    console.log('RootRoute: userType:', userType, 'status:', status);
+
     // Redirect based on user type
     if (userType === 'admin') {
+      console.log('RootRoute: Redirecting admin to /admin');
       return <Navigate to="/admin" replace />;
     }
     if (userType === 'recruiter') {
+      console.log('RootRoute: Redirecting recruiter to /recruiter');
       return <Navigate to="/recruiter" replace />;
     }
     
     // For candidates, check if already scheduled
     if (userType === 'candidate') {
+      // Check if there's a saved redirect with candidate_id
+      const savedRedirect = localStorage.getItem('redirect_after_login');
+      console.log('RootRoute: Saved redirect:', savedRedirect);
+      
+      if (savedRedirect) {
+        const redirectPath = savedRedirect;
+        console.log('RootRoute: Using saved redirect:', redirectPath);
+        localStorage.removeItem('redirect_after_login');
+        
+        // If status is scheduled but URL has candidate_id, keep the candidate_id
+        if (status === 'scheduled' && savedRedirect.includes('candidate_id')) {
+          // Extract candidate_id from saved redirect
+          const urlParams = new URLSearchParams(savedRedirect.split('?')[1] || '');
+          const candidateId = urlParams.get('candidate_id');
+          if (candidateId) {
+            console.log('RootRoute: Redirecting to /test/scheduled with candidate_id');
+            return <Navigate to={`/test/scheduled?candidate_id=${candidateId}`} replace />;
+          }
+        }
+        
+        return <Navigate to={redirectPath} replace />;
+      }
+      
+      // Default redirects without saved URL
       if (status === 'scheduled') {
+        console.log('RootRoute: Redirecting scheduled candidate to /test/scheduled');
         return <Navigate to="/test/scheduled" replace />;
       }
+      
+      console.log('RootRoute: No saved redirect, going to /schedule');
       return <Navigate to="/schedule" replace />;
     }
     
     // Default fallback - redirect to schedule
+    console.log('RootRoute: Default redirect to /schedule');
     return <Navigate to="/schedule" replace />;
   }
 
+  // Save the current URL if it has query params (for invitation links)
+  const currentUrl = window.location.pathname + window.location.search;
+  if (window.location.search) {
+    console.log('RootRoute: Saving URL with query params:', currentUrl);
+    localStorage.setItem('redirect_after_login', currentUrl);
+  }
+
+  console.log('RootRoute: Not authenticated, redirecting to /auth/login');
   return <Navigate to="/auth/login" replace />;
 };
 

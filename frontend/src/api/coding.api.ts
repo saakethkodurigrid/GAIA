@@ -6,6 +6,11 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
+// Get candidate_id from localStorage
+const getCandidateId = (): string | null => {
+  return localStorage.getItem('current_candidate_id');
+};
+
 export const MOCK_CODING_PROBLEMS: CodingProblem[] = [
   {
     id: 1,
@@ -568,15 +573,25 @@ export interface SubmitCodingAnswerResponse {
  * Fetch coding questions from backend
  */
 export const fetchCodingQuestionsFromBackend = async (
-  candidateId: string
+  candidateId?: string
 ): Promise<BackendCodingQuestion[]> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
   }
 
+  console.log('=== Fetching Coding Questions ===');
+  console.log('Using candidate_id:', finalCandidateId);
+  console.log('================================');
+
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/coding-questions`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/coding-questions`,
     {
       method: 'GET',
       headers: {
@@ -611,9 +626,15 @@ export const fetchCodingQuestionsFromBackend = async (
  * Run code against test cases (sample only or all)
  */
 export const runCodeViaBackend = async (
-  candidateId: string,
-  request: RunCodeRequest
+  request: RunCodeRequest,
+  candidateId?: string
 ): Promise<RunCodeResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
@@ -626,7 +647,7 @@ export const runCodeViaBackend = async (
   }
 
   console.log('=== RUN CODE REQUEST TO BACKEND ===');
-  console.log('Candidate ID:', candidateId);
+  console.log('Using candidate_id:', finalCandidateId);
   console.log('Request:', JSON.stringify({ ...request, code: codeToRun }, null, 2));
   console.log('===================================');
 
@@ -634,7 +655,7 @@ export const runCodeViaBackend = async (
   const apiStartTime = performance.now();
   
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/coding/run`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/coding/run`,
     {
       method: 'POST',
       headers: {
@@ -701,9 +722,15 @@ export const runCodeViaBackend = async (
  * Submit final coding answer
  */
 export const submitCodingAnswer = async (
-  candidateId: string,
-  request: SubmitCodingAnswerRequest
+  request: SubmitCodingAnswerRequest,
+  candidateId?: string
 ): Promise<SubmitCodingAnswerResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
@@ -716,7 +743,7 @@ export const submitCodingAnswer = async (
   }
 
   console.log('=== SUBMIT CODING ANSWER REQUEST TO BACKEND ===');
-  console.log('Candidate ID:', candidateId);
+  console.log('Using candidate_id:', finalCandidateId);
   console.log('Request:', JSON.stringify({ ...request, code: codeToSubmit }, null, 2));
   console.log('==============================================');
 
@@ -724,7 +751,7 @@ export const submitCodingAnswer = async (
   const apiStartTime = performance.now();
   
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/coding/submit`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/coding/submit`,
     {
       method: 'POST',
       headers: {

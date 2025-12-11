@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -8,6 +8,7 @@ import { scheduleTest } from '../../api/candidate.api';
 const ScheduleInterviewPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
@@ -188,8 +189,23 @@ const ScheduleInterviewPage = () => {
         return;
       }
 
+      // Get candidate ID from localStorage (which was stored from URL)
+      const candidateId = localStorage.getItem('current_candidate_id');
+      if (!candidateId) {
+        throw new Error('Candidate ID not found. Please access this page using the invitation link with candidate_id parameter.');
+      }
+
       // Get auth token from localStorage
       const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+      
+      // Debug logging for token and candidate_id
+      console.log('=== Schedule Test Request ===');
+      console.log('auth_token:', localStorage.getItem('auth_token') ? 'Present' : 'Missing');
+      console.log('google_id_token:', localStorage.getItem('google_id_token') ? 'Present' : 'Missing');
+      console.log('Token being used:', token ? `${token.substring(0, 20)}...` : 'No token found');
+      console.log('Candidate ID (from localStorage):', candidateId);
+      console.log('===========================');
+      
       if (!token) {
         throw new Error('Authentication token not found. Please login again.');
       }
@@ -226,12 +242,6 @@ const ScheduleInterviewPage = () => {
           scheduledDate: toISTString(scheduledDateTime),
         },
       });
-
-      // Get candidate ID from user object
-      const candidateId = user?.candidateId;
-      if (!candidateId) {
-        throw new Error('Candidate ID not found. Please login again.');
-      }
 
       // Call the API in background (don't await - let it run asynchronously)
       scheduleTest(scheduledDateTime, token, candidateId).catch((err) => {
@@ -278,6 +288,33 @@ const ScheduleInterviewPage = () => {
   const handleLogout = () => {
     logout();
   };
+
+  // Extract and store candidate_id from URL on mount, restore to URL if missing
+  useEffect(() => {
+    const candidateIdFromUrl = searchParams.get('candidate_id');
+    const storedCandidateId = localStorage.getItem('current_candidate_id');
+    
+    console.log('=== ScheduleInterviewPage Mounted ===');
+    console.log('Current URL:', window.location.href);
+    console.log('candidate_id from URL params:', candidateIdFromUrl || 'NOT FOUND');
+    console.log('candidate_id from localStorage:', storedCandidateId || 'NOT FOUND');
+    
+    if (candidateIdFromUrl) {
+      // Store candidate_id in localStorage to use throughout the session
+      localStorage.setItem('current_candidate_id', candidateIdFromUrl);
+      console.log('✓ Stored candidate_id in localStorage:', candidateIdFromUrl);
+    } else if (storedCandidateId) {
+      // If URL doesn't have candidate_id but localStorage does, restore it to URL
+      console.log('⚠ candidate_id missing in URL, restoring from localStorage');
+      const newUrl = `/schedule?candidate_id=${storedCandidateId}`;
+      window.history.replaceState({}, '', newUrl);
+      console.log('✓ Restored URL to:', window.location.href);
+    } else {
+      console.log('❌ No candidate_id found in URL or localStorage');
+      setError('Candidate ID not found. Please access this page using the invitation link.');
+    }
+    console.log('====================================');
+  }, [searchParams]);
 
   // Set initial selected date to today (or minimum allowed date)
   useEffect(() => {
