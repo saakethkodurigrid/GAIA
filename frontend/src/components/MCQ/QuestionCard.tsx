@@ -24,20 +24,20 @@ const QuestionCard = ({ onShowSubmitModal }: QuestionCardProps) => {
   return (
     <div className="w-full max-w-full flex flex-col gap-5">
       <div className="flex justify-between items-center w-full">
-        <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-          {currentQuestion.topic}
-        </span>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-600 font-medium">
             Question {currentQuestionIndex + 1} of {questions.length}
           </span>
-          <button
-            onClick={onShowSubmitModal}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
-          >
-            Submit Section
-          </button>
+          <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+            {currentQuestion.topic}
+          </span>
         </div>
+        <button
+          onClick={onShowSubmitModal}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+        >
+          Submit Section
+        </button>
       </div>
       
       <div className="text-xl font-semibold text-gray-800 leading-relaxed my-3 w-full break-words">

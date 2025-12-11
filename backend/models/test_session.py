@@ -3,7 +3,7 @@ Test session model for TEST_SESSION table.
 """
 from sqlalchemy import Column, String, Integer, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from core.database import Base
 
 
@@ -23,6 +23,7 @@ class TestSession(Base):
     pending_answers = Column(JSONB, nullable=True)  # Temporary storage for unsaved answers
     section_timings = Column(JSONB, nullable=True)  # {"mcq": {"started_at": "...", "completed_at": "...", "duration_seconds": 1530}, ...}
     
-    # Relationship
-    candidate = relationship('Candidate', backref='test_session', uselist=False)
+    # Relationship - one-to-one with Candidate
+    # uselist=False in backref ensures candidate.test_session returns a single object, not a list
+    candidate = relationship('Candidate', backref=backref('test_session', uselist=False))
 

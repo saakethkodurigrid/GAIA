@@ -143,6 +143,7 @@ class JobService:
                     job_role=new_job.job_role,
                     job_description=new_job.job_description,
                     recruiter_email_id=new_job.recruiter_email_id,
+                    recruiter_name=recruiter.name,  # Include recruiter name from fetched recruiter
                     grade=new_job.grade
                 )
             )
@@ -198,6 +199,7 @@ class JobService:
                     job_role=job.job_role,
                     job_description=job.job_description,
                     recruiter_email_id=job.recruiter_email_id,
+                    recruiter_name=job.recruiter.name if job.recruiter else "Unknown",
                     grade=job.grade
                 )
                 for job in jobs

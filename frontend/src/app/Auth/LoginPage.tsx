@@ -9,10 +9,17 @@ const LoginPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // If already authenticated, redirect to home
+    // If already authenticated, check for saved redirect or go to home
     const userData = localStorage.getItem('user_data');
     if (isAuthenticated || userData) {
-      navigate('/home');
+      const savedRedirect = localStorage.getItem('redirect_after_login');
+      if (savedRedirect) {
+        console.log('LoginPage: Found saved redirect, navigating to:', savedRedirect);
+        localStorage.removeItem('redirect_after_login');
+        navigate(savedRedirect);
+      } else {
+        navigate('/home');
+      }
     }
   }, [isAuthenticated, navigate]);
 

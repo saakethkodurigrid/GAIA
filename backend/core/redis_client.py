@@ -1,6 +1,7 @@
 """
 Redis client for caching and temporary storage.
 """
+import ssl
 import redis
 import logging
 from typing import Optional
@@ -37,6 +38,11 @@ def get_redis_client() -> redis.Redis:
             
             # Prefer connection string if provided
             if settings.REDIS_URL:
+                # redis-py 5.0+: SSL is automatic with rediss:// URLs
+                # No need to pass ssl parameters explicitly
+                if 'rediss://' in settings.REDIS_URL or ':6380' in settings.REDIS_URL:
+                    logger.info("Redis connection using SSL/TLS (via rediss:// scheme)")
+                
                 _redis_client = redis.from_url(
                     settings.REDIS_URL,
                     decode_responses=True,
@@ -61,6 +67,12 @@ def get_redis_client() -> redis.Redis:
                 
                 if settings.REDIS_PASSWORD:
                     connection_params['password'] = settings.REDIS_PASSWORD
+                
+                # Add SSL for Azure Redis (port 6380)
+                if settings.REDIS_PORT == 6380:
+                    connection_params['ssl'] = True
+                    connection_params['ssl_cert_reqs'] = ssl.CERT_NONE
+                    logger.info("Redis connection using SSL/TLS")
                 
                 _redis_client = redis.Redis(**connection_params)
                 logger.info(f"Redis connection established: {settings.REDIS_HOST}:{settings.REDIS_PORT}")

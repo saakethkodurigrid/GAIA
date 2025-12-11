@@ -279,6 +279,10 @@ const TestOverviewPage = () => {
         // Get sections completed from localStorage
         const submittedSections = getSubmittedSections();
 
+        // Get cheating detection data
+        const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
+        const fullScreenExits = getFullscreenExitCount();
+
         // Prepare request body
         const requestBody = {
           completion_method: 'manual' as const,
@@ -290,10 +294,15 @@ const TestOverviewPage = () => {
             coding: submittedSections.coding,
             system_design: submittedSections.systemDesign,
           },
+          integrity: {
+            multiple_face: cheatingCounts.multipleFacesDetected > 0 ? 'yes' as const : 'no' as const,
+            full_screen_exits: fullScreenExits,
+            tab_change: cheatingCounts.tabChange,
+          },
         };
 
         // Call the complete test API in the background
-        const response = await completeTest(candidateId, requestBody);
+        const response = await completeTest(requestBody, candidateId);
         
         if (response.success) {
           console.log('Test completed successfully:', response);

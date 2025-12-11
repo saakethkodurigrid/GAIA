@@ -92,10 +92,35 @@ const CallbackPage = () => {
 
             // Redirect based on user type after successful login
             if (authResponse.success) {
-              const redirectPath = getRedirectPath(authResponse.user_type, authResponse.status);
-              console.log('Calculated redirect path:', redirectPath);
-              console.log('User type used for redirect:', authResponse.user_type);
-              // Use window.location for immediate redirect
+              // Check if there's a saved redirect URL (for invitation links with candidate_id)
+              const savedRedirect = localStorage.getItem('redirect_after_login');
+              
+              let redirectPath: string;
+              if (savedRedirect) {
+                console.log('CallbackPage: Found saved redirect URL:', savedRedirect);
+                redirectPath = savedRedirect;
+                
+                // If saved redirect has candidate_id, make sure it's preserved
+                if (savedRedirect.includes('candidate_id')) {
+                  const urlParams = new URLSearchParams(savedRedirect.split('?')[1] || '');
+                  const candidateId = urlParams.get('candidate_id');
+                  if (candidateId) {
+                    localStorage.setItem('current_candidate_id', candidateId);
+                    console.log('CallbackPage: Stored candidate_id in localStorage:', candidateId);
+                  }
+                }
+                
+                // Clear the saved redirect
+                localStorage.removeItem('redirect_after_login');
+              } else {
+                redirectPath = getRedirectPath(authResponse.user_type, authResponse.status);
+                console.log('CallbackPage: Calculated redirect path:', redirectPath);
+              }
+              
+              console.log('CallbackPage: User type used for redirect:', authResponse.user_type);
+              console.log('CallbackPage: Final redirect path:', redirectPath);
+              
+              // Use window.location for immediate redirect to preserve query params
               window.location.href = redirectPath;
             } else {
               throw new Error(authResponse.message || 'Authentication failed');

@@ -2,10 +2,12 @@
 Admin API routes for managing recruiters and admins.
 """
 import logging
+import base64
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
 from typing import List
+import json
 import json
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -21,6 +23,7 @@ from schemas.admin import (
     ListInterviewsResponse,
     AddCandidatesBatchResponse,
     CandidateBatchItemResponse,
+    CandidateBatchItemRequest,
     CandidateBatchItemRequest,
     FailedFileResponse,
     ResumesListResponse,
@@ -297,12 +300,17 @@ async def add_candidates_batch(
 ):
     """
     Add candidates in batch (up to 10) to a job.
+    Add candidates in batch (up to 10) to a job.
     
+    This endpoint processes candidate data with resume files:
+    1. Accepts candidate name, email, and resume file for each candidate
+    2. Extracts text from resume files
     This endpoint processes candidate data with resume files:
     1. Accepts candidate name, email, and resume file for each candidate
     2. Extracts text from resume files
     3. Scrubs PII from resume text (for storage and scoring)
     4. Calculates resume score using scrubbed resume (NO PII)
+    5. Creates candidate records with provided name/email and scrubbed resume
     5. Creates candidate records with provided name/email and scrubbed resume
     6. Assigns candidates to the specified job
     
@@ -322,6 +330,7 @@ async def add_candidates_batch(
         
     Raises:
         HTTPException: 
+            - 400: If validation fails, too many candidates, or processing errors
             - 400: If validation fails, too many candidates, or processing errors
             - 401: If authentication fails
             - 403: If user is not a recruiter or admin
@@ -369,11 +378,27 @@ async def add_candidates_batch(
         )
     
     # Validate files match candidates count
+    # if len(files) != len(candidates_list):
+    # Validate files match candidates count
     if len(files) != len(candidates_list):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
         )
+    
+    # Validate and parse candidate data
+    validated_candidates = []
+    for idx, candidate in enumerate(candidates_list):
+        try:
+            validated_candidate = CandidateBatchItemRequest(**candidate)
+            validated_candidates.append(validated_candidate)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid candidate data at index {idx}: {str(e)}"
+            )
+            detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
+        
     
     # Validate and parse candidate data
     validated_candidates = []
@@ -413,6 +438,15 @@ async def add_candidates_batch(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    
+    # Prepare candidate data with files
+    candidate_data_list = []
+    for candidate, file in zip(validated_candidates, files):
+        candidate_data_list.append({
+            "name": candidate.name,
+            "email": candidate.email,
+            "file": file
+        })
     
     # Prepare candidate data with files
     candidate_data_list = []
@@ -577,8 +611,8 @@ async def get_completed_interviews(
     """
     Get list of candidates for completed interviews view.
     
-    Returns candidates with status 'selected' or 'not selected' for the specified job.
-    These are candidates who have completed interviews and received final decisions.
+    Returns candidates with status 'completed', 'selected' or 'not selected' for the specified job.
+    These are candidates who have completed interviews and may or may not have received final decisions.
     """
     from models.candidate import Candidate
     from models.recruiter_admin_candidate import RecruiterAdminCandidate
@@ -599,7 +633,7 @@ async def get_completed_interviews(
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
         RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
-        Candidate.status.in_(['selected', 'not selected'])
+        Candidate.status.in_(['completed', 'selected', 'not selected'])
     ).order_by(Candidate.resume_score.desc()).all()
     
     # TODO: Get interview scores from interview_analysis_table if available
@@ -626,7 +660,7 @@ async def get_completed_interviews(
 
 @router.get("/candidates/{candidate_id}/interview-analysis", response_model=InterviewAnalysisResponse)
 async def get_candidate_interview_analysis(
-    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    candidate_id: str = Path(..., description="Candidate Reference Number (e.g., CI-627891)", pattern=r'^CI-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -641,11 +675,12 @@ async def get_candidate_interview_analysis(
     - Overall percentage
     - Result (PASS/FAIL)
     - Overall summary (4-line LLM-generated summary)
+    - Candidate image (base64 encoded data URL from blob storage)
     
     Only accessible by recruiters and admins.
     
     Args:
-        candidate_id: UUID of the candidate
+        candidate_id: Candidate reference number (e.g., CI-627891)
         current_user: Authenticated recruiter/admin (from dependency)
         db: Database session
         
@@ -659,20 +694,22 @@ async def get_candidate_interview_analysis(
             - 404: If candidate or analysis not found
     """
     try:
-        # Verify candidate exists
-        from models.candidate import Candidate
-        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        # Get candidate by reference number
+        from services.candidate_service import CandidateService
+        candidate_service = CandidateService(db)
         
-        if not candidate:
+        try:
+            candidate = candidate_service.get_candidate_by_reference_number(candidate_id)
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Candidate not found"
             )
         
-        # Get interview analysis
+        # Get interview analysis using the candidate's UUID
         from models.interview_analysis_table import InterviewAnalysisTable
         interview_analysis = db.query(InterviewAnalysisTable).filter(
-            InterviewAnalysisTable.candidate_id == candidate_id
+            InterviewAnalysisTable.candidate_id == candidate.candidate_id
         ).first()
         
         if not interview_analysis:
@@ -688,17 +725,32 @@ async def get_candidate_interview_analysis(
         system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
         cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
         
+        # Fetch the candidate's image from blob storage and encode as base64
+        image_data = None
+        try:
+            from services.blob_storage_service import BlobStorageService
+            blob_service = BlobStorageService()
+            image_result = blob_service.get_image(candidate.candidate_id)
+            if image_result:
+                content, content_type, filename = image_result
+                # Encode image as base64 data URL
+                image_data = f"data:{content_type};base64,{base64.b64encode(content).decode('utf-8')}"
+        except Exception as e:
+            logger.warning(f"Could not fetch image for candidate {candidate_id}: {str(e)}")
+            # Continue without image if it fails
+        
         return InterviewAnalysisResponse(
             success=True,
             message="Interview analysis retrieved successfully",
-            candidate_id=candidate_id,
+            candidate_id=candidate.candidate_id,
             mcq_analysis=mcq_analysis,
             coding_analysis=coding_analysis,
             system_design_analysis=system_design_analysis,
             cheat_metrics=cheat_metrics,
             overall_percentage=interview_analysis.overall_percentage,
             result=interview_analysis.result,
-            overall_summary=interview_analysis.overall_summary
+            overall_summary=interview_analysis.overall_summary,
+            image_data=image_data
         )
         
     except HTTPException:

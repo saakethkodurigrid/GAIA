@@ -10,92 +10,25 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
-export interface AddJobRequest {
-  job_role: string;
-  job_description: string;
-  grade: string;
-}
-
-export interface JobResponse {
+// Admin Job Response (includes recruiter_name for admin to see who created the job)
+export interface AdminJobResponse {
   job_id: string;
   job_role: string;
   job_description: string;
   recruiter_email_id: string;
+  recruiter_name: string;
   grade: string;
-}
-
-export interface AddJobResponse {
-  success: boolean;
-  message: string;
-  data: JobResponse | null;
 }
 
 export interface ListJobsResponse {
   success: boolean;
   message: string;
   count: number;
-  jobs: JobResponse[];
-}
-
-export interface CandidateBatchItemResponse {
-  candidate_id: string;
-  name: string;
-  email_id: string;
-  status: string;
-  resume_score: number;
-  processing_status: string;
-  errors?: string | null;
-}
-
-export interface FailedFileResponse {
-  filename: string;
-  error: string;
-}
-
-export interface AddCandidatesBatchResponse {
-  success: boolean;
-  message: string;
-  total_files: number;
-  successful: number;
-  failed: number;
-  candidates: CandidateBatchItemResponse[];
-  failed_files: FailedFileResponse[];
+  jobs: AdminJobResponse[];
 }
 
 /**
- * Add a new job to the system
- */
-export const addJob = async (request: AddJobRequest): Promise<AddJobResponse> => {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error('Authentication token not found. Please login again.');
-  }
-
-  const response = await fetch(`${API_BASE_URL}/admin/add-job`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to add job' }));
-    const errorMessage = error.detail || 'Failed to add job';
-    const apiError = new Error(errorMessage) as ApiError;
-    apiError.status = response.status;
-    apiError.detail = error.detail || errorMessage;
-    throw apiError;
-  }
-
- 
-
-  return response.json();
-};
-
-/**
- * List all jobs in the system
+ * List all jobs in the system (Admin-only - sees all jobs from all recruiters)
  */
 export const listJobs = async (): Promise<ListJobsResponse> => {
   const token = getAuthToken();
@@ -114,195 +47,6 @@ export const listJobs = async (): Promise<ListJobsResponse> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to list jobs' }));
     const errorMessage = error.detail || 'Failed to list jobs';
-    const apiError = new Error(errorMessage) as ApiError;
-    apiError.status = response.status;
-    apiError.detail = error.detail || errorMessage;
-    throw apiError;
-  }
-
-  return response.json();
-};
-
-export interface CandidateEntry {
-  name: string;
-  email: string;
-  file: File;
-}
-
-/**
- * Upload multiple resume files (batch) for a job with candidate information
- * 
- * This function sends candidate data and resume files to the backend for batch processing.
- * The backend will:
- * 1. Extract text from resume files
- * 2. Scrub PII from resume text
- * 3. Calculate resume scores
- * 4. Create candidate records and assign them to the job
- * 
- * @param jobId - Job reference number in format JD-XXXXXX (e.g., JD-783901)
- * @param candidates - Array of candidate entries with name, email, and resume file
- * @returns Promise resolving to AddCandidatesBatchResponse with processing results
- * @throws Error if validation fails, authentication fails, or request fails
- */
-export const uploadCandidatesBatch = async (
-  jobId: string,
-  candidates: CandidateEntry[]
-): Promise<AddCandidatesBatchResponse> => {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error('Authentication token not found. Please login again.');
-  }
-
-  // Validate candidate count
-  if (candidates.length === 0) {
-    throw new Error('At least one candidate is required');
-  }
-
-  if (candidates.length > 10) {
-    throw new Error('Maximum 10 candidates allowed');
-  }
-
-  // Validate jobId format (JD-XXXXXX)
-  const jobIdPattern = /^JD-\d{6}$/;
-  if (!jobIdPattern.test(jobId)) {
-    throw new Error('Invalid job ID format. Expected format: JD-XXXXXX (e.g., JD-783901)');
-  }
-
-  // Validate file types and required fields
-  const allowedExtensions = ['pdf', 'docx', 'doc'];
-  const invalidFiles: string[] = [];
-  const missingFields: string[] = [];
-  
-  candidates.forEach((candidate, index) => {
-    // Validate name
-    if (!candidate.name || candidate.name.trim() === '') {
-      missingFields.push(`Candidate ${index + 1}: Name is required`);
-    }
-    
-    // Validate email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!candidate.email || !emailRegex.test(candidate.email)) {
-      missingFields.push(`Candidate ${index + 1}: Valid email is required`);
-    }
-    
-    // Validate file
-    if (!candidate.file) {
-      missingFields.push(`Candidate ${index + 1}: Resume file is required`);
-    } else {
-      const extension = candidate.file.name.toLowerCase().split('.').pop() || '';
-      if (!allowedExtensions.includes(extension)) {
-        invalidFiles.push(candidate.file.name);
-      }
-    }
-  });
-
-  if (missingFields.length > 0) {
-    throw new Error(`Missing required fields: ${missingFields.join('; ')}`);
-  }
-
-  if (invalidFiles.length > 0) {
-    throw new Error(`Invalid file types. Only PDF, DOCX, and DOC are allowed. Invalid files: ${invalidFiles.join(', ')}`);
-  }
-
-  // Create FormData with files and candidate data
-  const formData = new FormData();
-  
-  // Prepare candidates data as JSON array (matching backend expectation)
-  // Backend expects: [{"name": "...", "email": "..."}, ...]
-  const candidatesData = candidates.map(candidate => ({
-    name: candidate.name.trim(),
-    email: candidate.email.trim().toLowerCase()
-  }));
-  
-  // Append candidates_data as JSON string (backend expects this field name)
-  formData.append('candidates_data', JSON.stringify(candidatesData));
-  
-  // Append all files with field name "files" (must match backend parameter name)
-  // Order must match candidates_data array (files[0] for candidate[0], etc.)
-  candidates.forEach((candidate) => {
-    formData.append('files', candidate.file);
-  });
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        // Don't set Content-Type header - browser will set it with boundary for FormData
-      },
-      body: formData,
-    });
-
-    // Parse response body (works for both success and error responses)
-    const responseData = await response.json().catch(() => {
-      // If JSON parsing fails, return a default error structure
-      return { 
-        success: false, 
-        message: 'Failed to parse server response',
-        detail: `Server returned status ${response.status}`
-      };
-    });
-
-    // Handle error responses
-    if (!response.ok) {
-      // Backend may return 400 with AddCandidatesBatchResponse structure when all candidates fail
-      // Check if it's a structured error response or a simple error detail
-      if (responseData.detail) {
-        throw new Error(responseData.detail);
-      }
-      if (responseData.message) {
-        throw new Error(responseData.message);
-      }
-      throw new Error(`Failed to upload candidates: ${response.status} ${response.statusText}`);
-    }
-
-    // Return successful response
-    return responseData as AddCandidatesBatchResponse;
-  } catch (error) {
-    // Re-throw if it's already an Error with a message
-    if (error instanceof Error) {
-      throw error;
-    }
-    // Otherwise wrap in Error
-    throw new Error(`Failed to upload candidates: ${String(error)}`);
-  }
-};
-
-export interface ResumeCandidateResponse {
-  candidate_id: string;
-  name: string;
-  email_id: string;
-  resume_score: number;
-  status: string; // 'shortlisted' or 'rejected'
-}
-
-export interface ResumesListResponse {
-  success: boolean;
-  message: string;
-  count: number;
-  candidates: ResumeCandidateResponse[];
-}
-
-/**
- * Get list of all candidates for resumes view
- */
-export const getResumesList = async (jobId: string): Promise<ResumesListResponse> => {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error('Authentication token not found. Please login again.');
-  }
-
-  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/resumes`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch resumes' }));
-    const errorMessage = error.detail || 'Failed to fetch resumes';
     const apiError = new Error(errorMessage) as ApiError;
     apiError.status = response.status;
     apiError.detail = error.detail || errorMessage;
@@ -331,7 +75,7 @@ export interface ListInterviewsResponse {
 }
 
 /**
- * Get list of interviews scheduled for today
+ * Get list of interviews scheduled for today (Admin-only - sees all interviews)
  */
 export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => {
   const token = getAuthToken();
@@ -359,31 +103,71 @@ export const listTodayInterviews = async (): Promise<ListInterviewsResponse> => 
   return response.json();
 };
 
-export interface ScheduledInterviewCandidateResponse {
-  candidate_id: string;
-  name: string;
-  email_id: string;
-  interview_status: string; // 'shortlisted', 'scheduled', 'in progress', 'completed', 'selected', 'not selected'
-  interview_date: string | null; // ISO format datetime string
-}
-
-export interface ScheduledInterviewsListResponse {
+// Interview Analysis Types
+export interface InterviewAnalysisResponse {
   success: boolean;
   message: string;
-  count: number;
-  candidates: ScheduledInterviewCandidateResponse[];
+  candidate_id: string;
+  mcq_analysis?: {
+    score?: number;
+    time_taken?: number;
+    attempted?: {
+      easy: number;
+      medium: number;
+      hard: number;
+    };
+    correct?: {
+      easy: number;
+      medium: number;
+      hard: number;
+    };
+    total_questions?: number;
+    [key: string]: unknown;
+  } | null;
+  coding_analysis?: {
+    total_score?: number;
+    time_taken?: number;
+    total_submitted?: number;
+    total_correct?: number;
+    partially_correct?: number;
+    total_questions?: number;
+    [key: string]: unknown;
+  } | null;
+  system_design_analysis?: {
+    score?: number;
+    summary?: string;
+    key_strengths?: string[];
+    areas_of_improvement?: string[];
+    suggested_learning?: string[];
+    lowest_area?: string;
+    things_to_improve?: string[];
+    average_scores?: {
+      [key: string]: number;
+    };
+    time_taken?: number;
+    [key: string]: unknown;
+  } | null;
+  cheat_metrics?: {
+    tab_change?: number;
+    full_screen_exits?: number;
+    multiple_face?: number;
+    [key: string]: unknown;
+  } | null;
+  overall_percentage?: number | null;
+  result?: 'PASS' | 'FAIL' | null;
+  overall_summary?: string | null;
 }
 
 /**
- * Get list of scheduled interviews for a job
+ * Get interview analysis data for a specific candidate (Recruiter/Admin only)
  */
-export const getScheduledInterviews = async (jobId: string): Promise<ScheduledInterviewsListResponse> => {
+export const getInterviewAnalysis = async (candidateId: string): Promise<InterviewAnalysisResponse> => {
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/scheduled-interviews`, {
+  const response = await fetch(`${API_BASE_URL}/admin/candidates/${candidateId}/interview-analysis`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -392,53 +176,8 @@ export const getScheduledInterviews = async (jobId: string): Promise<ScheduledIn
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch scheduled interviews' }));
-    const errorMessage = error.detail || 'Failed to fetch scheduled interviews';
-    const apiError = new Error(errorMessage) as ApiError;
-    apiError.status = response.status;
-    apiError.detail = error.detail || errorMessage;
-    throw apiError;
-  }
-
-  return response.json();
-};
-
-export interface CompletedInterviewCandidateResponse {
-  candidate_id: string;
-  name: string;
-  email_id: string;
-  interview_score: number | null;
-  status: string; // 'selected' or 'not selected'
-  report_link: string | null;
-}
-
-export interface CompletedInterviewsListResponse {
-  success: boolean;
-  message: string;
-  count: number;
-  candidates: CompletedInterviewCandidateResponse[];
-}
-
-/**
- * Get list of completed interviews for a job
- */
-export const getCompletedInterviews = async (jobId: string): Promise<CompletedInterviewsListResponse> => {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error('Authentication token not found. Please login again.');
-  }
-
-  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/completed-interviews`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch completed interviews' }));
-    const errorMessage = error.detail || 'Failed to fetch completed interviews';
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch interview analysis' }));
+    const errorMessage = error.detail || 'Failed to fetch interview analysis';
     const apiError = new Error(errorMessage) as ApiError;
     apiError.status = response.status;
     apiError.detail = error.detail || errorMessage;

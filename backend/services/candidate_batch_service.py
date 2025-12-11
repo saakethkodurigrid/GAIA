@@ -203,7 +203,7 @@ class CandidateBatchService:
                 
                 new_candidate = Candidate(
                     candidate_id=candidate_id,
-                    candidate_reference_number=candidate_reference_number,
+                    candidate_reference_number=candidate_reference_number,  # Generated reference number
                     name=name,  # From provided data
                     email_id=email.lower(),  # From provided data
                     phone_number=None,  # Not provided, can be updated later
@@ -263,7 +263,7 @@ class CandidateBatchService:
                         logger.error(f"Failed to queue scheduling invitation email to {email}: {str(e)}")
                 
                 successful_candidates.append({
-                    "candidate_id": candidate_reference_number,  # Return reference number instead of UUID
+                    "candidate_id": candidate_id,
                     "name": name,
                     "email_id": email,
                     "status": initial_status,  # 'shortlisted' or 'rejected'

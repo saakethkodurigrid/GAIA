@@ -30,6 +30,11 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
+// Get candidate_id from localStorage
+const getCandidateId = (): string | null => {
+  return localStorage.getItem('current_candidate_id');
+};
+
 // API Functions
 export const createSession = async (request?: Partial<SessionCreateRequest>): Promise<SessionResponse> => {
   const response = await fetch(`${API_BASE_URL}/system-design/sessions`, {
@@ -363,8 +368,16 @@ export interface AssignedQuestionResponse {
 }
 
 // Get Assigned Question API (from candidate endpoint)
-export const getAssignedQuestion = async (candidateId: string): Promise<AssignedQuestionResponse> => {
-  const response = await fetch(`${API_BASE_URL}/candidate/${candidateId}/assigned-question`, {
+export const getAssignedQuestion = async (candidateId?: string): Promise<AssignedQuestionResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  console.log('[getAssignedQuestion] Using candidate_id:', finalCandidateId);
+
+  const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/assigned-question`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,
@@ -383,7 +396,7 @@ export const getAssignedQuestion = async (candidateId: string): Promise<Assigned
 
   const data = await response.json();
   console.log('[getAssignedQuestion] API Response:', {
-    candidateId,
+    candidateId: finalCandidateId,
     response: data
   });
   return data;

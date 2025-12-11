@@ -18,7 +18,7 @@ from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse, InterviewSummaryResponse
 from schemas.admin import AssignedQuestionResponse
-from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse
+from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse, FinalizeCodingSectionResponse
 from schemas.test_session import (
     StartTestRequest,
     StartTestResponse,
@@ -1741,14 +1741,6 @@ async def submit_coding_answer(
         except Exception as e:
             logger.warning(f"Failed to update last_activity: {str(e)}")
         
-        # Step 9.5: Calculate and save coding analysis to interview_analysis_table
-        try:
-            interview_service = InterviewService(db)
-            interview_service._update_coding_analysis(candidate_id)
-        except Exception as e:
-            # Don't fail the submission if analysis update fails
-            logger.warning(f"Failed to update coding analysis for candidate {candidate_id}: {str(e)}")
-        
         logger.info(
             f"Coding answer submitted for candidate {candidate_id}, question {request.question_id}: "
             f"Score={total_score}, TestCasesPassed={test_cases_passed}/{total_test_cases}"
@@ -1775,6 +1767,118 @@ async def submit_coding_answer(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post("/{candidate_id}/coding/finalize", response_model=FinalizeCodingSectionResponse)
+async def finalize_coding_section(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Finalize coding section and calculate overall analysis.
+    
+    This endpoint should be called when the candidate completes the entire coding section.
+    It will:
+    1. Complete section timing
+    2. Calculate overall coding analysis (total score, questions submitted, etc.)
+    3. Update interview_analysis_table with coding_analysis
+    
+    Only the authenticated candidate can finalize their own coding section.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        FinalizeCodingSectionResponse with complete coding section analysis
+        
+    Raises:
+        HTTPException: 
+            - 403: If user tries to finalize another candidate's section
+            - 404: If candidate not found
+            - 500: If analysis calculation fails
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only finalize your own coding section."
+        )
+    
+    try:
+        # Get candidate
+        candidate = db.query(Candidate).filter(
+            Candidate.candidate_id == candidate_id
+        ).first()
+        
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Candidate {candidate_id} not found"
+            )
+        
+        # Complete section timing
+        duration_seconds = complete_section_timing(candidate, "coding")
+        duration_minutes = round(duration_seconds / 60, 2) if duration_seconds else 0.0
+        
+        # Mark coding section as completed in sections_completed
+        if candidate.test_session:
+            sections_completed = candidate.test_session.sections_completed or {}
+            sections_completed["coding"] = True
+            candidate.test_session.sections_completed = sections_completed
+        
+        # Calculate and save coding analysis
+        interview_service = InterviewService(db)
+        interview_service._update_coding_analysis(candidate_id)
+        
+        # Commit all changes
+        db.commit()
+        
+        # Get the updated coding analysis
+        from models.interview_analysis_table import InterviewAnalysisTable
+        interview_analysis = db.query(InterviewAnalysisTable).filter(
+            InterviewAnalysisTable.candidate_id == candidate_id
+        ).first()
+        
+        coding_analysis = {}
+        if interview_analysis and interview_analysis.coding_analysis:
+            coding_analysis = interview_analysis.coding_analysis
+        else:
+            # Default if not found
+            coding_analysis = {
+                "total_score": 0.0,
+                "time_taken": duration_seconds or 0,
+                "total_submitted": 0,
+                "total_correct": 0,
+                "partially_correct": 0
+            }
+        
+        logger.info(
+            f"Coding section finalized for candidate {candidate_id}: "
+            f"Score={coding_analysis.get('total_score', 0)}, "
+            f"Submitted={coding_analysis.get('total_submitted', 0)}, "
+            f"Duration={duration_minutes}min ({duration_seconds}s)"
+        )
+        
+        return FinalizeCodingSectionResponse(
+            success=True,
+            message="Coding section finalized successfully",
+            coding_analysis=coding_analysis,
+            duration_seconds=duration_seconds,
+            duration_minutes=duration_minutes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error finalizing coding section for candidate {candidate_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to finalize coding section: {str(e)}"
         )
 
 

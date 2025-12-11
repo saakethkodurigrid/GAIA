@@ -44,6 +44,7 @@ class JobResponse(BaseModel):
     job_role: str
     job_description: str
     recruiter_email_id: str
+    recruiter_name: str
     grade: str
 
 
@@ -199,4 +200,5 @@ class InterviewAnalysisResponse(BaseModel):
     overall_percentage: Optional[int] = None
     result: Optional[str] = None  # 'PASS' or 'FAIL'
     overall_summary: Optional[str] = None
+    image_data: Optional[str] = None  # Base64 encoded image data URL
 

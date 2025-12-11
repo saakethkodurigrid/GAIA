@@ -218,6 +218,16 @@ class RedisSyncService:
                     parts = redis_key.split(":")
                     question_uuid = parts[3]
                     
+                    # Verify candidate exists before syncing
+                    candidate_exists = self.db.query(Candidate).filter(
+                        Candidate.candidate_id == candidate_id
+                    ).first()
+                    
+                    if not candidate_exists:
+                        logger.warning(f"Candidate {candidate_id} not found in database, skipping system design sync for {question_uuid}")
+                        failed_count += 1
+                        continue
+                    
                     # Get session data from Redis
                     session_data = self.redis_client.get(redis_key)
                     if not session_data:
@@ -280,6 +290,7 @@ class RedisSyncService:
                     
                     if not db_record:
                         # Create new record
+                        # Note: Do not set updated_at - let database trigger handle it
                         db_record = InterviewSystemDesign(
                             candidate_id=candidate_id,
                             question_uuid=question_uuid,
@@ -296,6 +307,7 @@ class RedisSyncService:
                         self.db.add(db_record)
                     else:
                         # Update existing record (preserve score and diagram)
+                        # Note: Do not set updated_at - let database trigger handle it automatically
                         if session_dict.get("current_canvas"):
                             db_record.current_canvas = session_dict.get("current_canvas")
                         if session_dict.get("previous_canvas"):
@@ -439,7 +451,10 @@ class RedisSyncService:
             if progress:
                 candidate = self.db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
                 if candidate:
-                    test_session = candidate.test_session
+                    # Query test_session directly to avoid relationship issues (InstrumentedList)
+                    test_session = self.db.query(TestSession).filter(
+                        TestSession.candidate_id == candidate_id
+                    ).first()
                     if not test_session:
                         test_session = TestSession(candidate_id=candidate_id)
                         self.db.add(test_session)
@@ -454,9 +469,14 @@ class RedisSyncService:
             
             # Update last_activity
             candidate = self.db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
-            if candidate and candidate.test_session:
-                candidate.test_session.last_activity = datetime.utcnow()
-                self.db.commit()
+            if candidate:
+                # Query test_session directly to avoid relationship issues (InstrumentedList)
+                test_session = self.db.query(TestSession).filter(
+                    TestSession.candidate_id == candidate_id
+                ).first()
+                if test_session:
+                    test_session.last_activity = datetime.utcnow()
+                    self.db.commit()
             
             logger.info(f"Synced all answers to PostgreSQL for candidate {candidate_id}")
             

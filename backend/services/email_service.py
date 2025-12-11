@@ -3,6 +3,7 @@ Email service for sending invitation emails to candidates.
 """
 import logging
 from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any
 from datetime import datetime
 # Import pydantic first to ensure SecretStr is available for fastapi_mail
 try:
@@ -198,6 +199,8 @@ class EmailService:
                         <li>Select a convenient date and time for your interview</li>
                         <li>Complete the interview process which includes multiple choice questions, Coding, and System Design assessments</li>
                         <li>You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed</li>
+                        <li>Complete the interview process which includes multiple choice questions, Coding, and System Design assessments</li>
+                        <li>You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed</li>
                     </ul>
                 </div>
                 
@@ -241,12 +244,15 @@ Dear {candidate_name},
 
 Congratulations! We are pleased to invite you to proceed with the interview process for the position of {job_role}.
 
+
 We were impressed with your qualifications and would like to move forward with the next steps. Please use the link below to schedule your interview:
 
 {invitation_link}
 
 What to expect:
 - Select a convenient date and time for your interview
+- Complete the interview process which includes multiple choice questions, Coding, and System Design assessments
+- You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed
 - Complete the interview process which includes multiple choice questions, Coding, and System Design assessments
 - You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed
 
@@ -413,6 +419,8 @@ This is an automated email. Please do not reply to this message.
                         <li>Ensure you have a stable internet connection</li>
                         <li>The test includes multiple choice questions, Coding, and System Design assessments</li>
                         <li>You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed</li>
+                        <li>The test includes multiple choice questions, Coding, and System Design assessments</li>
+                        <li>You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed</li>
                     </ul>
                 </div>
                 
@@ -467,6 +475,8 @@ You can now start your assessment by using the link below:
 Important Instructions:
 - Please be ready 5 minutes before the scheduled time
 - Ensure you have a stable internet connection
+- The test includes multiple choice questions, Coding, and System Design assessments
+- You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed
 - The test includes multiple choice questions, Coding, and System Design assessments
 - You'll need to sign in with your Google account (please use the account associated with the email address you provided to the recruiting team) to proceed
 
@@ -525,6 +535,7 @@ This is an automated email. Please do not reply to this message.
             # Generate scheduling invitation link
             invitation_link = self._generate_invitation_link(candidate_id, link_type="scheduling")
             
+            # Create email content (pass None for resume_score to not display it)
             # Create email content (pass None for resume_score to not display it)
             html_content = self._create_invitation_email_html(
                 candidate_name, job_role, None, invitation_link
@@ -1145,6 +1156,8 @@ except Exception as e:
         async def send_scheduling_invitation_email(self, *args, **kwargs):
             return False
         async def send_test_invitation_email(self, *args, **kwargs):
+            return False
+        async def send_assessment_report_email(self, *args, **kwargs):
             return False
         async def send_assessment_report_email(self, *args, **kwargs):
             return False

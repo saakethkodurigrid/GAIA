@@ -50,7 +50,9 @@ class InterviewSystemDesign(Base):
     
     # Timestamps
     created_at = Column(DateTime, nullable=False, server_default='CURRENT_TIMESTAMP')
-    updated_at = Column(DateTime, nullable=False, server_default='CURRENT_TIMESTAMP', onupdate='CURRENT_TIMESTAMP')
+    # Note: updated_at is handled by database trigger, not SQLAlchemy onupdate
+    # The trigger update_interview_system_design_updated_at() handles this automatically
+    updated_at = Column(DateTime, nullable=False, server_default='CURRENT_TIMESTAMP')
     submitted_at = Column(DateTime, nullable=True)  # When solution was submitted
     
     # Status tracking

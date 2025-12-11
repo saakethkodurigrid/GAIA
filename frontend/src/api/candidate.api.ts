@@ -84,6 +84,11 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
+// Get candidate_id from localStorage
+const getCandidateId = (): string | null => {
+  return localStorage.getItem('current_candidate_id');
+};
+
 export interface UploadImageResponse {
   blob_url: string;
   filename: string;
@@ -152,17 +157,29 @@ export interface StartTestResponse {
  * This MUST be called before fetching questions to ensure Redis is populated
  */
 export const startTest = async (
-  candidateId: string,
-  token: string,
+  candidateId?: string,
+  token?: string,
   durationMinutes?: number
 ): Promise<StartTestResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  // Use provided token or get from localStorage
+  const finalToken = token || getAuthToken();
+  if (!finalToken) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/test/start`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/test/start`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${finalToken}`,
       },
       body: JSON.stringify({
         duration_minutes: durationMinutes,
@@ -194,17 +211,29 @@ export interface HeartbeatResponse {
  * Prevents auto-completion due to inactivity
  */
 export const sendHeartbeat = async (
-  candidateId: string,
-  token: string,
+  candidateId?: string,
+  token?: string,
   clientTimestamp?: Date
 ): Promise<HeartbeatResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  // Use provided token or get from localStorage
+  const finalToken = token || getAuthToken();
+  if (!finalToken) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/test/heartbeat`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/test/heartbeat`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${finalToken}`,
       },
       body: JSON.stringify({
         client_timestamp: clientTimestamp?.toISOString(),
@@ -235,6 +264,11 @@ export interface CompleteTestRequest {
     coding?: boolean;
     system_design?: boolean;
   };
+  integrity?: {
+    multiple_face: 'yes' | 'no';
+    full_screen_exits: number;
+    tab_change: number;
+  };
 }
 
 export interface CompleteTestResponse {
@@ -248,25 +282,27 @@ export interface CompleteTestResponse {
  * This is the final endpoint to mark test as completed
  */
 export const completeTest = async (
-  candidateId: string,
-  request: CompleteTestRequest
+  request: CompleteTestRequest,
+  candidateId?: string
 ): Promise<CompleteTestResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  if (!candidateId) {
-    throw new Error('Candidate ID is required');
-  }
-
   console.log('=== COMPLETE TEST REQUEST ===');
-  console.log('Candidate ID:', candidateId);
+  console.log('Candidate ID (from localStorage):', finalCandidateId);
   console.log('Request:', JSON.stringify(request, null, 2));
   console.log('============================');
 
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/test/complete`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/test/complete`,
     {
       method: 'POST',
       headers: {
@@ -308,19 +344,21 @@ export interface TestStatusResponse {
  * Used to sync timer on page load/refresh
  */
 export const getTestStatus = async (
-  candidateId: string
+  candidateId?: string
 ): Promise<TestStatusResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  if (!candidateId) {
-    throw new Error('Candidate ID is required');
-  }
-
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${candidateId}/test/status`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/test/status`,
     {
       method: 'GET',
       headers: {

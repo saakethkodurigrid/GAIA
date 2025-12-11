@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { startTest } from '../../api/candidate.api';
 import Header from '../../components/Header';
@@ -9,6 +9,7 @@ const TestScheduledPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [timeRemaining, setTimeRemaining] = useState({
     days: 0,
     hours: 0,
@@ -19,6 +20,33 @@ const TestScheduledPage = () => {
   const [formattedDate, setFormattedDate] = useState<string>('');
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // Extract and store candidate_id from URL on mount, restore to URL if missing
+  useEffect(() => {
+    const candidateIdFromUrl = searchParams.get('candidate_id');
+    const storedCandidateId = localStorage.getItem('current_candidate_id');
+    
+    console.log('=== TestScheduledPage Mounted ===');
+    console.log('Current URL:', window.location.href);
+    console.log('candidate_id from URL params:', candidateIdFromUrl || 'NOT FOUND');
+    console.log('candidate_id from localStorage:', storedCandidateId || 'NOT FOUND');
+    
+    if (candidateIdFromUrl) {
+      // Store candidate_id in localStorage to use throughout the session
+      localStorage.setItem('current_candidate_id', candidateIdFromUrl);
+      console.log('✓ Stored candidate_id in localStorage:', candidateIdFromUrl);
+    } else if (storedCandidateId) {
+      // If URL doesn't have candidate_id but localStorage does, restore it to URL
+      console.log('⚠ candidate_id missing in URL, restoring from localStorage');
+      const newUrl = `/test/scheduled?candidate_id=${storedCandidateId}`;
+      window.history.replaceState({}, '', newUrl);
+      console.log('✓ Restored URL to:', window.location.href);
+    } else {
+      console.log('❌ No candidate_id found in URL or localStorage');
+      setStartError('Candidate ID not found. Please access this page using the invitation link.');
+    }
+    console.log('====================================');
+  }, [searchParams]);
 
   // Initialize scheduled date from location state or fetch from user data
   useEffect(() => {
@@ -96,8 +124,10 @@ const TestScheduledPage = () => {
   };
 
   const handleStartAssessment = async () => {
-    if (!user?.candidateId) {
-      setStartError('Candidate ID not found. Please login again.');
+    // Get candidate_id from localStorage (which was stored from URL)
+    const candidateId = localStorage.getItem('current_candidate_id');
+    if (!candidateId) {
+      setStartError('Candidate ID not found. Please access this page using the invitation link with candidate_id parameter.');
       return;
     }
 
@@ -107,6 +137,10 @@ const TestScheduledPage = () => {
       return;
     }
 
+    console.log('=== Starting Test ===');
+    console.log('Using candidate_id from localStorage:', candidateId);
+    console.log('====================');
+
     setIsStarting(true);
     setStartError(null);
 
@@ -115,7 +149,7 @@ const TestScheduledPage = () => {
 
     // Start test session in the background (fire-and-forget)
     // This loads questions into Redis but doesn't block navigation
-    startTest(user.candidateId, token, 180) // 180 minutes (3 hours) total duration
+    startTest(candidateId, token, 180) // 180 minutes (3 hours) total duration
       .then(() => {
         console.log('Test started, data loaded to Redis');
       })

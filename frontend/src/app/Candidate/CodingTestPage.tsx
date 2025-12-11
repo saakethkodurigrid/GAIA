@@ -200,11 +200,6 @@ const CodingTestPageContent = () => {
 
             {currentProblem && (
               <>
-                {/* Title */}
-                <div className="mb-4">
-                  <h2 className="text-base font-bold text-gray-900">{currentProblem.title}</h2>
-                </div>
-
                 {/* Problem Description */}
                 <div className="mb-6">
                   <style>{`
@@ -244,7 +239,7 @@ const CodingTestPageContent = () => {
 
                 {/* Examples */}
                 <div className="mb-6">
-                  <h3 className="text-base font-semibold text-gray-900 mb-3">Examples</h3>
+                  <h3 className="text-base font-semibold text-gray-900 mb-3">Question</h3>
                   {currentProblem.examples.map((example, index) => (
                     <div key={index} className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                       <div className="mb-2">
