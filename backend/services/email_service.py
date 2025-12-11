@@ -539,10 +539,8 @@ This is an automated email. Please do not reply to this message.
             # Create email content (pass None for resume_score to not display it)
             html_content = self._create_invitation_email_html(
                 candidate_name, job_role, None, invitation_link
-                candidate_name, job_role, None, invitation_link
             )
             text_content = self._create_invitation_email_text(
-                candidate_name, job_role, None, invitation_link
                 candidate_name, job_role, None, invitation_link
             )
             
