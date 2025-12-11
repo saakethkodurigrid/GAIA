@@ -2,6 +2,7 @@
 Admin API routes for managing recruiters and admins.
 """
 import logging
+import base64
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
@@ -659,7 +660,7 @@ async def get_completed_interviews(
 
 @router.get("/candidates/{candidate_id}/interview-analysis", response_model=InterviewAnalysisResponse)
 async def get_candidate_interview_analysis(
-    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    candidate_id: str = Path(..., description="Candidate Reference Number (e.g., CI-627891)", pattern=r'^CI-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -674,11 +675,12 @@ async def get_candidate_interview_analysis(
     - Overall percentage
     - Result (PASS/FAIL)
     - Overall summary (4-line LLM-generated summary)
+    - Candidate image (base64 encoded data URL from blob storage)
     
     Only accessible by recruiters and admins.
     
     Args:
-        candidate_id: UUID of the candidate
+        candidate_id: Candidate reference number (e.g., CI-627891)
         current_user: Authenticated recruiter/admin (from dependency)
         db: Database session
         
@@ -692,20 +694,22 @@ async def get_candidate_interview_analysis(
             - 404: If candidate or analysis not found
     """
     try:
-        # Verify candidate exists
-        from models.candidate import Candidate
-        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        # Get candidate by reference number
+        from services.candidate_service import CandidateService
+        candidate_service = CandidateService(db)
         
-        if not candidate:
+        try:
+            candidate = candidate_service.get_candidate_by_reference_number(candidate_id)
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Candidate not found"
             )
         
-        # Get interview analysis
+        # Get interview analysis using the candidate's UUID
         from models.interview_analysis_table import InterviewAnalysisTable
         interview_analysis = db.query(InterviewAnalysisTable).filter(
-            InterviewAnalysisTable.candidate_id == candidate_id
+            InterviewAnalysisTable.candidate_id == candidate.candidate_id
         ).first()
         
         if not interview_analysis:
@@ -721,17 +725,32 @@ async def get_candidate_interview_analysis(
         system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
         cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
         
+        # Fetch the candidate's image from blob storage and encode as base64
+        image_data = None
+        try:
+            from services.blob_storage_service import BlobStorageService
+            blob_service = BlobStorageService()
+            image_result = blob_service.get_image(candidate.candidate_id)
+            if image_result:
+                content, content_type, filename = image_result
+                # Encode image as base64 data URL
+                image_data = f"data:{content_type};base64,{base64.b64encode(content).decode('utf-8')}"
+        except Exception as e:
+            logger.warning(f"Could not fetch image for candidate {candidate_id}: {str(e)}")
+            # Continue without image if it fails
+        
         return InterviewAnalysisResponse(
             success=True,
             message="Interview analysis retrieved successfully",
-            candidate_id=candidate_id,
+            candidate_id=candidate.candidate_id,
             mcq_analysis=mcq_analysis,
             coding_analysis=coding_analysis,
             system_design_analysis=system_design_analysis,
             cheat_metrics=cheat_metrics,
             overall_percentage=interview_analysis.overall_percentage,
             result=interview_analysis.result,
-            overall_summary=interview_analysis.overall_summary
+            overall_summary=interview_analysis.overall_summary,
+            image_data=image_data
         )
         
     except HTTPException:

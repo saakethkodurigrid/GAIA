@@ -200,4 +200,5 @@ class InterviewAnalysisResponse(BaseModel):
     overall_percentage: Optional[int] = None
     result: Optional[str] = None  # 'PASS' or 'FAIL'
     overall_summary: Optional[str] = None
+    image_data: Optional[str] = None  # Base64 encoded image data URL
 
