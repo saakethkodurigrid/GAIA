@@ -8,7 +8,7 @@ const InterviewScheduledConfirmationPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
+  const [_scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [formattedDate, setFormattedDate] = useState<string>('');
 
   // Initialize scheduled date from location state

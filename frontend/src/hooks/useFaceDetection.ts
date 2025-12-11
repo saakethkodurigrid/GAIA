@@ -8,7 +8,7 @@ export const useFaceDetection = (
   videoElement: HTMLVideoElement | null,
   enabled: boolean = true
 ) => {
-  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const detectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastFaceCountRef = useRef<number>(0);
   const modelsLoadedRef = useRef<boolean>(false);
 

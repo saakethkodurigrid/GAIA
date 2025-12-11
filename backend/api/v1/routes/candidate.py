@@ -1116,45 +1116,56 @@ async def get_test_status(
             detail="Access denied. You can only view your own test status."
         )
     
-    candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
-    
-    # Query test_session directly to avoid relationship issues (InstrumentedList)
-    test_session = db.query(TestSession).filter(TestSession.candidate_id == candidate_id).first()
-    
-    if not candidate or not test_session or not test_session.test_start_time:
+    try:
+        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        
+        # Query test_session directly to avoid relationship issues (InstrumentedList)
+        test_session = db.query(TestSession).filter(TestSession.candidate_id == candidate_id).first()
+        
+        if not candidate or not test_session or not test_session.test_start_time:
+            return TestStatusResponse(
+                success=False,
+                message="No test session found",
+                status=None,
+                remaining_seconds=0,
+                sections_completed={},
+                last_activity=None
+            )
+        
+        # Calculate remaining time
+        if candidate.status == 'in progress' and test_session.test_start_time:
+            elapsed = datetime.utcnow() - test_session.test_start_time
+            remaining = timedelta(minutes=test_session.test_duration_minutes or 180) - elapsed
+            remaining_seconds = max(0, int(remaining.total_seconds()))
+        else:
+            remaining_seconds = 0
+        
+        # Determine status
+        if candidate.status == 'in progress':
+            test_status = 'active'
+        elif candidate.status == 'completed':
+            test_status = 'completed'
+        else:
+            test_status = None
+        
+        # Handle None for sections_completed safely
+        sections_completed = test_session.sections_completed if test_session.sections_completed is not None else {}
+        
         return TestStatusResponse(
-            success=False,
-            message="No test session found",
-            status=None,
-            remaining_seconds=0,
-            sections_completed={},
-            last_activity=None
+            success=True,
+            message="Test session found",
+            status=test_status,
+            remaining_seconds=remaining_seconds,
+            sections_completed=sections_completed,
+            last_activity=test_session.last_activity
         )
-    
-    # Calculate remaining time
-    if candidate.status == 'in progress' and test_session.test_start_time:
-        elapsed = datetime.utcnow() - test_session.test_start_time
-        remaining = timedelta(minutes=test_session.test_duration_minutes or 180) - elapsed
-        remaining_seconds = max(0, int(remaining.total_seconds()))
-    else:
-        remaining_seconds = 0
-    
-    # Determine status
-    if candidate.status == 'in progress':
-        test_status = 'active'
-    elif candidate.status == 'completed':
-        test_status = 'completed'
-    else:
-        test_status = None
-    
-    return TestStatusResponse(
-        success=True,
-        message="Test session found",
-        status=test_status,
-        remaining_seconds=remaining_seconds,
-        sections_completed=test_session.sections_completed or {},
-        last_activity=test_session.last_activity
-    )
+    except Exception as e:
+        logger.error(f"Error getting test status for candidate {candidate_id}: {str(e)}", exc_info=True)
+        # Return a safe fallback rather than crashing
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal Server Error getting status: {str(e)}"
+        )
 
 
 @router.post("/{candidate_id}/coding/run", response_model=RunCodeResponse)

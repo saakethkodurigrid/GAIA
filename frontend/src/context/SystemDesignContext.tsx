@@ -28,7 +28,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   const [excalidrawData, setExcalidrawData] = useState<any>(null);
   const [notes, setNotes] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  // Initialize timer from localStorage or default
+
   const getInitialTime = (): number => {
     const stored = storage.getRemainingTime();
     if (stored !== null && stored > 0) {
@@ -56,11 +56,9 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         const status = await getTestStatus(candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
           setTimeRemaining(status.remaining_seconds);
-          // Update localStorage with backend time
           storage.setTimerEndTime(status.remaining_seconds);
           setIsTimerInitialized(true);
         } else {
-          // If backend doesn't have active timer, check localStorage
           const localTime = storage.getRemainingTime();
           if (localTime !== null && localTime > 0) {
             setTimeRemaining(localTime);
@@ -69,7 +67,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         }
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
-        // Fallback to localStorage if backend sync fails
         const localTime = storage.getRemainingTime();
         if (localTime !== null && localTime > 0) {
           setTimeRemaining(localTime);
@@ -78,29 +75,22 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       }
     };
 
-    // First, try to use localStorage immediately for faster UI
     const localTime = storage.getRemainingTime();
     if (localTime !== null && localTime > 0) {
       setTimeRemaining(localTime);
       setIsTimerInitialized(true);
     }
 
-    // Then sync with backend
     syncTimer();
-
-    // Sync every 30 seconds to account for any drift
     const syncInterval = setInterval(syncTimer, 30000);
-
     return () => clearInterval(syncInterval);
   }, [user?.candidateId]);
 
   // Create session and load question on mount
   useEffect(() => {
     const initializeSession = async () => {
-      // Prevent multiple session creations
       if (sessionCreatedRef.current) return;
-      
-      // Wait for user data to be available
+
       if (!user?.candidateId) {
         console.log('Waiting for user authentication...');
         return;
@@ -110,55 +100,45 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       setIsLoading(true);
 
       try {
-        // Step 1: Fetch assigned question (if test is in progress)
-        let assignedQuestion = null;
+        let assignedQuestion: any = null;
         try {
           console.log('Fetching assigned question...');
           assignedQuestion = await getAssignedQuestion(user.candidateId);
           console.log('Assigned question fetched:', assignedQuestion);
         } catch (error: any) {
-          // If test is not in progress, this will fail - that's okay, we'll create session without it
           console.log('No assigned question found or test not in progress:', error.message);
         }
 
-        // Step 2: Create session with assigned question UUID (if available)
-        // Note: candidate_id is auto-filled by backend from authenticated user, don't send it
         console.log('Creating session...');
         const sessionResponse = await createSession({
           question_uuid: assignedQuestion?.question_uuid || undefined,
         });
 
         console.log('Session created:', sessionResponse);
-        
-        // Store question_uuid (required for all subsequent API calls)
+
         if (sessionResponse.question_uuid) {
           setQuestionUuid(sessionResponse.question_uuid);
+        } else if (assignedQuestion?.question_uuid) {
+          setQuestionUuid(assignedQuestion.question_uuid);
         } else {
-          // If no question_uuid, try to use assigned question UUID
-          if (assignedQuestion?.question_uuid) {
-            setQuestionUuid(assignedQuestion.question_uuid);
-          } else {
-            throw new Error('No question_uuid available from session or assigned question');
-          }
+          throw new Error('No question_uuid available from session or assigned question');
         }
 
-        // Step 3: Load question details
-        // Priority: Use question_text from session response (always available)
-        // Only fetch by UUID if we need additional details (evaluation_criteria, etc.)
         let problemData: SystemDesignProblem;
-        
+
         if (assignedQuestion) {
-          // Use assigned question data (has evaluation_criteria)
+          const criteria =
+            (assignedQuestion as any).evaluation_criteria as string | undefined;
+
           problemData = {
             id: 1,
             title: 'System Design Problem',
             description: assignedQuestion.question,
-            requirements: assignedQuestion.evaluation_criteria
-              ? assignedQuestion.evaluation_criteria.split('\n').filter(line => line.trim())
+            requirements: criteria
+              ? criteria.split('\n').filter((line: string) => line.trim())
               : [],
           };
         } else if (sessionResponse.question_text) {
-          // Use question_text from session (always available)
           console.log('Using question_text from session');
           problemData = {
             id: 1,
@@ -167,7 +147,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             requirements: [],
           };
         } else {
-          // Last resort: Use hardcoded fallback
           console.warn('No question_text in session response, using fallback');
           problemData = {
             id: 1,
@@ -180,13 +159,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         setProblem(problemData);
         console.log('Question loaded:', problemData);
 
-        // Step 4: Load canvas data if available
         if (sessionResponse.current_canvas) {
           console.log('Loading canvas data from session:', sessionResponse.current_canvas);
           setExcalidrawData(sessionResponse.current_canvas);
         }
 
-        // Step 5: Load chat history if question_uuid exists
         const uuidToUse = sessionResponse.question_uuid || assignedQuestion?.question_uuid;
         if (uuidToUse) {
           try {
@@ -203,19 +180,16 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             }
           } catch (error) {
             console.error('Error loading chat history:', error);
-            // Continue without chat history
           }
         }
 
         setIsLoading(false);
       } catch (error) {
         console.error('Error initializing session:', error);
-        // Fallback to mock data on error
         try {
           const mockData = await import('../api/systemDesign.api').then(m => m.MOCK_SYSTEM_DESIGN_PROBLEM);
           setProblem(mockData);
         } catch {
-          // If even mock fails, set a basic problem
           setProblem({
             id: 1,
             title: 'System Design Problem',
@@ -234,7 +208,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   useEffect(() => {
     if (!questionUuid) return;
 
-    // Cleanup function
     const cleanup = () => {
       if (sseAbortControllerRef.current) {
         sseAbortControllerRef.current.abort();
@@ -246,23 +219,19 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       }
     };
 
-    // Function to handle SSE messages
     const handleSSEMessage = (event: { has_prompt: boolean; prompt?: string | null; closed?: boolean; error?: string }) => {
-      // Debug: Log all SSE events
       console.log('[SSE] Received event:', event);
-      
+
       if (event.has_prompt && event.prompt) {
         console.log('[SSE] ✅ Proactive prompt received:', event.prompt);
-        
-        // Add proactive prompt as assistant message
+
         const proactiveMessage: ChatMessage = {
           id: `proactive-${Date.now()}`,
           role: 'assistant',
           content: event.prompt,
           timestamp: new Date(),
         };
-        
-        // Check if this prompt was already shown
+
         setChatMessages((prev) => {
           const exists = prev.some(
             (msg) => msg.role === 'assistant' && msg.content === event.prompt
@@ -276,30 +245,23 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
           }
         });
       } else if (event.has_prompt === false) {
-        // Heartbeat - no prompt available
         console.log('[SSE] Heartbeat: No prompt available');
       }
 
-      // Handle stream closure
       if (event.closed) {
         console.log('SSE stream closed by server (no activity)');
         cleanup();
       }
 
-      // Handle errors from stream
       if (event.error) {
         console.error('SSE stream error:', event.error);
       }
     };
 
-    // Function to handle SSE errors
     const handleSSEError = (error: Error) => {
       console.error('SSE connection error:', error);
-      
-      // Cleanup current connection
       cleanup();
 
-      // Attempt to reconnect after 3 seconds
       reconnectTimeoutRef.current = window.setTimeout(() => {
         if (questionUuid) {
           console.log('Attempting to reconnect SSE stream...');
@@ -315,7 +277,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             );
           } catch (err) {
             console.error('Failed to reconnect SSE stream:', err);
-            // Try again after another 3 seconds
             reconnectTimeoutRef.current = window.setTimeout(() => {
               if (questionUuid) {
                 try {
@@ -338,13 +299,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       }, 3000);
     };
 
-    // Function to handle SSE close
     const handleSSEClose = () => {
       console.log('SSE stream closed');
       cleanup();
     };
 
-    // Create SSE connection
     try {
       console.log('[SSE] 🔌 Setting up SSE connection for proactive prompts...');
       console.log('[SSE] 🔌 Question UUID:', questionUuid);
@@ -357,8 +316,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       console.log('[SSE] ✅ SSE connection established successfully');
     } catch (error) {
       console.error('[SSE] ❌ Failed to create SSE stream:', error);
-      // SSE is the only method available - no fallback polling endpoint exists
-      // The stream will automatically reconnect if the connection is lost
     }
 
     return () => {
@@ -382,7 +339,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         const newTime = prev <= 1 ? 0 : prev - 1;
-        // Update localStorage with new remaining time
         if (newTime > 0) {
           storage.setTimerEndTime(newTime);
         } else {
@@ -409,7 +365,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   useEffect(() => {
     if (!questionUuid || !excalidrawData) return;
 
-    // Clear existing timeout
     const canvasUpdateTimeout = setTimeout(async () => {
       try {
         await updateCanvas({
@@ -419,13 +374,13 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             appState: excalidrawData.appState,
             files: excalidrawData.files,
           },
-          action: 'update', // Lightweight sync
+          action: 'update',
         });
         console.log('Canvas updated to backend');
       } catch (error) {
         console.error('Failed to update canvas:', error);
       }
-    }, 2000); // Update backend 2 seconds after user stops drawing
+    }, 2000);
 
     return () => {
       clearTimeout(canvasUpdateTimeout);
@@ -442,7 +397,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       return;
     }
 
-    // Create user message for immediate display
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -453,21 +407,18 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     setChatMessages((prev) => [...prev, userMessage]);
 
     try {
-      // Prepare canvas data if available
       const canvasData = excalidrawData ? {
         elements: excalidrawData.elements || [],
         appState: excalidrawData.appState,
         files: excalidrawData.files,
       } : undefined;
 
-      // Send message to backend with canvas data
       const response = await sendChatMessage({
         message: message.trim(),
         question_uuid: questionUuid,
         canvas_data: canvasData,
       });
 
-      // Add AI response if available
       if (response.ai_response) {
         const assistantMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
@@ -478,8 +429,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         setChatMessages((prev) => [...prev, assistantMessage]);
       }
 
-      // Note: Evaluation data is included in the response but not displayed in chat
-      // It could be used for showing evaluation scores in a separate UI component
       if (response.evaluation) {
         console.log('Evaluation received:', response.evaluation);
       }
@@ -522,7 +471,6 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     }
 
     try {
-      // First submit the canvas
       await updateCanvas({
         question_uuid: questionUuid,
         canvas_data: {
@@ -534,14 +482,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       });
       console.log('Solution submitted successfully');
 
-      // Then end the session to get final report
       try {
         const report = await endSession(questionUuid);
         console.log('Final report received:', report);
-        // You can store the report or show it to the user
       } catch (error) {
         console.error('Error ending session:', error);
-        // Continue even if ending session fails
       }
     } catch (error) {
       console.error('Error submitting solution:', error);
@@ -574,4 +519,3 @@ export const useSystemDesign = (): SystemDesignContextType => {
   }
   return context;
 };
-

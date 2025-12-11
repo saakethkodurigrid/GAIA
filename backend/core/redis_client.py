@@ -28,6 +28,13 @@ def get_redis_client() -> redis.Redis:
     
     if _redis_client is None:
         try:
+            # Configure SSL bypass for local development (DEBUG=True)
+            # This is critical for connecting to Azure Redis from local machines without certificates
+            ssl_params = {}
+            if settings.DEBUG:
+                import ssl
+                ssl_params['ssl_cert_reqs'] = ssl.CERT_NONE
+            
             # Prefer connection string if provided
             if settings.REDIS_URL:
                 _redis_client = redis.from_url(
@@ -35,6 +42,7 @@ def get_redis_client() -> redis.Redis:
                     decode_responses=True,
                     socket_connect_timeout=5,
                     socket_timeout=5,
+                    **ssl_params
                 )
                 logger.info("Redis connection established via REDIS_URL")
             else:
@@ -47,6 +55,9 @@ def get_redis_client() -> redis.Redis:
                     'socket_connect_timeout': 5,
                     'socket_timeout': 5,
                 }
+                
+                # Add SSL params if valid
+                connection_params.update(ssl_params)
                 
                 if settings.REDIS_PASSWORD:
                     connection_params['password'] = settings.REDIS_PASSWORD
