@@ -659,7 +659,7 @@ async def get_completed_interviews(
 
 @router.get("/candidates/{candidate_id}/interview-analysis", response_model=InterviewAnalysisResponse)
 async def get_candidate_interview_analysis(
-    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    candidate_id: str = Path(..., description="Candidate Reference Number (e.g., CI-627891)", pattern=r'^CI-\d{6}$'),
     current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
     db: Session = Depends(get_db)
 ):
@@ -678,7 +678,7 @@ async def get_candidate_interview_analysis(
     Only accessible by recruiters and admins.
     
     Args:
-        candidate_id: UUID of the candidate
+        candidate_id: Candidate reference number (e.g., CI-627891)
         current_user: Authenticated recruiter/admin (from dependency)
         db: Database session
         
@@ -692,20 +692,22 @@ async def get_candidate_interview_analysis(
             - 404: If candidate or analysis not found
     """
     try:
-        # Verify candidate exists
-        from models.candidate import Candidate
-        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        # Get candidate by reference number
+        from services.candidate_service import CandidateService
+        candidate_service = CandidateService(db)
         
-        if not candidate:
+        try:
+            candidate = candidate_service.get_candidate_by_reference_number(candidate_id)
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Candidate not found"
             )
         
-        # Get interview analysis
+        # Get interview analysis using the candidate's UUID
         from models.interview_analysis_table import InterviewAnalysisTable
         interview_analysis = db.query(InterviewAnalysisTable).filter(
-            InterviewAnalysisTable.candidate_id == candidate_id
+            InterviewAnalysisTable.candidate_id == candidate.candidate_id
         ).first()
         
         if not interview_analysis:
@@ -724,7 +726,7 @@ async def get_candidate_interview_analysis(
         return InterviewAnalysisResponse(
             success=True,
             message="Interview analysis retrieved successfully",
-            candidate_id=candidate_id,
+            candidate_id=candidate.candidate_id,
             mcq_analysis=mcq_analysis,
             coding_analysis=coding_analysis,
             system_design_analysis=system_design_analysis,
