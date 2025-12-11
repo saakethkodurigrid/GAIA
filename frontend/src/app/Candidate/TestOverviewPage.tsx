@@ -293,7 +293,7 @@ const TestOverviewPage = () => {
         };
 
         // Call the complete test API in the background
-        const response = await completeTest(candidateId, requestBody);
+        const response = await completeTest(requestBody, candidateId);
         
         if (response.success) {
           console.log('Test completed successfully:', response);
