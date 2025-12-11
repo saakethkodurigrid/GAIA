@@ -203,6 +203,7 @@ class CandidateBatchService:
                 
                 new_candidate = Candidate(
                     candidate_id=candidate_id,
+                    candidate_reference_number=candidate_reference_number,  # Generated reference number
                     name=name,  # From provided data
                     email_id=email.lower(),  # From provided data
                     phone_number=None,  # Not provided, can be updated later
