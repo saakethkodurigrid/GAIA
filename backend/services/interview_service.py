@@ -951,11 +951,40 @@ class InterviewService:
                 integrity_metadata=integrity_metadata
             )
             
-            # Save summary to interview_analysis_table
+            # Calculate overall score (average of MCQ, Coding, and System Design)
+            mcq_score = mcq_metadata.get("score", 0)
+            coding_score = coding_metadata.get("total_score", 0)
+            system_design_score = system_design_metadata.get("score", 0)
+            
+            overall_percentage = round((mcq_score + coding_score + system_design_score) / 3)
+            
+            # Determine integrity level
+            tab_change = cheat_metrics.get("tab_change", 0)
+            full_screen_exits = cheat_metrics.get("full_screen_exits", 0)
+            multiple_face = cheat_metrics.get("multiple_face", "no")
+            
+            is_low_integrity = False
+            if (tab_change + full_screen_exits) > 2:
+                is_low_integrity = True
+            if multiple_face == "yes":
+                is_low_integrity = True
+            
+            # Determine result (PASS/FAIL)
+            if is_low_integrity:
+                result = "FAIL"
+            elif overall_percentage > 70:
+                result = "PASS"
+            else:
+                result = "FAIL"
+            
+            # Save summary, overall_percentage, and result to interview_analysis_table
             interview_analysis.overall_summary = summary
+            interview_analysis.overall_percentage = overall_percentage
+            interview_analysis.result = result
             self.db.commit()
             
             logger.info(f"[INTERVIEW_ANALYSIS] ✅ Generated and saved overall_summary for candidate {candidate_id}")
+            logger.info(f"[INTERVIEW_ANALYSIS] ✅ Overall Score: {overall_percentage}%, Result: {result}, Integrity: {'Low' if is_low_integrity else 'High'}")
             
         except Exception as e:
             logger.error(f"Error generating interview summary for candidate {candidate_id}: {str(e)}", exc_info=True)
