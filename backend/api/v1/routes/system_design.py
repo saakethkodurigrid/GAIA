@@ -21,8 +21,8 @@ router = APIRouter(prefix="/system-design", tags=["System Design"])
 
 @router.post("/{candidate_id}/sessions", response_model=SessionResponse)
 async def create_session(
-    candidate_id: str = Path(..., description="Candidate UUID"),
     request: SessionCreateRequest,
+    candidate_id: str = Path(..., description="Candidate UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -67,8 +67,8 @@ async def create_session(
 
 @router.post("/{candidate_id}/canvas/update", response_model=CanvasUpdateResponse)
 async def update_canvas(
-    candidate_id: str = Path(..., description="Candidate UUID"),
     request: CanvasUpdateRequest,
+    candidate_id: str = Path(..., description="Candidate UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -119,8 +119,8 @@ async def update_canvas(
 
 @router.post("/{candidate_id}/chat/message", response_model=ChatMessageResponse)
 async def send_message(
-    candidate_id: str = Path(..., description="Candidate UUID"),
     request: ChatMessageRequest,
+    candidate_id: str = Path(..., description="Candidate UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):

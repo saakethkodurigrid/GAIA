@@ -91,12 +91,20 @@ const AnalysisPage = () => {
   const getIntegrityLevel = (metrics?: { tab_change?: number; full_screen_exits?: number; multiple_face?: number } | null) => {
     if (!metrics) return 'Unknown';
     
-    const totalViolations = (metrics.tab_change || 0) + (metrics.full_screen_exits || 0) + (metrics.multiple_face || 0);
+    const tabChange = metrics.tab_change || 0;
+    const fullScreenExits = metrics.full_screen_exits || 0;
+    const multipleFace = metrics.multiple_face || 0;
     
-    if (totalViolations === 0) return 'Very High';
-    if (totalViolations <= 3) return 'High';
-    if (totalViolations <= 6) return 'Medium';
-    return 'Low';
+    // Low integrity if: (tab_switch + full_screen_exits) > 2 OR multiple_face > 0
+    if ((tabChange + fullScreenExits) > 2 || multipleFace > 0) {
+      return 'Low';
+    }
+    return 'High';
+  };
+
+  // Helper function to determine if candidate is a power coder
+  const isPowerCoder = (codingScore: number | undefined) => {
+    return (codingScore || 0) > 70;
   };
 
   const handleSectionClick = (section: string) => {
@@ -496,6 +504,7 @@ const AnalysisPage = () => {
 
   const integrityLevel = getIntegrityLevel(analysisData.cheat_metrics);
   const overallScore = analysisData.overall_percentage ?? 0;
+  const powerCoder = isPowerCoder(analysisData.coding_analysis?.total_score);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
@@ -645,7 +654,7 @@ const AnalysisPage = () => {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-semibold text-gray-900">Integrity: </span>
-                    <span className={`text-lg font-semibold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+                    <span className={`text-lg font-semibold ${integrityLevel === 'High' ? 'text-green-600' : 'text-red-600'}`}>
                       {integrityLevel}
                     </span>
                   </div>
@@ -703,8 +712,14 @@ const AnalysisPage = () => {
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-600">Integrity: </span>
-              <span className={`text-base font-bold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+              <span className={`text-base font-bold ${integrityLevel === 'High' ? 'text-green-600' : 'text-red-600'}`}>
                 {integrityLevel}
+              </span>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-gray-600">Power Coder: </span>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold ${powerCoder ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {powerCoder ? 'Yes' : 'No'}
               </span>
             </div>
             <div>

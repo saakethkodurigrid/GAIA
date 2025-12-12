@@ -4,7 +4,7 @@ Groq LLM Provider Implementation
 import json
 import time
 from typing import List, Dict, Any, Optional, Union, Callable
-from groq import Groq
+from groq import AsyncGroq
 from .base import BaseLLMProvider
 from .models import LLMMessage, LLMResponse, LLMToolCall, ToolDefinition
 
@@ -14,7 +14,7 @@ class GroqProvider(BaseLLMProvider):
     
     def __init__(self, api_key: str, model: str, **kwargs):
         super().__init__(api_key, model, **kwargs)
-        self.client = Groq(api_key=api_key)
+        self.client = AsyncGroq(api_key=api_key)
     
     async def chat_completion(
         self,
@@ -49,9 +49,9 @@ class GroqProvider(BaseLLMProvider):
             params["tools"] = groq_tools
             params["tool_choice"] = tool_choice or "auto"
         
-        # Make API call
+        # Make API call (now truly async!)
         try:
-            response = self.client.chat.completions.create(**params)
+            response = await self.client.chat.completions.create(**params)
             return self.parse_response(response)
         except Exception as e:
             # Re-raise with context
