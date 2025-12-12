@@ -17,31 +17,34 @@ const SubmitSectionModal = ({ isOpen, onClose, onSubmit }: SubmitSectionModalPro
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
-    try {
-      // Use savedAnswers, but also include any currently selected answers that haven't been saved yet
-      const finalAnswers = { ...savedAnswers, ...answers };
-      
-      // Get candidate ID from auth context
-      const candidateId = user?.candidateId;
-      if (!candidateId) {
-        throw new Error('Candidate ID not found. Please log in again.');
-      }
-
-      // Submit to backend
-      const response = await submitAssessment(finalAnswers, questions, candidateId);
-      
-      if (response.success) {
-        // Call the onSubmit callback with the answers
-        onSubmit(finalAnswers);
-      } else {
-        throw new Error(response.message || 'Failed to submit answers');
-      }
-    } catch (error) {
-      console.error('Error submitting assessment:', error);
-      setSubmitError(error instanceof Error ? error.message : 'Failed to submit assessment');
-    } finally {
+    
+    // Use savedAnswers, but also include any currently selected answers that haven't been saved yet
+    const finalAnswers = { ...savedAnswers, ...answers };
+    
+    // Get candidate ID from auth context
+    const candidateId = user?.candidateId;
+    if (!candidateId) {
+      setSubmitError('Candidate ID not found. Please log in again.');
       setIsSubmitting(false);
+      return;
     }
+
+    // Navigate immediately - don't wait for API call
+    onSubmit(finalAnswers);
+    
+    // Submit to backend in the background (fire and forget)
+    submitAssessment(finalAnswers, questions, candidateId)
+      .then((response) => {
+        if (!response.success) {
+          console.error('Background submission failed:', response.message);
+        } else {
+          console.log('Background submission successful');
+        }
+      })
+      .catch((error) => {
+        console.error('Error submitting assessment in background:', error);
+        // Don't show error to user since they've already navigated away
+      });
   };
 
   const answeredCount = counts[QUESTION_STATUS.ANSWERED] || 0;

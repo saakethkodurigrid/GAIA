@@ -65,6 +65,10 @@ class CompleteTestRequest(BaseModel):
         None,
         description="Sections completion status: {'mcq': true, 'coding': false, 'system_design': false}"
     )
+    section_timings: Optional[Dict[str, int]] = Field(
+        None,
+        description="Section time taken in seconds: {'mcq': 1530, 'coding': 2970, 'system_design': 2700}"
+    )
     integrity: Optional[IntegrityData] = Field(
         None,
         description="Test integrity monitoring data: multiple_face, full_screen_exits, tab_change"

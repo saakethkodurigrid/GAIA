@@ -144,30 +144,31 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
 
   return (
     <div
-      className="fixed z-[10000] bg-white rounded-lg shadow-2xl p-6 max-w-sm"
+      className="fixed z-[10000] bg-white rounded-lg shadow-2xl p-6 max-w-sm transition-all duration-500 ease-in-out"
       style={{
         ...tooltipStyle,
-        position: 'fixed'
+        position: 'fixed',
+        transitionProperty: 'top, left, right, bottom, transform'
       }}
     >
       {step.title && (
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">{step.title}</h3>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2 transition-opacity duration-300">{step.title}</h3>
       )}
-      <p className="text-sm text-gray-700 mb-4">{step.content}</p>
+      <p className="text-base text-gray-700 mb-4 transition-opacity duration-300">{step.content}</p>
       
-      <div className={`flex items-center ${isLastStep ? 'justify-center' : 'justify-between'}`}>
+      <div className={`flex items-center ${isLastStep ? 'justify-center' : 'justify-start'}`}>
         {!isLastStep && (
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrevious}
               disabled={stepIndex === 0}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-base font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Previous
             </button>
             <button
               onClick={handleNext}
-              className="px-4 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
+              className="px-4 py-2 text-base font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
             >
               Next
             </button>
@@ -176,20 +177,9 @@ const StepTooltip = ({ step, stepIndex, totalSteps, targetRect, onNext, onPrevio
         {isLastStep && (
           <button
             onClick={handleNext}
-            className="px-6 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
+            className="px-6 py-2 text-base font-medium text-gray-900 bg-yellow-400 rounded-md hover:bg-yellow-500 transition-colors"
           >
             Done
-          </button>
-        )}
-        {!isLastStep && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
           </button>
         )}
       </div>

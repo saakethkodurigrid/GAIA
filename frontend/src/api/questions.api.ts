@@ -148,10 +148,6 @@ export const submitAssessment = async (
       };
     });
 
-  if (answerItems.length === 0) {
-    throw new Error('No answers to submit');
-  }
-
   const requestBody = {
     answers: answerItems,
   };

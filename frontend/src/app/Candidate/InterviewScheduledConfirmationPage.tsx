@@ -32,6 +32,18 @@ const InterviewScheduledConfirmationPage = () => {
     }
   }, [location.state]);
 
+  // Auto-logout after 2 seconds
+  useEffect(() => {
+    const logoutTimer = setTimeout(() => {
+      logout();
+    }, 2000);
+
+    // Cleanup timer on unmount
+    return () => {
+      clearTimeout(logoutTimer);
+    };
+  }, [logout]);
+
   const handleNext = () => {
     // Get candidate_id from localStorage
     const candidateId = localStorage.getItem('current_candidate_id');

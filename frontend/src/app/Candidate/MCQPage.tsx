@@ -20,11 +20,34 @@ const MCQPageContent = () => {
 
   // Track section entry time using timer value
   useEffect(() => {
-    // Only start timing if not already started (to avoid resetting on re-renders)
-    const existingTiming = storage.getSectionTiming('mcq');
-    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
-      // Use current timer value when entering section
-      storage.startSectionTiming('mcq', timeRemaining);
+    // Check if section has been submitted
+    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+    const isSubmitted = submitted.mcq === true;
+    
+    // If section hasn't been submitted, ALWAYS reset timing when entering to ensure accuracy
+    // This prevents timing from being started too early (e.g., on initial page load or provider mount)
+    if (!isSubmitted) {
+      const existingTiming = storage.getSectionTiming('mcq');
+      // Reset timing if:
+      // 1. No timing exists, OR
+      // 2. Timing exists but hasn't been completed (durationMinutes is null), OR
+      // 3. Timing was started significantly earlier than current time (more than 10 seconds difference)
+      //    This handles cases where timing was initialized before user actually entered the section
+      const shouldReset = !existingTiming || 
+                         existingTiming.durationMinutes === null ||
+                         (existingTiming.startTimeRemaining !== null && 
+                          existingTiming.startTimeRemaining !== undefined &&
+                          (existingTiming.startTimeRemaining - timeRemaining) > 10);
+      
+      if (shouldReset) {
+        // Use current timer value when entering section - this will overwrite any existing timing
+        console.log('=== MCQ Section Entry ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('========================');
+        storage.startSectionTiming('mcq', timeRemaining);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
@@ -65,15 +88,18 @@ const MCQPageContent = () => {
     }
     
     // End section timing and calculate duration using current timer value
+    console.log('=== MCQ Section Exit ===');
+    console.log(`Timer: ${formatTime(timeRemaining)}`);
     const durationMinutes = storage.endSectionTiming('mcq', timeRemaining);
     if (durationMinutes !== null) {
-      console.log(`MCQ section completed in ${durationMinutes} minutes`);
+      console.log(`Duration: ${durationMinutes} minutes`);
     }
+    console.log('=======================');
     
     // Close modal and navigate to test overview page
     setShowSubmitModal(false);
     navigate('/test-overview', { replace: true });
-  }, [questions, navigate, timeRemaining]);
+  }, [questions, navigate, timeRemaining, formatTime]);
 
   // Auto-submit when timer reaches zero
   useEffect(() => {

@@ -6,7 +6,7 @@ import { useCheatingDetectionContext } from '../../context/CheatingDetectionCont
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
-import { useFullscreenWarning, getFullscreenExitCount } from '../../hooks/useFullscreenWarning';
+import { useFullscreenWarning, getFullscreenExitCount, clearFullscreenExitCount } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 import { completeTest, getTestStatus } from '../../api/candidate.api';
 import { fetchQuestions } from '../../api/questions.api';
@@ -46,6 +46,31 @@ const TestOverviewPage = () => {
   const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
+  // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
+  useEffect(() => {
+    const existingTime = storage.getRemainingTime();
+    if (existingTime === null || existingTime <= 0) {
+      // Clear section timings first for new test session
+      console.log('Clearing section timings for new test session...');
+      storage.clearAllSectionTimings();
+      console.log('Section timings reset to 0. Starting fresh test session.');
+      
+      // Reset timer to 180 minutes for new test session
+      console.log('Resetting timer to 180 minutes for new test session...');
+      storage.setTimerEndTime(10800); // 180 minutes = 10800 seconds
+      setTimeRemaining(10800);
+      setIsTimerInitialized(true);
+      console.log('Timer initialized: Starting with 10800 seconds (180 minutes)');
+      
+      // Reset violation counts for new test session
+      console.log('Resetting violation counts for new test session...');
+      clearFullscreenExitCount();
+      localStorage.removeItem('fullscreenWarning');
+      localStorage.removeItem('cheating_detection_events');
+      console.log('Violation counts reset to 0. Starting fresh test session.');
+    }
+  }, []); // Run once on mount
+
   // Fetch timer from backend on mount and periodically sync
   useEffect(() => {
     const syncTimer = async () => {
@@ -66,6 +91,12 @@ const TestOverviewPage = () => {
           const localTime = storage.getRemainingTime();
           if (localTime !== null && localTime > 0) {
             setTimeRemaining(localTime);
+          } else {
+            // If no timer exists locally either, reset to 180 minutes for new test session
+            console.log('No timer found in backend or localStorage, resetting to 180 minutes...');
+            storage.setTimerEndTime(10800);
+            setTimeRemaining(10800);
+            storage.clearAllSectionTimings();
           }
           setIsTimerInitialized(true);
         }
@@ -75,6 +106,12 @@ const TestOverviewPage = () => {
         const localTime = storage.getRemainingTime();
         if (localTime !== null && localTime > 0) {
           setTimeRemaining(localTime);
+        } else {
+          // If no timer exists, reset to 180 minutes for new test session
+          console.log('No timer found after sync error, resetting to 180 minutes...');
+          storage.setTimerEndTime(10800);
+          setTimeRemaining(10800);
+          storage.clearAllSectionTimings();
         }
         setIsTimerInitialized(true);
       }
@@ -84,6 +121,13 @@ const TestOverviewPage = () => {
     const localTime = storage.getRemainingTime();
     if (localTime !== null && localTime > 0) {
       setTimeRemaining(localTime);
+      setIsTimerInitialized(true);
+    } else {
+      // If no timer exists, reset to 180 minutes for new test session
+      console.log('No timer found in localStorage, resetting to 180 minutes...');
+      storage.setTimerEndTime(10800);
+      setTimeRemaining(10800);
+      storage.clearAllSectionTimings();
       setIsTimerInitialized(true);
     }
 
@@ -144,6 +188,31 @@ const TestOverviewPage = () => {
       // This will be called when time runs out
     },
   });
+
+  // Debug: Log violation counts every 15 seconds
+  useEffect(() => {
+    const logViolationCounts = () => {
+      const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
+      const fullscreenExitCount = getFullscreenExitCount();
+      
+      console.log('========================================');
+      console.log('🔍 VIOLATION COUNTS (Debug - Every 15s)');
+      console.log('========================================');
+      console.log(`Tab change: ${cheatingCounts.tabChange}`);
+      console.log(`Full screen exits: ${fullscreenExitCount}`);
+      console.log('========================================');
+    };
+
+    // Log immediately on mount
+    logViolationCounts();
+
+    // Set up interval to log every 15 seconds
+    const interval = setInterval(logViolationCounts, 15000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [cheatingDetectionContext]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -281,7 +350,49 @@ const TestOverviewPage = () => {
 
         // Get cheating detection data
         const cheatingCounts = cheatingDetectionContext.getCheatingEventCounts();
-        const fullScreenExits = getFullscreenExitCount();
+        const existingFullScreenExits = getFullscreenExitCount();
+        const tabChangeCount = cheatingCounts.tabChange;
+        
+        // Calculate new fullscreen exit count: existing count minus tab change count
+        const fullScreenExits = Math.max(0, existingFullScreenExits - tabChangeCount);
+        
+        console.log(`[Fullscreen Exit Calculation] Existing count: ${existingFullScreenExits}, Tab changes: ${tabChangeCount}, New count: ${fullScreenExits}`);
+
+        // Convert section timings to backend format - only duration in seconds
+        const convertSectionTimings = () => {
+          const timings: { mcq?: number; coding?: number; system_design?: number } = {};
+          
+          ['mcq', 'coding', 'systemDesign'].forEach((section) => {
+            const sectionKey = section === 'systemDesign' ? 'system_design' : section;
+            const timing = storage.getSectionTiming(section as 'mcq' | 'coding' | 'systemDesign');
+            
+            if (timing && timing.durationMinutes !== null) {
+              // Convert minutes to seconds
+              timings[sectionKey as 'mcq' | 'coding' | 'system_design'] = Math.round(timing.durationMinutes * 60);
+            }
+          });
+          
+          return Object.keys(timings).length > 0 ? timings : undefined;
+        };
+
+        const sectionTimings = convertSectionTimings();
+
+        // Log section timings before preparing request
+        console.log('=== SECTION TIMINGS CONVERSION ===');
+        console.log('Raw section timings from localStorage:', {
+          mcq: storage.getSectionTiming('mcq'),
+          coding: storage.getSectionTiming('coding'),
+          systemDesign: storage.getSectionTiming('systemDesign'),
+        });
+        console.log('Converted section timings (seconds):', sectionTimings);
+        if (sectionTimings) {
+          console.log('Section timings breakdown:', {
+            mcq: sectionTimings.mcq ? `${sectionTimings.mcq}s (${Math.round(sectionTimings.mcq / 60 * 100) / 100} min)` : 'Not attempted',
+            coding: sectionTimings.coding ? `${sectionTimings.coding}s (${Math.round(sectionTimings.coding / 60 * 100) / 100} min)` : 'Not attempted',
+            system_design: sectionTimings.system_design ? `${sectionTimings.system_design}s (${Math.round(sectionTimings.system_design / 60 * 100) / 100} min)` : 'Not attempted',
+          });
+        }
+        console.log('===================================');
 
         // Prepare request body
         const requestBody = {
@@ -294,6 +405,7 @@ const TestOverviewPage = () => {
             coding: submittedSections.coding,
             system_design: submittedSections.systemDesign,
           },
+          section_timings: sectionTimings,
           integrity: {
             multiple_face: cheatingCounts.multipleFacesDetected > 0 ? 'yes' as const : 'no' as const,
             full_screen_exits: fullScreenExits,
@@ -301,11 +413,35 @@ const TestOverviewPage = () => {
           },
         };
 
+        // Log the complete test request being sent to backend
+        console.log('=== COMPLETE TEST REQUEST TO BACKEND ===');
+        console.log('Candidate ID:', candidateId);
+        console.log('Full Request Body:', JSON.stringify(requestBody, null, 2));
+        console.log('Section Timings (being sent):', requestBody.section_timings);
+        console.log('MCQ Answers Count:', mcqAnswerItems.length);
+        console.log('Sections Completed:', requestBody.sections_completed);
+        console.log('Integrity Metrics:', requestBody.integrity);
+        console.log(`Fullscreen Violations (full_screen_exits): ${fullScreenExits} (calculated as: ${existingFullScreenExits} - ${tabChangeCount})`);
+        console.log('==========================================');
+
         // Call the complete test API in the background
         const response = await completeTest(requestBody, candidateId);
         
         if (response.success) {
           console.log('Test completed successfully:', response);
+          
+          // Clear all violation-related localStorage values after successful submission
+          console.log('Clearing violation-related localStorage values...');
+          clearFullscreenExitCount();
+          localStorage.removeItem('fullscreenWarning');
+          localStorage.removeItem('cheating_detection_events');
+          console.log('Violation data cleared. All values reset to 0/default.');
+          
+          // Clear section timings and timer after successful test completion
+          console.log('Clearing section timings and timer after test completion...');
+          storage.clearAllSectionTimings();
+          storage.clearTimer();
+          console.log('Section timings and timer cleared. All values reset to 0.');
         } else {
           console.error('Test completion failed:', response.message || 'Unknown error');
         }

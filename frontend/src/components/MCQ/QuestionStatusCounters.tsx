@@ -14,7 +14,7 @@ const QuestionStatusCounters = () => {
       </div>
       <div className="flex items-center gap-3 p-2">
         <div className="w-6 h-6 rounded bg-purple-600 border-2 border-purple-600"></div>
-        <span className="flex-1 text-sm text-gray-600">Marked</span>
+        <span className="flex-1 text-sm text-gray-600">Mark for Review</span>
         <span className="font-semibold text-gray-800 min-w-6 text-right">{counts[QUESTION_STATUS.MARKED] || 0}</span>
       </div>
       <div className="flex items-center gap-3 p-2">

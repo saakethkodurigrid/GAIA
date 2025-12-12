@@ -121,7 +121,7 @@ export const useFaceDetection = (
             } catch (error) {
               console.error('[Face Detection] ❌ Error in face detection loop:', error);
             }
-          }, 2000); // Check every 2 seconds
+          }, 15000); // Check every 15 seconds
         };
 
         checkVideoReady();

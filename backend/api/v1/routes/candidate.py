@@ -818,6 +818,20 @@ async def complete_test(
             - 401: If authentication fails
             - 403: If user is not a candidate or tries to complete another candidate's test
     """
+    # Log the complete test request received
+    logger.info(f"[COMPLETE TEST] Received complete test request for candidate {candidate_id}")
+    logger.info(f"[COMPLETE TEST] Completion method: {request.completion_method}")
+    logger.info(f"[COMPLETE TEST] Section timings in request: {request.section_timings}")
+    logger.info(f"[COMPLETE TEST] Sections completed: {request.sections_completed}")
+    if request.mcq_answers:
+        if isinstance(request.mcq_answers, list):
+            logger.info(f"[COMPLETE TEST] MCQ answers count (simplified format): {len(request.mcq_answers)}")
+        elif hasattr(request.mcq_answers, 'answers'):
+            logger.info(f"[COMPLETE TEST] MCQ answers count: {len(request.mcq_answers.answers)}")
+        else:
+            logger.info(f"[COMPLETE TEST] MCQ answers format: {type(request.mcq_answers)}")
+    logger.info(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
+    
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
         raise HTTPException(
@@ -976,9 +990,17 @@ async def complete_test(
         else:
             test_session.sections_completed = request.sections_completed or {}
         
-        # Use section_timings from Redis if available
-        if redis_progress.get("section_timings"):
+        # Use section_timings from request if available, otherwise from Redis
+        logger.info(f"[COMPLETE TEST] Section timings received from request: {request.section_timings}")
+        logger.info(f"[COMPLETE TEST] Section timings from Redis: {redis_progress.get('section_timings')}")
+        if request.section_timings:
+            test_session.section_timings = request.section_timings
+            logger.info(f"[COMPLETE TEST] Storing section_timings from request: {request.section_timings}")
+        elif redis_progress.get("section_timings"):
             test_session.section_timings = redis_progress["section_timings"]
+            logger.info(f"[COMPLETE TEST] Storing section_timings from Redis: {redis_progress.get('section_timings')}")
+        else:
+            logger.warning(f"[COMPLETE TEST] No section_timings found in request or Redis for candidate {candidate_id}")
         
         test_session.pending_answers = None  # Clear pending answers after completion
         
@@ -1958,6 +1980,26 @@ async def get_interview_summary(
             "test_completed_at": candidate.test_session.test_completed_at.isoformat() if candidate.test_session and candidate.test_session.test_completed_at else None
         }
         
+        # Get section timings from test_session - extract only duration
+        section_timings = None
+        if candidate.test_session and candidate.test_session.section_timings:
+            timings_data = candidate.test_session.section_timings
+            # Extract only duration_seconds for each section
+            section_timings = {}
+            for section_name in ['mcq', 'coding', 'system_design']:
+                if section_name in timings_data:
+                    section_data = timings_data[section_name]
+                    # If it's already just a number (duration in seconds), use it directly
+                    if isinstance(section_data, (int, float)):
+                        section_timings[section_name] = int(section_data)
+                    # If it's a dict, extract duration_seconds
+                    elif isinstance(section_data, dict):
+                        if 'duration_seconds' in section_data:
+                            section_timings[section_name] = int(section_data['duration_seconds'])
+                        # Also check if duration_minutes exists and convert to seconds
+                        elif 'duration_minutes' in section_data:
+                            section_timings[section_name] = int(section_data['duration_minutes'] * 60)
+        
         # Convert JSONB fields to dict (they're already dicts, but ensure they're serializable)
         mcq_analysis = interview_analysis.mcq_analysis if interview_analysis.mcq_analysis else None
         coding_analysis = interview_analysis.coding_analysis if interview_analysis.coding_analysis else None
@@ -1972,7 +2014,8 @@ async def get_interview_summary(
             mcq_analysis=mcq_analysis,
             coding_analysis=coding_analysis,
             system_design_analysis=system_design_analysis,
-            cheat_metrics=cheat_metrics
+            cheat_metrics=cheat_metrics,
+            section_timings=section_timings if section_timings else None
         )
         
     except HTTPException:

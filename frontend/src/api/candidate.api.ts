@@ -264,6 +264,11 @@ export interface CompleteTestRequest {
     coding?: boolean;
     system_design?: boolean;
   };
+  section_timings?: {
+    mcq?: number; // duration in seconds
+    coding?: number; // duration in seconds
+    system_design?: number; // duration in seconds
+  };
   integrity?: {
     multiple_face: 'yes' | 'no';
     full_screen_exits: number;
@@ -371,6 +376,66 @@ export const getTestStatus = async (
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to get test status' }));
     throw new Error(error.detail || 'Failed to get test status');
+  }
+
+  return response.json();
+};
+
+export interface InterviewSummaryResponse {
+  success: boolean;
+  message: string;
+  candidate: {
+    candidate_id: string;
+    candidate_reference_number?: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    scheduled_date?: string;
+    test_completed_at?: string;
+  };
+  summary?: string;
+  mcq_analysis?: Record<string, unknown>;
+  coding_analysis?: Record<string, unknown>;
+  system_design_analysis?: Record<string, unknown>;
+  cheat_metrics?: Record<string, unknown>;
+  section_timings?: {
+    mcq?: number; // duration in seconds
+    coding?: number; // duration in seconds
+    system_design?: number; // duration in seconds
+  };
+}
+
+/**
+ * Get interview summary for a candidate
+ */
+export const getInterviewSummary = async (
+  candidateId?: string
+): Promise<InterviewSummaryResponse> => {
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required.');
+  }
+
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${finalCandidateId}/interview-summary`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to get interview summary' }));
+    throw new Error(error.detail || 'Failed to get interview summary');
   }
 
   return response.json();

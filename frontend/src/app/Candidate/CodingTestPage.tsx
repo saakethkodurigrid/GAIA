@@ -44,11 +44,43 @@ const CodingTestPageContent = () => {
 
   // Track section entry time using timer value
   useEffect(() => {
-    // Only start timing if not already started (to avoid resetting on re-renders)
-    const existingTiming = storage.getSectionTiming('coding');
-    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
-      // Use current timer value when entering section
-      storage.startSectionTiming('coding', timeRemaining);
+    // Check if section has been submitted
+    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+    const isSubmitted = submitted.coding === true;
+    
+    // If section hasn't been submitted, ALWAYS reset timing when entering to ensure accuracy
+    // This prevents timing from being started too early (e.g., on initial page load or provider mount)
+    if (!isSubmitted) {
+      const existingTiming = storage.getSectionTiming('coding');
+      // Always reset timing if section hasn't been submitted and timing hasn't been completed
+      // Also reset if existing timing was started significantly earlier (more than 30 seconds difference)
+      // This handles cases where timing was initialized before user actually entered the section
+      let shouldReset = !existingTiming || existingTiming.durationMinutes === null;
+      
+      if (existingTiming && existingTiming.startTimeRemaining !== null && existingTiming.startTimeRemaining !== undefined) {
+        const timeDiff = existingTiming.startTimeRemaining - timeRemaining;
+        // If timing was started more than 30 seconds ago (relative to current timer), reset it
+        if (timeDiff > 30) {
+          console.log(`Coding timing was started too early - Previous start: ${formatTime(existingTiming.startTimeRemaining)}, Current: ${formatTime(timeRemaining)}, Diff: ${Math.round(timeDiff / 60 * 100) / 100} minutes - RESETTING`);
+          shouldReset = true;
+        } else if (shouldReset) {
+          console.log(`Resetting Coding timing - Previous start: ${formatTime(existingTiming.startTimeRemaining)}, Current: ${formatTime(timeRemaining)}, Diff: ${Math.round(timeDiff / 60 * 100) / 100} minutes`);
+        }
+      }
+      
+      if (shouldReset) {
+        // Use current timer value when entering section - this will overwrite any existing timing
+        console.log('=== Coding Section Entry ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('============================');
+        storage.startSectionTiming('coding', timeRemaining);
+      } else {
+        console.log('=== Coding Section Entry (timing already completed) ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('========================================================');
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
@@ -166,9 +198,6 @@ const CodingTestPageContent = () => {
           style={{ width: `${leftPanelWidth}%` }}
         >
           <div className="p-6">
-            {/* All Questions Heading */}
-            <h3 className="text-base font-semibold text-gray-900 mb-4">All Questions</h3>
-            
             {/* Question Navigation Bar */}
             <div className="mb-6 flex gap-2">
               {Array.from({ length: totalProblems }).map((_, index) => {
@@ -200,6 +229,9 @@ const CodingTestPageContent = () => {
 
             {currentProblem && (
               <>
+                {/* Question Heading */}
+                <h3 className="text-base font-semibold text-gray-900 mb-4">Question</h3>
+                
                 {/* Problem Description */}
                 <div className="mb-6">
                   <style>{`
@@ -434,10 +466,13 @@ const CodingTestPageContent = () => {
                   }
                   
                   // End section timing and calculate duration using current timer value
+                  console.log('=== Coding Section Exit ===');
+                  console.log(`Timer: ${formatTime(timeRemaining)}`);
                   const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
                   if (durationMinutes !== null) {
-                    console.log(`Coding section completed in ${durationMinutes} minutes`);
+                    console.log(`Duration: ${durationMinutes} minutes`);
                   }
+                  console.log('===========================');
                   
                   setShowSubmitSectionModal(false);
                   navigate('/test-overview');

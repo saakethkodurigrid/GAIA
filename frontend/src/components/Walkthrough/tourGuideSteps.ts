@@ -34,7 +34,7 @@ export const mcqTourSteps: TourStep[] = [
   {
     target: '[data-tour="save-next"]',
     title: 'Save & Next Button',
-    content: 'Click Save after selecting your answer. Unsaved answers won\'t be counted.',
+    content: 'After selecting an option, the Save button will change to "Save and Next". Click it to save your answer and proceed to the next question. Unsaved answers won\'t be counted.',
     placement: 'center'
   },
   {
@@ -95,7 +95,7 @@ export const codingTourSteps: TourStep[] = [
     placement: 'center'
   },
   {
-    target: '[data-tour="submit-solution"]',
+    target: '[data-tour="submit-section"]',
     title: 'Submit Section',
     content: 'Once you have submitted answers for all the questions, click Submit Section. Your answers will be evaluated and locked for this section.',
     placement: 'center'

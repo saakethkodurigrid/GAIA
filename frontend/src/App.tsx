@@ -140,6 +140,11 @@ function AppRoutes() {
       <Route path="/auth/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<CallbackPage />} />
       
+      {/* Tutorial/Mock Test Pages - Public (no authentication required) */}
+      <Route path="/tutorial/mcq" element={<TourMCQPage />} />
+      <Route path="/tutorial/coding" element={<TourCodingPage />} />
+      <Route path="/tutorial/system-design" element={<TourSystemDesignPage />} />
+      
       {/* Root route - redirects based on auth status */}
       <Route path="/" element={<RootRoute />} />
       
@@ -166,11 +171,6 @@ function AppRoutes() {
       />
       <Route path="/test/completed" element={<ProtectedRoute><TestCompletedPage /></ProtectedRoute>} />
       <Route path="/candidate/analysis" element={<AnalysisPage />} />
-      
-      {/* Tutorial/Mock Test Pages */}
-      <Route path="/tutorial/mcq" element={<TourMCQPage />} />
-      <Route path="/tutorial/coding" element={<TourCodingPage />} />
-      <Route path="/tutorial/system-design" element={<TourSystemDesignPage />} />
       
       {/* Original Test Pages */}
       <Route

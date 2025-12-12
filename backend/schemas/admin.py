@@ -201,4 +201,5 @@ class InterviewAnalysisResponse(BaseModel):
     result: Optional[str] = None  # 'PASS' or 'FAIL'
     overall_summary: Optional[str] = None
     image_data: Optional[str] = None  # Base64 encoded image data URL
+    section_timings: Optional[Dict[str, int]] = None  # Section time taken in seconds: {'mcq': 1530, 'coding': 2970, 'system_design': 2700}
 

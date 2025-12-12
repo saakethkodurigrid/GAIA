@@ -143,6 +143,14 @@ export const localStorage = {
     const durationMinutes = Math.round((durationSeconds / 60) * 100) / 100; // Round to 2 decimal places
     
     return durationMinutes;
+  },
+
+  // Clear all section timings (used when test is completed or new test starts)
+  clearAllSectionTimings: function(): void {
+    this.remove('section_timing_mcq');
+    this.remove('section_timing_coding');
+    this.remove('section_timing_systemDesign');
+    this.remove('section_timings_final');
   }
 };
 

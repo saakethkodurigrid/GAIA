@@ -156,6 +156,12 @@ export interface InterviewAnalysisResponse {
   overall_percentage?: number | null;
   result?: 'PASS' | 'FAIL' | null;
   overall_summary?: string | null;
+  image_data?: string | null; // Base64 encoded image data URL
+  section_timings?: {
+    mcq?: number; // duration in seconds
+    coding?: number; // duration in seconds
+    system_design?: number; // duration in seconds
+  };
 }
 
 /**
@@ -184,6 +190,18 @@ export const getInterviewAnalysis = async (candidateId: string): Promise<Intervi
     throw apiError;
   }
 
-  return response.json();
+  // Get raw response text first to log exact backend response
+  const responseText = await response.text();
+  console.log('=== RAW BACKEND RESPONSE (interview-analysis) ===');
+  console.log('Response Text:', responseText);
+  console.log('================================================');
+  
+  // Parse and return JSON
+  const jsonData = JSON.parse(responseText);
+  console.log('=== PARSED JSON RESPONSE (interview-analysis) ===');
+  console.log('Full Response Object:', JSON.stringify(jsonData, null, 2));
+  console.log('================================================');
+  
+  return jsonData;
 };
 
