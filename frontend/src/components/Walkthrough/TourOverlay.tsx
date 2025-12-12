@@ -6,10 +6,9 @@ const TourOverlay = () => {
   const { isRunning, currentStep, steps, stopTour } = useTour();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  const [isPositioned, setIsPositioned] = useState(false);
 
   useEffect(() => {
-    let updateTimeout: NodeJS.Timeout;
+    let updateTimeout: ReturnType<typeof setTimeout>;
     let updateRect: (() => void) | null = null;
 
     if (isRunning && steps.length > 0) {
@@ -32,7 +31,6 @@ const TourOverlay = () => {
                 // Only update if we have valid dimensions
                 if (rect.width > 0 && rect.height > 0) {
                   setTargetRect(rect);
-                  setIsPositioned(true);
                 }
               });
             });
@@ -57,7 +55,6 @@ const TourOverlay = () => {
     } else {
       document.body.style.overflow = '';
       setTargetRect(null);
-      setIsPositioned(false);
     }
   }, [isRunning, currentStep, steps]);
 

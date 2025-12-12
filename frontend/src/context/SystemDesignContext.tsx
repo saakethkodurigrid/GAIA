@@ -363,7 +363,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
   // Auto-update canvas to backend (debounced)
   useEffect(() => {
-    if (!questionUuid || !excalidrawData) return;
+    if (!questionUuid || !excalidrawData || !user?.candidateId) return;
 
     const canvasUpdateTimeout = setTimeout(async () => {
       try {
@@ -465,8 +465,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   }, []);
 
   const handleSubmitSolution = useCallback(async () => {
-    if (!questionUuid || !excalidrawData) {
-      console.error('Cannot submit: missing question UUID or canvas data');
+    if (!questionUuid || !excalidrawData || !user?.candidateId) {
+      console.error('Cannot submit: missing question UUID, canvas data, or candidate ID');
       return;
     }
 
