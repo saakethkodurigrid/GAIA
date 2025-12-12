@@ -127,6 +127,18 @@ const RootRoute = () => {
         console.log('RootRoute: Using saved redirect:', redirectPath);
         localStorage.removeItem('redirect_after_login');
         
+        // If status is completed, redirect to completed page
+        if (status === 'completed') {
+          console.log('RootRoute: Completed candidate, redirecting to /test/completed');
+          return <Navigate to="/test/completed" replace />;
+        }
+        
+        // If status is scheduled and trying to access /schedule, redirect to confirmation page
+        if (status === 'scheduled' && redirectPath.includes('/schedule')) {
+          console.log('RootRoute: Scheduled candidate accessing /schedule, redirecting to /interview/confirmed');
+          return <Navigate to="/interview/confirmed" replace />;
+        }
+        
         // If status is scheduled but URL has candidate_id, keep the candidate_id
         if (status === 'scheduled' && savedRedirect.includes('candidate_id')) {
           // Extract candidate_id from saved redirect
@@ -142,6 +154,11 @@ const RootRoute = () => {
       }
       
       // Default redirects without saved URL
+      if (status === 'completed') {
+        console.log('RootRoute: Redirecting completed candidate to /test/completed');
+        return <Navigate to="/test/completed" replace />;
+      }
+      
       if (status === 'scheduled') {
         console.log('RootRoute: Redirecting scheduled candidate to /test/scheduled');
         return <Navigate to="/test/scheduled" replace />;

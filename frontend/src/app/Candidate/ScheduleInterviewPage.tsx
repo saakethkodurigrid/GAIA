@@ -301,6 +301,7 @@ const ScheduleInterviewPage = () => {
     
     // Log user data from auth response
     const userDataStr = localStorage.getItem('user_data');
+    let userStatus: string | null = null;
     if (userDataStr) {
       try {
         const userData = JSON.parse(userDataStr);
@@ -313,11 +314,26 @@ const ScheduleInterviewPage = () => {
         console.log('Status:', userData.status || 'NOT FOUND');
         console.log('Candidate ID:', userData.candidateId || 'NOT FOUND');
         console.log('===================================');
+        userStatus = userData.status || null;
       } catch (err) {
         console.error('Error parsing user_data:', err);
       }
     } else {
       console.log('⚠ No user_data found in localStorage');
+    }
+    
+    // Check if user status is "completed" - redirect to completed page
+    if (userStatus === 'completed') {
+      console.log('✓ User status is "completed", redirecting to completed page');
+      navigate('/test/completed', { replace: true });
+      return;
+    }
+    
+    // Check if user status is "scheduled" - redirect to confirmation page
+    if (userStatus === 'scheduled') {
+      console.log('✓ User status is "scheduled", redirecting to confirmation page');
+      navigate('/interview/confirmed', { replace: true });
+      return;
     }
     
     if (candidateIdFromUrl) {
@@ -335,7 +351,7 @@ const ScheduleInterviewPage = () => {
       setError('Candidate ID not found. Please access this page using the invitation link.');
     }
     console.log('====================================');
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   // Set initial selected date to today (or minimum allowed date)
   useEffect(() => {
