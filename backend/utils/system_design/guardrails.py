@@ -125,22 +125,23 @@ rails:
         """NeMo Guardrails-inspired pattern detection for prompt injection"""
         # Common patterns that NeMo Guardrails typically detects
         nemo_patterns = [
-            # Instruction manipulation
-            r"(?i)(ignore|forget|disregard|override).*(previous|above|instructions|system|prompt)",
-            r"(?i)(you are|act as|pretend to be|roleplay as|become)",
-            r"(?i)(new instructions|new system|override|replace|change).*(instructions|system|prompt)",
-            r"(?i)(system:|assistant:|user:).*",
+            # Instruction manipulation - more specific patterns
+            r"(?i)^(ignore|forget|disregard|override).*(previous|above|instructions|system|prompt)",
+            r"(?i)^(you are|act as|pretend to be|roleplay as|become)",
+            r"(?i)^(new instructions|new system|override|replace|change).*(instructions|system|prompt)",
+            # Only match system:/assistant:/user: at start of line or after whitespace (not in middle of words)
+            r"(?i)(^|\s)(system:|assistant:|user:)\s",
             
-            # Prompt extraction
-            r"(?i)(show|print|display|reveal|output).*(prompt|instructions|system message|initial prompt)",
-            r"(?i)(what are|tell me|give me).*(your instructions|system prompt|initial prompt|your rules)",
+            # Prompt extraction - more specific
+            r"(?i)(show|print|display|reveal|output).*(your|the).*(prompt|instructions|system message|initial prompt)",
+            r"(?i)(what are|tell me|give me).*(your instructions|your system prompt|your initial prompt|your rules)",
             
             # Jailbreak attempts
             r"(?i)(jailbreak|unrestricted|unfiltered|no restrictions|bypass)",
             r"(?i)(bypass|circumvent|avoid|ignore).*(safety|guardrails|restrictions|filters)",
             
-            # Encoding tricks
-            r"(?i)(base64|hex|unicode|rot13|caesar|decode|encode)",
+            # Encoding tricks - only if clearly malicious
+            r"(?i)(base64|hex|unicode|rot13|caesar).*(decode|encode).*(prompt|instruction|system)",
             
             # Special markers
             r"```.*(system|prompt|instructions).*```",
@@ -148,7 +149,21 @@ rails:
             r"\[INST\].*\[/INST\]",
         ]
         
+        # Whitelist: Common legitimate system design questions that might trigger false positives
+        legitimate_patterns = [
+            r"(?i)(what are|what is|explain|describe|tell me about).*(functional|non-functional|requirements|scalability|availability|consistency|performance|design|architecture|system|component|service|database|cache|load balancer|api|endpoint|microservice|monolith)",
+            r"(?i)(how|why|when|where).*(scale|handle|implement|design|architect|optimize|improve|ensure|achieve|maintain|manage|process|store|retrieve|distribute|replicate|shard|partition)",
+        ]
+        
         import re
+        
+        # First check if it's a legitimate system design question
+        for pattern in legitimate_patterns:
+            if re.search(pattern, user_input):
+                # It's a legitimate question, allow it
+                return user_input, True, None
+        
+        # Then check for malicious patterns
         for pattern in nemo_patterns:
             if re.search(pattern, user_input):
                 print(f"[GUARDRAIL] NeMo pattern detected prompt injection: {pattern[:50]}...")
