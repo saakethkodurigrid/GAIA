@@ -3,8 +3,6 @@ import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
-import { localStorage as storage } from '../../utils/localStorage';
-import { TIMER_DURATION } from '../../utils/constants';
 
 const TestReadyPage = () => {
   const { user, logout } = useAuth();
@@ -24,14 +22,8 @@ const TestReadyPage = () => {
   };
 
   const handleStartAssessment = () => {
-    // Initialize timer when starting assessment - start with full duration if not already started
-    const existingTime = storage.getRemainingTime();
-    if (existingTime === null || existingTime <= 0) {
-      storage.setTimerEndTime(TIMER_DURATION);
-      console.log('Timer initialized: Starting with', TIMER_DURATION, 'seconds');
-    } else {
-      console.log('Timer already running:', existingTime, 'seconds remaining');
-    }
+    // Navigate to test overview page
+    // Timer will be initialized on test-overview page
     navigate('/test-overview');
   };
 

@@ -9,21 +9,20 @@ const TourOverlay = () => {
   const [isPositioned, setIsPositioned] = useState(false);
 
   useEffect(() => {
+    let updateTimeout: NodeJS.Timeout;
+    let updateRect: (() => void) | null = null;
+
     if (isRunning && steps.length > 0) {
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
       
-      // Reset positioning state when step changes
-      setIsPositioned(false);
-      setTargetRect(null);
-      
-      // Scroll to target element
+      // Scroll to target element and update position smoothly
       const currentStepData = steps[currentStep];
       if (currentStepData) {
-        const updateRect = () => {
+        updateRect = () => {
           const targetElement = document.querySelector(currentStepData.target);
           if (targetElement) {
-            // First, scroll into view
+            // First, scroll into view smoothly
             targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
             
             // Wait for scroll and layout to complete before calculating position
@@ -40,27 +39,26 @@ const TourOverlay = () => {
           }
         };
         
-        // Initial positioning with a small delay to ensure DOM is ready
-        const timeoutId = setTimeout(updateRect, 100);
+        // Update position with a small delay to ensure DOM is ready
+        updateTimeout = setTimeout(updateRect, 50);
         
         window.addEventListener('resize', updateRect);
         window.addEventListener('scroll', updateRect, true);
-        
-        return () => {
-          clearTimeout(timeoutId);
+      }
+      
+      return () => {
+        if (updateTimeout) clearTimeout(updateTimeout);
+        if (updateRect) {
           window.removeEventListener('resize', updateRect);
           window.removeEventListener('scroll', updateRect, true);
-        };
-      }
+        }
+        document.body.style.overflow = '';
+      };
     } else {
       document.body.style.overflow = '';
       setTargetRect(null);
       setIsPositioned(false);
     }
-
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [isRunning, currentStep, steps]);
 
   if (!isRunning || steps.length === 0) {
@@ -68,9 +66,10 @@ const TourOverlay = () => {
   }
 
   const currentStepData = steps[currentStep];
-  if (!currentStepData || !targetRect || !isPositioned) {
+  // Show overlay even while positioning - keep it visible for smooth transitions
+  if (!currentStepData || !targetRect) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998]" />
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity duration-300" />
     );
   }
 
@@ -79,7 +78,7 @@ const TourOverlay = () => {
       {/* Dark overlay with spotlight */}
       <div
         ref={overlayRef}
-        className="fixed inset-0 bg-black bg-opacity-60 z-[9998]"
+        className="fixed inset-0 bg-black bg-opacity-60 z-[9998] transition-all duration-500 ease-in-out"
         style={{
           clipPath: `polygon(
             0% 0%, 
@@ -102,7 +101,7 @@ const TourOverlay = () => {
 
       {/* Highlight border around target */}
       <div
-        className="fixed z-[9997] border-4 border-blue-500 rounded-lg pointer-events-none"
+        className="fixed z-[9997] border-4 border-blue-500 rounded-lg pointer-events-none transition-all duration-500 ease-in-out"
         style={{
           left: `${targetRect.left - 4}px`,
           top: `${targetRect.top - 4}px`,
@@ -112,7 +111,7 @@ const TourOverlay = () => {
         }}
       />
 
-      {/* Tooltip */}
+      {/* Tooltip - always render when we have targetRect for smooth transitions */}
       <StepTooltip
         step={currentStepData}
         stepIndex={currentStep}

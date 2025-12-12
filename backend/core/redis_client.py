@@ -1,7 +1,3 @@
-"""
-Redis client for caching and temporary storage.
-"""
-import ssl
 import redis
 import logging
 from typing import Optional
@@ -16,7 +12,6 @@ _redis_client: Optional[redis.Redis] = None
 def get_redis_client() -> redis.Redis:
     """
     Get or create Redis client instance.
-    
     Supports REDIS_URL connection string (preferred) or individual settings.
     
     Returns:
@@ -38,16 +33,11 @@ def get_redis_client() -> redis.Redis:
             
             # Prefer connection string if provided
             if settings.REDIS_URL:
-                # redis-py 5.0+: SSL is automatic with rediss:// URLs
-                # No need to pass ssl parameters explicitly
-                if 'rediss://' in settings.REDIS_URL or ':6380' in settings.REDIS_URL:
-                    logger.info("Redis connection using SSL/TLS (via rediss:// scheme)")
-                
                 _redis_client = redis.from_url(
                     settings.REDIS_URL,
                     decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
+                    socket_connect_timeout=15,  # Increased for SSL/TLS handshake with Azure Redis
+                    socket_timeout=60,  # Increased for bulk write operations with pipeline
                     **ssl_params
                 )
                 logger.info("Redis connection established via REDIS_URL")
@@ -58,8 +48,8 @@ def get_redis_client() -> redis.Redis:
                     'port': settings.REDIS_PORT,
                     'db': settings.REDIS_DB,
                     'decode_responses': True,
-                    'socket_connect_timeout': 5,
-                    'socket_timeout': 5,
+                    'socket_connect_timeout': 15,  # Increased for SSL/TLS handshake with Azure Redis
+                    'socket_timeout': 60,  # Increased for bulk write operations with pipeline
                 }
                 
                 # Add SSL params if valid
@@ -67,12 +57,6 @@ def get_redis_client() -> redis.Redis:
                 
                 if settings.REDIS_PASSWORD:
                     connection_params['password'] = settings.REDIS_PASSWORD
-                
-                # Add SSL for Azure Redis (port 6380)
-                if settings.REDIS_PORT == 6380:
-                    connection_params['ssl'] = True
-                    connection_params['ssl_cert_reqs'] = ssl.CERT_NONE
-                    logger.info("Redis connection using SSL/TLS")
                 
                 _redis_client = redis.Redis(**connection_params)
                 logger.info(f"Redis connection established: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
@@ -97,4 +81,3 @@ def close_redis_client():
         _redis_client.close()
         _redis_client = None
         logger.info("Redis connection closed")
-

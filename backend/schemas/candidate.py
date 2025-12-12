@@ -28,4 +28,5 @@ class InterviewSummaryResponse(BaseModel):
     coding_analysis: Optional[dict] = Field(None, description="Coding analysis data")
     system_design_analysis: Optional[dict] = Field(None, description="System design analysis data")
     cheat_metrics: Optional[dict] = Field(None, description="Integrity/cheat metrics")
+    section_timings: Optional[dict] = Field(None, description="Section time taken in seconds: {'mcq': 1530, 'coding': 2970, 'system_design': 2700}")
 

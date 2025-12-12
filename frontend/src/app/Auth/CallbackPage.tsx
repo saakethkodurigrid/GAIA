@@ -54,16 +54,32 @@ const CallbackPage = () => {
       try {
         const authParam = searchParams.get('auth');
         const errorParam = searchParams.get('error');
+        const errorCode = searchParams.get('error_code');
         const state = searchParams.get('state');
 
         console.log('Callback page - authParam:', authParam ? 'present' : 'missing');
         console.log('Callback page - errorParam:', errorParam);
+        console.log('Callback page - errorCode:', errorCode);
         console.log('Callback page - state:', state);
 
         // Verify state matches (CSRF protection)
         const storedState = localStorage.getItem('oauth_state');
-        if (state && storedState && state !== storedState) {
-          throw new Error('Invalid state parameter. Possible CSRF attack.');
+        if (state && storedState) {
+          try {
+            // Try to parse stored state as JSON (if it contains candidate_id)
+            const storedStateData = JSON.parse(atob(storedState));
+            const stateData = JSON.parse(atob(state));
+            
+            // Compare CSRF tokens
+            if (storedStateData.csrf !== stateData.csrf) {
+              throw new Error('Invalid state parameter. Possible CSRF attack.');
+            }
+          } catch {
+            // If not JSON, compare as plain strings (backward compatibility)
+            if (state !== storedState) {
+              throw new Error('Invalid state parameter. Possible CSRF attack.');
+            }
+          }
         }
 
         // Clear OAuth state
@@ -71,19 +87,52 @@ const CallbackPage = () => {
 
         // Handle error from backend
         if (errorParam) {
+          const errorCode = searchParams.get('error_code');
+          // Special handling for missing candidate_id
+          if (errorCode === 'MISSING_CANDIDATE_ID') {
+            setError('Candidate ID is required. Please access this page using the invitation link provided in your email.');
+            setIsLoading(false);
+            return;
+          }
           throw new Error(errorParam);
         }
 
         // Handle auth data from backend
         if (authParam) {
           try {
+            // Log the raw base64 encoded response from backend
+            console.log('=== EXACT BACKEND RESPONSE (RAW) ===');
+            console.log('Base64 Encoded Auth Param:', authParam);
+            console.log('Length:', authParam.length);
+            console.log('=====================================');
+            
             // Decode base64 auth data
             const authJson = atob(authParam);
+            console.log('=== EXACT BACKEND RESPONSE (DECODED JSON STRING) ===');
+            console.log('Decoded JSON String:', authJson);
+            console.log('====================================================');
+            
             const authResponse: AuthResponse = JSON.parse(authJson);
             
-            console.log('Auth response:', authResponse);
-            console.log('User type from response:', authResponse.user_type);
-            console.log('Status from response:', authResponse.status);
+            console.log('=== EXACT BACKEND RESPONSE (PARSED OBJECT) ===');
+            console.log('Full Response Object:', JSON.stringify(authResponse, null, 2));
+            console.log('');
+            console.log('Field-by-Field Breakdown:');
+            console.log('  success:', authResponse.success);
+            console.log('  message:', authResponse.message);
+            console.log('  user_type:', authResponse.user_type);
+            console.log('  email:', authResponse.email);
+            console.log('  name:', authResponse.name);
+            console.log('  status:', authResponse.status);
+            console.log('  candidate_id:', authResponse.candidate_id);
+            console.log('  job_role:', authResponse.job_role);
+            console.log('  redirect_url:', authResponse.redirect_url || 'not provided');
+            console.log('  id_token:', authResponse.id_token ? `${authResponse.id_token.substring(0, 50)}...` : 'not provided');
+            console.log('');
+            console.log('=== CANDIDATE INFORMATION ===');
+            console.log('Candidate Name:', authResponse.name || 'NOT PROVIDED');
+            console.log('Job Role:', authResponse.job_role || 'NOT PROVIDED');
+            console.log('===============================================');
             
             // Set auth state
             if (authContext.setAuthState) {

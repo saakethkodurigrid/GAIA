@@ -37,9 +37,36 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setError(null);
     
     try {
-      // Generate a random state for CSRF protection
-      const state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('oauth_state', state);
+      // Get candidate_id from localStorage if available (from scheduling link)
+      const candidateId = localStorage.getItem('current_candidate_id');
+      
+      let state: string;
+      if (candidateId) {
+        // Encode candidate_id in state parameter (for scheduling links)
+        const stateData = {
+          csrf: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
+          candidate_id: candidateId
+        };
+        state = btoa(JSON.stringify(stateData));
+        localStorage.setItem('oauth_state', state);
+        console.log('Login: Including candidate_id in OAuth state:', candidateId);
+      } else {
+        // Check if user is trying to access a candidate route
+        const currentPath = window.location.pathname;
+        const candidateRoutes = ['/schedule', '/test/', '/candidate/'];
+        const isCandidateRoute = candidateRoutes.some(route => currentPath.includes(route));
+        
+        if (isCandidateRoute) {
+          // Block login for candidate routes without candidate_id
+          setError('Candidate ID is required. Please access this page using the invitation link provided in your email.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Generate a random state for CSRF protection (for admin/recruiter)
+        state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('oauth_state', state);
+      }
       
       // Get Google OAuth URL
       const response = await getGoogleAuthURL(state);

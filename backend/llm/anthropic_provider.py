@@ -3,7 +3,7 @@ Anthropic Claude LLM Provider Implementation
 """
 import json
 from typing import List, Dict, Any, Optional, Union, Callable, Tuple
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from .base import BaseLLMProvider
 from .models import LLMMessage, LLMResponse, LLMToolCall, ToolDefinition
 
@@ -13,7 +13,7 @@ class AnthropicProvider(BaseLLMProvider):
     
     def __init__(self, api_key: str, model: str, **kwargs):
         super().__init__(api_key, model, **kwargs)
-        self.client = Anthropic(api_key=api_key)
+        self.client = AsyncAnthropic(api_key=api_key)
     
     async def chat_completion(
         self,
@@ -59,9 +59,9 @@ class AnthropicProvider(BaseLLMProvider):
             else:
                 params["tool_choice"] = {"type": "auto"}
         
-        # Make API call
+        # Make API call (now truly async!)
         try:
-            response = self.client.messages.create(**params)
+            response = await self.client.messages.create(**params)
             return self.parse_response(response)
         except Exception as e:
             # Re-raise with context

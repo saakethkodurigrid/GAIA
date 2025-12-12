@@ -374,8 +374,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             appState: excalidrawData.appState,
             files: excalidrawData.files,
           },
-          action: 'update',
-        });
+          action: 'update', // Lightweight sync
+        }, user.candidateId);
         console.log('Canvas updated to backend');
       } catch (error) {
         console.error('Failed to update canvas:', error);
@@ -479,11 +479,11 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
           files: excalidrawData.files,
         },
         action: 'submit',
-      });
+      }, user.candidateId);
       console.log('Solution submitted successfully');
 
       try {
-        const report = await endSession(questionUuid);
+        const report = await endSession(questionUuid, user.candidateId);
         console.log('Final report received:', report);
       } catch (error) {
         console.error('Error ending session:', error);

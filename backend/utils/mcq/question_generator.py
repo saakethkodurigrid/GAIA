@@ -8,6 +8,7 @@ import asyncio
 import re
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
+from tenacity import retry, stop_after_attempt, wait_exponential
 from llm.factory import LLMProviderFactory
 from llm.models import LLMMessage
 from core.config import settings
@@ -16,6 +17,9 @@ from .rag_tool import get_rag_tool_definition, execute_rag_tool_call
 from .domain_mapper import domain_mapper
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionGenerator:
@@ -723,6 +727,10 @@ Example questions (for inspiration only, DO NOT duplicate):
         
         return False
     
+    async def _return_empty_list(self) -> List[Dict[str, Any]]:
+        """Helper method to return empty list for skipped difficulty levels."""
+        return []
+    
     def _validate_question(self, question: Dict[str, Any]) -> bool:
         """
         Validate question format
@@ -751,6 +759,147 @@ Example questions (for inspiration only, DO NOT duplicate):
         
         return True
     
+    @retry(
+        stop=stop_after_attempt(2),  # Retry once on failure
+        wait=wait_exponential(min=1, max=5),
+        reraise=True
+    )
+    async def _generate_single_difficulty_with_retry(
+        self,
+        difficulty: str,
+        count: int,
+        role: str,
+        domain: str,
+        grade: str,
+        subtopics: List[str],
+        skills: List[str],
+        resume_text: str,
+        jd_text: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate questions for a single difficulty level with retry and timeout.
+        
+        This method is designed for parallel execution with asyncio.gather().
+        
+        Args:
+            difficulty: Difficulty level (easy/medium/hard)
+            count: Number of questions to generate
+            role: Role name
+            domain: Domain name
+            grade: Grade level
+            subtopics: Relevant subtopics
+            skills: Required skills
+            resume_text: Scrubbed resume text
+            jd_text: Scrubbed JD text
+            
+        Returns:
+            List of validated and deduplicated questions for this difficulty
+        """
+        logger.info(f"[{difficulty.upper()}] Starting generation ({count} questions)")
+        
+        try:
+            # Add timeout protection (2 minutes per difficulty)
+            questions = await asyncio.wait_for(
+                self._generate_single_difficulty_internal(
+                    difficulty=difficulty,
+                    count=count,
+                    role=role,
+                    domain=domain,
+                    grade=grade,
+                    subtopics=subtopics,
+                    skills=skills,
+                    resume_text=resume_text,
+                    jd_text=jd_text
+                ),
+                timeout=120  # 2 minute timeout
+            )
+            
+            logger.info(f"[{difficulty.upper()}] ✅ Generated {len(questions)} questions")
+            return questions
+            
+        except asyncio.TimeoutError:
+            logger.error(f"[{difficulty.upper()}] ⏱️ Timed out after 120 seconds")
+            return []  # Return empty list on timeout
+        except Exception as e:
+            logger.error(f"[{difficulty.upper()}] ❌ Error during generation: {e}")
+            raise  # Re-raise to trigger retry
+    
+    async def _generate_single_difficulty_internal(
+        self,
+        difficulty: str,
+        count: int,
+        role: str,
+        domain: str,
+        grade: str,
+        subtopics: List[str],
+        skills: List[str],
+        resume_text: str,
+        jd_text: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Internal method to generate questions for a single difficulty.
+        Separated from retry wrapper for cleaner code.
+        """
+        # Create prompt
+        system_prompt = self._create_agentic_prompt(
+            role=role,
+            domain=domain,
+            difficulty=difficulty,
+            grade=grade,
+            subtopics=subtopics,
+            skills=skills,
+            resume_text=resume_text,
+            jd_text=jd_text,
+            count=count
+        )
+        
+        # Generate questions
+        print(f"[{difficulty.upper()}] Calling LLM for {count} questions...")
+        generated = await self._generate_questions_agentic(
+            system_prompt=system_prompt,
+            difficulty=difficulty,
+            domain=domain,
+            subtopics=subtopics
+        )
+        
+        print(f"[{difficulty.upper()}] → Received {len(generated)} questions from LLM")
+        
+        # Validate and process questions
+        validated_questions = []
+        seen_questions = set()
+        validated_count = 0
+        duplicate_count = 0
+        invalid_count = 0
+        
+        for q in generated:
+            if len(validated_questions) >= count:
+                break
+            
+            # Deduplication check
+            question_text = q.get("question", "").strip().lower()
+            if not question_text:
+                invalid_count += 1
+                continue
+            
+            if question_text in seen_questions:
+                duplicate_count += 1
+                continue
+            
+            # Validate question structure
+            if self._validate_question(q):
+                q["difficulty"] = difficulty
+                q["question_id"] = f"GEN_{difficulty[0].upper()}{len(validated_questions) + 1:02d}"
+                validated_questions.append(q)
+                seen_questions.add(question_text)
+                validated_count += 1
+            else:
+                invalid_count += 1
+        
+        # Log results
+        print(f"[{difficulty.upper()}] → Added {validated_count} valid, {duplicate_count} duplicates, {invalid_count} invalid")
+        
+        return validated_questions
+    
     async def generate_questions(
         self,
         scrubbed_resume_text: str,
@@ -764,7 +913,10 @@ Example questions (for inspiration only, DO NOT duplicate):
         count: int = 25
     ) -> List[Dict[str, Any]]:
         """
-        Generate questions based on requirements with full observability
+        Generate questions based on requirements with PARALLEL execution.
+        
+        Generates easy, medium, and hard questions concurrently for ~3x speed improvement.
+        Includes automatic retry, timeout protection, and graceful error handling.
         
         Args:
             scrubbed_resume_text: Full scrubbed resume text (no PII)
@@ -780,203 +932,163 @@ Example questions (for inspiration only, DO NOT duplicate):
         Returns:
             List of generated questions
         """
+        start_time = time.time()
+        
         # Step 1: Calculate difficulty distribution
         dist = self._calculate_difficulty_distribution(grade, count)
+        logger.info(f"📊 Distribution for {grade}: Easy={dist['easy']}, Medium={dist['medium']}, Hard={dist['hard']}")
         
-        # Step 2: Initialize tracking
-        all_questions = []
+        # Step 2: Combine skills
         all_skills = list(set(resume_skills + jd_skills))
-        difficulty_counts = defaultdict(int)  # Track counts per difficulty
-        seen_questions = set()  # For deduplication
         
-        # Step 3: Pre-create prompts (cache them)
-        prompts_cache = {}
-        for difficulty, num_questions in dist.items():
-            if num_questions > 0:
-                prompts_cache[difficulty] = self._create_agentic_prompt(
-                    role=role,
-                    domain=domain,
-                    difficulty=difficulty,
-                    grade=grade,
-                    subtopics=subtopics,
-                    skills=all_skills,
-                    resume_text=scrubbed_resume_text,
-                    jd_text=scrubbed_jd_text,
-                    count=num_questions
-                )
+        logger.info(f"🚀 Starting PARALLEL generation for {count} questions...")
+        logger.info(f"   Easy: {dist['easy']}, Medium: {dist['medium']}, Hard: {dist['hard']}")
         
-        # Step 4: Generate questions for each difficulty level
-        for difficulty, num_questions in dist.items():
-            if num_questions == 0:
+        # Step 3: Generate all difficulties in parallel
+        # Create tasks for each difficulty level
+        tasks = []
+        
+        if dist["easy"] > 0:
+            tasks.append(self._generate_single_difficulty_with_retry(
+                difficulty="easy",
+                count=dist["easy"],
+                role=role,
+                domain=domain,
+                grade=grade,
+                subtopics=subtopics,
+                skills=all_skills,
+                resume_text=scrubbed_resume_text,
+                jd_text=scrubbed_jd_text
+            ))
+        else:
+            tasks.append(self._return_empty_list())
+        
+        if dist["medium"] > 0:
+            tasks.append(self._generate_single_difficulty_with_retry(
+                difficulty="medium",
+                count=dist["medium"],
+                role=role,
+                domain=domain,
+                grade=grade,
+                subtopics=subtopics,
+                skills=all_skills,
+                resume_text=scrubbed_resume_text,
+                jd_text=scrubbed_jd_text
+            ))
+        else:
+            tasks.append(self._return_empty_list())
+        
+        if dist["hard"] > 0:
+            tasks.append(self._generate_single_difficulty_with_retry(
+                difficulty="hard",
+                count=dist["hard"],
+                role=role,
+                domain=domain,
+                grade=grade,
+                subtopics=subtopics,
+                skills=all_skills,
+                resume_text=scrubbed_resume_text,
+                jd_text=scrubbed_jd_text
+            ))
+        else:
+            tasks.append(self._return_empty_list())
+        
+        # Execute all tasks in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Step 4: Collect successful results
+        all_questions = []
+        difficulties = ["easy", "medium", "hard"]
+        
+        for i, result in enumerate(results):
+            difficulty = difficulties[i]
+            expected_count = dist[difficulty]
+            
+            if isinstance(result, Exception):
+                logger.error(f"[{difficulty.upper()}] ❌ Generation completely failed after retries: {result}")
                 continue
             
-            if len(all_questions) >= count:
+            if result:  # Got questions
+                all_questions.extend(result)
+                logger.info(f"[{difficulty.upper()}] Added {len(result)}/{expected_count} questions to pool")
+            else:
+                logger.warning(f"[{difficulty.upper()}] No questions generated")
+        
+        # Step 5: Check success rate
+        success_rate = len(all_questions) / count if count > 0 else 0
+        
+        if success_rate < 0.8:  # Less than 80% success
+            logger.warning(
+                f"⚠️  Only generated {len(all_questions)}/{count} questions "
+                f"({success_rate*100:.1f}% success rate)"
+            )
+        else:
+            logger.info(f"✅ Generated {len(all_questions)}/{count} questions ({success_rate*100:.1f}% success rate)")
+        
+        # Step 6: Deduplicate if we have more than needed
+        if len(all_questions) > count:
+            logger.info(f"Deduplicating {len(all_questions)} questions to {count}...")
+            all_questions = self._deduplicate_questions(all_questions, count)
+        
+        # Step 7: Log final summary
+        elapsed_time = time.time() - start_time
+        logger.info(f"⏱️  Total generation time: {elapsed_time:.2f}s (parallel execution)")
+        logger.info(f"📊 Final count: {len(all_questions)} questions")
+        
+        # Log difficulty breakdown
+        for difficulty in ["easy", "medium", "hard"]:
+            actual = len([q for q in all_questions if q.get("difficulty") == difficulty])
+            expected = dist.get(difficulty, 0)
+            logger.info(f"   {difficulty.capitalize()}: {actual}/{expected}")
+        
+        return all_questions
+    
+    def _deduplicate_questions(self, questions: List[Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
+        """
+        Deduplicate questions using semantic similarity.
+        
+        Args:
+            questions: List of questions to deduplicate
+            target_count: Target number of questions
+            
+        Returns:
+            Deduplicated list of questions
+        """
+        if len(questions) <= target_count:
+            return questions
+        
+        # Load embedding model if needed
+        self._load_embedding_model()
+        
+        # Extract question texts
+        question_texts = [q.get("question", "") for q in questions]
+        
+        # Generate embeddings
+        embeddings = self.embedding_model.encode(question_texts)
+        
+        # Calculate similarity matrix
+        from sklearn.metrics.pairwise import cosine_similarity
+        similarity_matrix = cosine_similarity(embeddings)
+        
+        # Keep track of which questions to keep
+        keep_indices = []
+        seen_similar = set()
+        
+        for i in range(len(questions)):
+            if i in seen_similar:
+                continue
+            
+            keep_indices.append(i)
+            
+            if len(keep_indices) >= target_count:
                 break
             
-            remaining_for_difficulty = num_questions - difficulty_counts[difficulty]
-            if remaining_for_difficulty <= 0:
-                continue
-            
-            try:
-                print(f"Generating {remaining_for_difficulty} {difficulty} questions using agentic approach...")
-                
-                # Use cached prompt
-                system_prompt = prompts_cache[difficulty]
-                
-                generated = await self._generate_questions_agentic(
-                    system_prompt=system_prompt,
-                    difficulty=difficulty,
-                    domain=domain,
-                    subtopics=subtopics
-                )
-                
-                # Log what we got from LLM
-                print(f"  → Received {len(generated)} questions from LLM for {difficulty}")
-                
-                # Validate, deduplicate, and add questions
-                validated_count = 0
-                duplicate_count = 0
-                invalid_count = 0
-                
-                for q in generated:
-                    if len(all_questions) >= count:
-                        break
-                    
-                    if difficulty_counts[difficulty] >= num_questions:
-                        break
-                    
-                    # Deduplication check
-                    question_text = q.get("question", "").strip().lower()
-                    if not question_text:
-                        invalid_count += 1
-                        continue
-                    
-                    if question_text in seen_questions:
-                        duplicate_count += 1
-                        continue
-                    
-                    if self._validate_question(q):
-                        q["difficulty"] = difficulty
-                        q["question_id"] = f"GEN_{len(all_questions) + 1:03d}"
-                        all_questions.append(q)
-                        seen_questions.add(question_text)
-                        difficulty_counts[difficulty] += 1
-                        validated_count += 1
-                    else:
-                        invalid_count += 1
-                
-                # Log filtering results
-                print(f"  → Added {validated_count} valid questions, {duplicate_count} duplicates, {invalid_count} invalid")
-                print(f"  → Current {difficulty} count: {difficulty_counts[difficulty]}/{num_questions}")
-                
-                # Retry logic with better approach
-                max_retries = 3
-                retry_count = 0
-                
-                while (len(all_questions) < count and 
-                       difficulty_counts[difficulty] < num_questions and 
-                       retry_count < max_retries):
-                    
-                    remaining = min(
-                        num_questions - difficulty_counts[difficulty],
-                        count - len(all_questions)
-                    )
-                    
-                    if remaining <= 0:
-                        break
-                    
-                    # Use async sleep instead of blocking sleep
-                    await asyncio.sleep(1)  # Reduced from 2 seconds
-                    retry_count += 1
-                    
-                    print(f"Generating {remaining} additional {difficulty} question(s) (retry {retry_count}/{max_retries})...")
-                    
-                    # Create prompt for remaining questions (not just 1)
-                    retry_prompt = self._create_agentic_prompt(
-                        role=role,
-                        domain=domain,
-                        difficulty=difficulty,
-                        grade=grade,
-                        subtopics=subtopics,
-                        skills=all_skills,
-                        resume_text=scrubbed_resume_text,
-                        jd_text=scrubbed_jd_text,
-                        count=remaining  # Generate remaining amount, not just 1
-                    )
-                    
-                    try:
-                        additional = await self._generate_questions_agentic(
-                            system_prompt=retry_prompt,
-                            difficulty=difficulty,
-                            domain=domain,
-                            subtopics=subtopics
-                        )
-                        
-                        print(f"  → Retry {retry_count}: Received {len(additional)} questions from LLM")
-                        
-                        retry_validated = 0
-                        retry_duplicate = 0
-                        retry_invalid = 0
-                        
-                        for q in additional:
-                            if len(all_questions) >= count:
-                                break
-                            
-                            if difficulty_counts[difficulty] >= num_questions:
-                                break
-                            
-                            # Deduplication
-                            question_text = q.get("question", "").strip().lower()
-                            if not question_text:
-                                retry_invalid += 1
-                                continue
-                            
-                            if question_text in seen_questions:
-                                retry_duplicate += 1
-                                continue
-                            
-                            if self._validate_question(q):
-                                q["difficulty"] = difficulty
-                                q["question_id"] = f"GEN_{len(all_questions) + 1:03d}"
-                                all_questions.append(q)
-                                seen_questions.add(question_text)
-                                difficulty_counts[difficulty] += 1
-                                retry_validated += 1
-                            else:
-                                retry_invalid += 1
-                        
-                        print(f"  → Retry {retry_count}: Added {retry_validated} valid, {retry_duplicate} duplicates, {retry_invalid} invalid")
-                        print(f"  → Current {difficulty} count: {difficulty_counts[difficulty]}/{num_questions}")
-                        
-                        # If we got enough questions, exit retry loop
-                        if difficulty_counts[difficulty] >= num_questions:
-                            break
-                            
-                    except Exception as retry_error:
-                        print(f"Error in retry {retry_count} for {difficulty} questions: {retry_error}")
-                        # Continue to next retry
-                        continue
-                    
-            except Exception as e:
-                print(f"Error generating {difficulty} questions: {e}")
-                import traceback
-                traceback.print_exc()  # Better error logging
-                continue
+            # Mark similar questions as seen
+            for j in range(i + 1, len(questions)):
+                if similarity_matrix[i][j] > 0.85:  # 85% similarity threshold
+                    seen_similar.add(j)
         
-        # Step 5: Final validation and return
-        final_questions = all_questions[:count]
-        
-        # Log summary
-        print(f"\n=== Question Generation Summary ===")
-        print(f"Total requested: {count}")
-        print(f"Total generated: {len(final_questions)}")
-        for diff in ["hard", "medium", "easy"]:
-            actual = len([q for q in final_questions if q.get("difficulty") == diff])
-            expected = dist.get(diff, 0)
-            print(f"{diff.capitalize()}: {actual}/{expected}")
-        print("=" * 40)
-        
-        return final_questions
+        return [questions[i] for i in keep_indices]
 
 
 # Global instance (will be initialized with API key)

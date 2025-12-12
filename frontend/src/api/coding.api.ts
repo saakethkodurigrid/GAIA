@@ -784,3 +784,63 @@ export const submitCodingAnswer = async (
   
   return data;
 };
+
+/**
+ * Finalize coding section and calculate overall analysis
+ */
+export interface FinalizeCodingSectionResponse {
+  success: boolean;
+  message: string;
+  coding_analysis: {
+    total_score: number;
+    time_taken: number;  // seconds
+    total_submitted: number;
+    total_correct: number;
+    partially_correct: number;
+  };
+  duration_seconds?: number;
+  duration_minutes?: number;
+}
+
+export const finalizeCodingSection = async (
+  candidateId?: string
+): Promise<FinalizeCodingSectionResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  console.log('=== FINALIZE CODING SECTION REQUEST ===');
+  console.log('Candidate ID:', finalCandidateId);
+  console.log('=======================================');
+
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${finalCandidateId}/coding/finalize`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to finalize coding section' }));
+    throw new Error(error.detail || 'Failed to finalize coding section');
+  }
+
+  const data = await response.json();
+  
+  console.log('=== FINALIZE CODING SECTION RESPONSE ===');
+  console.log('Response:', JSON.stringify(data, null, 2));
+  console.log('========================================');
+  
+  return data;
+};

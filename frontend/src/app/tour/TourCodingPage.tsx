@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { TourProvider, useTour } from '../../context/TourContext';
 import TourOverlay from '../../components/Walkthrough/TourOverlay';
 import { codingTourSteps } from '../../components/Walkthrough/tourGuideSteps';
@@ -10,6 +10,35 @@ const TourCodingPageContent = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<'python' | 'javascript' | 'java' | 'cpp' | 'csharp'>('python');
   const [activeTab, setActiveTab] = useState<'testcases' | 'output'>('testcases');
   const [leftPanelWidth] = useState(50); // Percentage
+  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
+  const [showSubmitSectionModal, setShowSubmitSectionModal] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const languages = [
+    { id: 'python', label: 'Python' },
+    { id: 'javascript', label: 'JavaScript' },
+    { id: 'java', label: 'Java' },
+    { id: 'cpp', label: 'C++' },
+    { id: 'csharp', label: 'C#' }
+  ] as const;
+
+  const currentLanguage = languages.find(lang => lang.id === selectedLanguage) || languages[0];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsLanguageDropdownOpen(false);
+      }
+    };
+
+    if (isLanguageDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isLanguageDropdownOpen]);
 
   useEffect(() => {
     startTour(codingTourSteps);
@@ -67,13 +96,21 @@ const TourCodingPageContent = () => {
           <h1 className="text-2xl font-semibold text-gray-800">Coding Assessment</h1>
           <span className="w-2 h-2 rounded-full bg-red-500"></span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border-2 border-green-500 rounded-lg font-semibold text-base">
             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="text-green-600">{formatTime(timeRemaining)}</span>
           </div>
+          <button
+            data-tour="submit-section"
+            onClick={() => !isRunning && setShowSubmitSectionModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isRunning}
+          >
+            Submit Section
+          </button>
         </div>
       </header>
 
@@ -167,34 +204,53 @@ const TourCodingPageContent = () => {
           className="flex-shrink-0 flex flex-col bg-white h-full overflow-hidden"
           style={{ width: `${100 - leftPanelWidth}%` }}
         >
-          {/* Language Tabs */}
+          {/* Language Dropdown */}
           <div 
             data-tour="language-selector"
             className="flex-shrink-0 border-b border-gray-200"
           >
-            <div className="flex items-center justify-between px-4 py-2">
-              <div className="flex">
-                {(['python', 'javascript', 'java', 'cpp', 'csharp'] as const).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => !isRunning && setSelectedLanguage(lang)}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      selectedLanguage === lang
-                        ? 'text-gray-900 border-b-2 border-gray-900'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                    disabled={isRunning}
+            <div className="flex items-center px-4 py-2">
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => !isRunning && setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 flex items-center gap-2 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isRunning}
+                >
+                  <span>{currentLanguage.label}</span>
+                  <svg
+                    className={`w-4 h-4 text-gray-500 transition-transform ${isLanguageDropdownOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    {lang === 'cpp' ? 'C++' : lang === 'csharp' ? 'C#' : lang.charAt(0).toUpperCase() + lang.slice(1)}
-                  </button>
-                ))}
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {isLanguageDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-10 min-w-full">
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.id}
+                        onClick={() => {
+                          if (!isRunning) {
+                            setSelectedLanguage(lang.id);
+                            setIsLanguageDropdownOpen(false);
+                          }
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm transition-colors whitespace-nowrap ${
+                          selectedLanguage === lang.id
+                            ? 'bg-yellow-50 text-gray-900 font-medium'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                        disabled={isRunning}
+                      >
+                        {lang.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button
-                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
-                disabled={isRunning}
-              >
-                Reset
-              </button>
             </div>
           </div>
 
@@ -302,6 +358,43 @@ const TourCodingPageContent = () => {
       <div className="flex-shrink-0">
         <Footer />
       </div>
+
+      {/* Submit Section Modal */}
+      {showSubmitSectionModal && (
+        <div 
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black bg-opacity-50"
+          onClick={() => setShowSubmitSectionModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-bold mb-4 text-gray-900">Submit Section</h2>
+            <p className="text-gray-600 mb-2">
+              You have attempted <span className="font-semibold text-gray-900">1</span> out of <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
+            </p>
+            <p className="text-gray-600 mb-6">Do you wish to submit this section?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSubmitSectionModal(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowSubmitSectionModal(false);
+                  // In a real scenario, this would submit the section
+                  console.log('Section submitted');
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+              >
+                Submit Section
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

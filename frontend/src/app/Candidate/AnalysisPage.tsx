@@ -31,12 +31,30 @@ const AnalysisPage = () => {
       try {
         setIsLoading(true);
         const data = await getInterviewAnalysis(candidateId);
+        // Log exact response received from API function
+        console.log('=== EXACT RESPONSE FROM API FUNCTION ===');
+        console.log('Full Response:', JSON.stringify(data, null, 2));
+        console.log('Response Type:', typeof data);
+        console.log('========================================');
+        // Debug logging (only log non-null values with helpful messages)
         console.log('Interview Analysis Data:', data);
-        console.log('MCQ Analysis:', data.mcq_analysis);
-        console.log('Coding Analysis:', data.coding_analysis);
-        console.log('System Design Analysis:', data.system_design_analysis);
-        console.log('Cheat Metrics:', data.cheat_metrics);
-        console.log('Overall Summary:', data.overall_summary);
+        if (data.mcq_analysis) {
+          console.log('MCQ Analysis:', data.mcq_analysis);
+        }
+        if (data.coding_analysis) {
+          console.log('Coding Analysis:', data.coding_analysis);
+        } else {
+          console.log('Coding Analysis: Not available (coding section may not be completed)');
+        }
+        if (data.system_design_analysis) {
+          console.log('System Design Analysis:', data.system_design_analysis);
+        }
+        if (data.cheat_metrics) {
+          console.log('Cheat Metrics:', data.cheat_metrics);
+        }
+        if (data.overall_summary) {
+          console.log('Overall Summary:', data.overall_summary);
+        }
         setAnalysisData(data);
         setError(null);
       } catch (err) {
@@ -73,12 +91,20 @@ const AnalysisPage = () => {
   const getIntegrityLevel = (metrics?: { tab_change?: number; full_screen_exits?: number; multiple_face?: number } | null) => {
     if (!metrics) return 'Unknown';
     
-    const totalViolations = (metrics.tab_change || 0) + (metrics.full_screen_exits || 0) + (metrics.multiple_face || 0);
+    const tabChange = metrics.tab_change || 0;
+    const fullScreenExits = metrics.full_screen_exits || 0;
+    const multipleFace = metrics.multiple_face || 0;
     
-    if (totalViolations === 0) return 'Very High';
-    if (totalViolations <= 3) return 'High';
-    if (totalViolations <= 6) return 'Medium';
-    return 'Low';
+    // Low integrity if: (tab_switch + full_screen_exits) > 2 OR multiple_face > 0
+    if ((tabChange + fullScreenExits) > 2 || multipleFace > 0) {
+      return 'Low';
+    }
+    return 'High';
+  };
+
+  // Helper function to determine if candidate is a power coder
+  const isPowerCoder = (codingScore: number | undefined) => {
+    return (codingScore || 0) > 70;
   };
 
   const handleSectionClick = (section: string) => {
@@ -98,6 +124,21 @@ const AnalysisPage = () => {
       case 'hard': return '#EF4444'; // red
       default: return '#6B7280';
     }
+  };
+
+  // Helper function to format duration from seconds
+  const formatDurationFromSeconds = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined) return 'N/A';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
   };
 
   const renderDonutChart = (data: { easy: number; medium: number; hard: number }, label: string) => {
@@ -174,6 +215,11 @@ const AnalysisPage = () => {
         const totalCorrect = mcqCorrect.easy + mcqCorrect.medium + mcqCorrect.hard;
         const totalQuestions = mcqData.total_questions || 25; // Default to 25 if not provided
         
+        // Get timing from section_timings if available, otherwise fall back to mcqData.time_taken
+        const mcqTimeTaken = analysisData.section_timings?.mcq !== undefined 
+          ? formatDurationFromSeconds(analysisData.section_timings.mcq)
+          : (mcqData.time_taken ? `${mcqData.time_taken} mins` : 'N/A');
+        
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -187,7 +233,7 @@ const AnalysisPage = () => {
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {mcqData.time_taken ?? 'N/A'} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {mcqTimeTaken}</span>
               </div>
             </div>
 
@@ -201,6 +247,36 @@ const AnalysisPage = () => {
                 `Correct answers: ${totalCorrect}`
               )}
             </div>
+
+            {/* Correct answers breakdown by difficulty */}
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-base font-semibold text-gray-700">Correct Answers Breakdown:</span>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getDifficultyColor('easy') }}></div>
+                  <span className="text-sm text-gray-700">
+                    <span className="font-semibold">Easy:</span> {mcqCorrect.easy}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getDifficultyColor('medium') }}></div>
+                  <span className="text-sm text-gray-700">
+                    <span className="font-semibold">Medium:</span> {mcqCorrect.medium}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getDifficultyColor('hard') }}></div>
+                  <span className="text-sm text-gray-700">
+                    <span className="font-semibold">Hard:</span> {mcqCorrect.hard}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         );
       }
@@ -208,6 +284,11 @@ const AnalysisPage = () => {
       case 'coding': {
         const codingData = analysisData.coding_analysis;
         if (!codingData) return <p className="text-gray-500">No coding data available</p>;
+        
+        // Get timing from section_timings if available, otherwise fall back to codingData.time_taken
+        const codingTimeTaken = analysisData.section_timings?.coding !== undefined 
+          ? formatDurationFromSeconds(analysisData.section_timings.coding)
+          : (codingData.time_taken ? `${codingData.time_taken} mins` : 'N/A');
         
         return (
           <div className="space-y-6">
@@ -226,7 +307,7 @@ const AnalysisPage = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {codingData.time_taken ?? 'N/A'} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {codingTimeTaken}</span>
               </div>
             </div>
 
@@ -252,6 +333,11 @@ const AnalysisPage = () => {
         const sdData = analysisData.system_design_analysis;
         if (!sdData) return <p className="text-gray-500">No system design data available</p>;
         
+        // Get timing from section_timings if available, otherwise fall back to sdData.time_taken
+        const sdTimeTaken = analysisData.section_timings?.system_design !== undefined 
+          ? formatDurationFromSeconds(analysisData.section_timings.system_design)
+          : (sdData.time_taken ? `${sdData.time_taken} mins` : 'N/A');
+        
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -265,7 +351,7 @@ const AnalysisPage = () => {
                 <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-lg font-semibold text-gray-700">Time Taken: {sdData.time_taken ?? 'N/A'} mins</span>
+                <span className="text-lg font-semibold text-gray-700">Time Taken: {sdTimeTaken}</span>
               </div>
             </div>
 
@@ -418,6 +504,7 @@ const AnalysisPage = () => {
 
   const integrityLevel = getIntegrityLevel(analysisData.cheat_metrics);
   const overallScore = analysisData.overall_percentage ?? 0;
+  const powerCoder = isPowerCoder(analysisData.coding_analysis?.total_score);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
@@ -567,7 +654,7 @@ const AnalysisPage = () => {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-semibold text-gray-900">Integrity: </span>
-                    <span className={`text-lg font-semibold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+                    <span className={`text-lg font-semibold ${integrityLevel === 'High' ? 'text-green-600' : 'text-red-600'}`}>
                       {integrityLevel}
                     </span>
                   </div>
@@ -595,9 +682,17 @@ const AnalysisPage = () => {
         {/* Candidate Info Panel */}
         <div className="w-80 bg-white rounded-lg p-6 shadow-sm h-fit">
           <div className="flex flex-col items-center mb-6">
-            <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center mb-4 relative">
-              <span className="text-3xl font-bold text-gray-800">{getInitials(candidateName)}</span>
-              <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-white"></div>
+            <div className="w-full h-64 bg-yellow-400 rounded-lg flex items-center justify-center mb-4 relative overflow-hidden">
+              {analysisData?.image_data ? (
+                <img 
+                  src={analysisData.image_data} 
+                  alt={candidateName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-5xl font-bold text-gray-800">{getInitials(candidateName)}</span>
+              )}
+              <div className="absolute bottom-2 right-2 w-6 h-6 bg-green-500 rounded-full border-2 border-white"></div>
             </div>
           </div>
           <div className="space-y-3">
@@ -617,8 +712,14 @@ const AnalysisPage = () => {
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-600">Integrity: </span>
-              <span className={`text-base font-bold ${integrityLevel === 'High' || integrityLevel === 'Very High' ? 'text-green-600' : integrityLevel === 'Medium' ? 'text-yellow-600' : 'text-red-600'}`}>
+              <span className={`text-base font-bold ${integrityLevel === 'High' ? 'text-green-600' : 'text-red-600'}`}>
                 {integrityLevel}
+              </span>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-gray-600">Power Coder: </span>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold ${powerCoder ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {powerCoder ? 'Yes' : 'No'}
               </span>
             </div>
             <div>

@@ -299,6 +299,27 @@ const ScheduleInterviewPage = () => {
     console.log('candidate_id from URL params:', candidateIdFromUrl || 'NOT FOUND');
     console.log('candidate_id from localStorage:', storedCandidateId || 'NOT FOUND');
     
+    // Log user data from auth response
+    const userDataStr = localStorage.getItem('user_data');
+    if (userDataStr) {
+      try {
+        const userData = JSON.parse(userDataStr);
+        console.log('=== User Data from Auth Response ===');
+        console.log('Full User Data:', JSON.stringify(userData, null, 2));
+        console.log('Candidate Name:', userData.name || 'NOT FOUND');
+        console.log('Job Role:', userData.jobRole || 'NOT FOUND');
+        console.log('Email:', userData.email || 'NOT FOUND');
+        console.log('User Type:', userData.userType || 'NOT FOUND');
+        console.log('Status:', userData.status || 'NOT FOUND');
+        console.log('Candidate ID:', userData.candidateId || 'NOT FOUND');
+        console.log('===================================');
+      } catch (err) {
+        console.error('Error parsing user_data:', err);
+      }
+    } else {
+      console.log('⚠ No user_data found in localStorage');
+    }
+    
     if (candidateIdFromUrl) {
       // Store candidate_id in localStorage to use throughout the session
       localStorage.setItem('current_candidate_id', candidateIdFromUrl);
@@ -329,6 +350,22 @@ const ScheduleInterviewPage = () => {
     setCurrentMonth(initialDate.getMonth());
     setCurrentYear(initialDate.getFullYear());
   }, [getMinimumDateTime]);
+
+  // Log user data when it's available
+  useEffect(() => {
+    if (user) {
+      console.log(user);
+      console.log('=== User Data from Auth Context ===');
+      console.log('Candidate Name:', user.name);
+      console.log('Job Role:', user.jobRole);
+      console.log('Email:', user.email);
+      console.log('User Type:', user.userType);
+      console.log('Status:', user.status);
+      console.log('Candidate ID:', user.candidateId);
+      console.log('Full User Object:', JSON.stringify(user, null, 2));
+      console.log('===================================');
+    }
+  }, [user]);
 
   // Redirect if already scheduled
 //   useEffect(() => {

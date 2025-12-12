@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useVideo } from '../../context/VideoContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import type { CheatingEvent } from '../../hooks/useCheatingDetection';
@@ -9,7 +9,7 @@ const STORAGE_KEY = 'cheating_detection_events';
 
 const TestCompletedPage = () => {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { setVideoStream } = useVideo();
 
   // Load and log cheating detection events
   useEffect(() => {
@@ -66,6 +66,11 @@ const TestCompletedPage = () => {
     }
   }, []);
 
+  // Stop camera stream when component mounts
+  useEffect(() => {
+    setVideoStream(null);
+  }, [setVideoStream]);
+
   // Prevent back navigation
   useEffect(() => {
     // Replace current history entry to prevent back navigation
@@ -88,11 +93,8 @@ const TestCompletedPage = () => {
   };
 
   const handleClose = () => {
-    navigate('/auth/login');
-  };
-
-  const handleViewAnalysis = () => {
-    navigate('/candidate/analysis');
+    // Logout and redirect to login page
+    logout();
   };
 
   return (
@@ -205,12 +207,6 @@ const TestCompletedPage = () => {
 
           {/* Action Buttons */}
           <div className="flex justify-center gap-4">
-            <button
-              onClick={handleViewAnalysis}
-              className="bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-blue-700 transition-colors shadow-md"
-            >
-              View Analysis
-            </button>
             <button
               onClick={handleClose}
               className="bg-gray-700 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-gray-800 transition-colors shadow-md"

@@ -6,8 +6,6 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { uploadCandidateImage } from '../../api/candidate.api';
-import { localStorage as storage } from '../../utils/localStorage';
-import { TIMER_DURATION } from '../../utils/constants';
 
 const TestPermissionsPage = () => {
   const { user, logout } = useAuth();
@@ -170,11 +168,8 @@ const TestPermissionsPage = () => {
       console.error('Error clearing fullscreen warning state:', error);
     }
     
-    // Initialize timer when skipping tour - start with full duration
-    storage.setTimerEndTime(TIMER_DURATION);
-    console.log('Timer initialized: Starting with', TIMER_DURATION, 'seconds');
-    
     // Navigate directly to test overview page
+    // Timer will be initialized on test-overview page
     navigate('/test-overview');
   };
 

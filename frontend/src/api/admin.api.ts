@@ -156,6 +156,12 @@ export interface InterviewAnalysisResponse {
   overall_percentage?: number | null;
   result?: 'PASS' | 'FAIL' | null;
   overall_summary?: string | null;
+  image_data?: string | null; // Base64 encoded image data URL
+  section_timings?: {
+    mcq?: number; // duration in seconds
+    coding?: number; // duration in seconds
+    system_design?: number; // duration in seconds
+  };
 }
 
 /**
@@ -178,6 +184,72 @@ export const getInterviewAnalysis = async (candidateId: string): Promise<Intervi
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch interview analysis' }));
     const errorMessage = error.detail || 'Failed to fetch interview analysis';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
+  }
+
+  // Get raw response text first to log exact backend response
+  const responseText = await response.text();
+  console.log('=== RAW BACKEND RESPONSE (interview-analysis) ===');
+  console.log('Response Text:', responseText);
+  console.log('================================================');
+  
+  // Parse and return JSON
+  const jsonData = JSON.parse(responseText);
+  console.log('=== PARSED JSON RESPONSE (interview-analysis) ===');
+  console.log('Full Response Object:', JSON.stringify(jsonData, null, 2));
+  console.log('================================================');
+  
+  return jsonData;
+};
+
+// Add Recruiter/Admin Types
+export interface AddRecruiterAdminRequest {
+  email_id: string;
+  name: string;
+  role_id: number; // 1 = Recruiter, 2 = Admin
+  phone_number?: string;
+  location?: string;
+}
+
+export interface RecruiterAdminResponse {
+  email_id: string;
+  name: string;
+  role_id: number;
+  phone_number?: string | null;
+  location?: string | null;
+  role_name?: string | null;
+}
+
+export interface AddRecruiterAdminResponse {
+  success: boolean;
+  message: string;
+  data?: RecruiterAdminResponse | null;
+}
+
+/**
+ * Add a new recruiter or admin to the system (Admin-only)
+ */
+export const addRecruiterAdmin = async (request: AddRecruiterAdminRequest): Promise<AddRecruiterAdminResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/add-recruiter-admin`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to add recruiter/admin' }));
+    const errorMessage = error.detail || 'Failed to add recruiter/admin';
     const apiError = new Error(errorMessage) as ApiError;
     apiError.status = response.status;
     apiError.detail = error.detail || errorMessage;

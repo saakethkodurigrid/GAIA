@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import AddRecruiterAdminModal from '../components/AddRecruiterAdminModal';
 import { listJobs, listTodayInterviews } from '../api/admin.api';
 import type { InterviewResponse } from '../api/admin.api';
 import { isTokenExpiredError } from '../utils/apiErrorHandler';
@@ -32,6 +33,7 @@ const Admin = () => {
   const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoadingInterviews, setIsLoadingInterviews] = useState(true);
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
+  const [isAddRecruiterModalOpen, setIsAddRecruiterModalOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -192,9 +194,20 @@ const Admin = () => {
 
       <div className="flex-1 p-8">
         <div className="max-w-[95%] mx-auto">
-          <h1 className="text-4xl font-bold text-gray-900 mb-8">
-            {getGreeting()}, {getUserName()}!
-          </h1>
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-4xl font-bold text-gray-900">
+              {getGreeting()}, {getUserName()}!
+            </h1>
+            <button
+              onClick={() => setIsAddRecruiterModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-gray-900 rounded-lg text-base font-medium hover:bg-yellow-500 transition-colors shadow-md"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Recruiter/Admin
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
             {/* Left Panel: Uploaded Job Descriptions */}
@@ -398,6 +411,16 @@ const Admin = () => {
           </div>
         </div>
       </div>
+
+      {/* Add Recruiter/Admin Modal */}
+      <AddRecruiterAdminModal
+        isOpen={isAddRecruiterModalOpen}
+        onClose={() => setIsAddRecruiterModalOpen(false)}
+        onSuccess={() => {
+          // Optionally refresh data or show success message
+          console.log('Recruiter/Admin added successfully');
+        }}
+      />
 
       <Footer />
     </div>

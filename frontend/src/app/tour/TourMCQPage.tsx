@@ -5,13 +5,21 @@ import { mcqTourSteps } from '../../components/Walkthrough/tourGuideSteps';
 import Footer from '../../components/Footer';
 
 const TourMCQPageContent = () => {
-  const { startTour, isRunning } = useTour();
+  const { startTour, isRunning, currentStep } = useTour();
   const [timeRemaining] = useState(10800); // 3 hours (180 minutes)
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   useEffect(() => {
     // Start tour automatically
     startTour(mcqTourSteps);
   }, [startTour]);
+
+  // Show modal when on the save-next step (step index 5)
+  useEffect(() => {
+    if (currentStep === 5 && isRunning) {
+      setShowSaveModal(true);
+    }
+  }, [currentStep, isRunning]);
 
   // Note: Navigation to home page is handled by StepTooltip when "Done" is clicked
 
@@ -25,7 +33,6 @@ const TourMCQPageContent = () => {
   // Dummy data
   const dummyQuestion = {
     id: 1,
-    topic: 'Data Structures',
     question: 'What is the time complexity of binary search in a sorted array?',
     options: [
       'O(n)',
@@ -90,7 +97,7 @@ const TourMCQPageContent = () => {
                 </div>
                 <div className="flex items-center gap-3 p-2">
                   <div className="w-6 h-6 rounded bg-purple-600 border-2 border-purple-600"></div>
-                  <span className="flex-1 text-sm text-gray-600">Marked</span>
+                  <span className="flex-1 text-sm text-gray-600">Marked for Review</span>
                   <span className="font-semibold text-gray-800 min-w-6 text-right">{dummyStatuses.marked}</span>
                 </div>
                 <div className="flex items-center gap-3 p-2">
@@ -137,21 +144,16 @@ const TourMCQPageContent = () => {
         >
           <div className="w-full max-w-full flex flex-col gap-5">
             <div className="flex justify-between items-center w-full">
-              <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-                {dummyQuestion.topic}
+              <span className="text-sm text-gray-600 font-medium">
+                Question 1 of {totalQuestions}
               </span>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600 font-medium">
-                  Question 1 of {totalQuestions}
-                </span>
-                <button
-                  data-tour="submit-button"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
-                  disabled={isRunning}
-                >
-                  Submit Section
-                </button>
-              </div>
+              <button
+                data-tour="submit-button"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+                disabled={isRunning}
+              >
+                Submit Section
+              </button>
             </div>
             
             <div 
@@ -225,10 +227,10 @@ const TourMCQPageContent = () => {
                 
                 <button
                   data-tour="save-next"
-                  className="px-6 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-yellow-500"
+                  className="px-6 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-semibold cursor-pointer transition-colors hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isRunning}
                 >
-                  Save
+                  Save and Next
                 </button>
               </div>
             </div>
@@ -240,6 +242,36 @@ const TourMCQPageContent = () => {
       <div className="flex-shrink-0">
         <Footer />
       </div>
+
+      {/* Save and Next Modal */}
+      {showSaveModal && (
+        <div 
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black bg-opacity-50"
+        >
+          <div 
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-bold mb-4 text-gray-900">Save and Next Button</h2>
+            <p className="text-gray-600 mb-2">
+              After selecting an option, notice that the <span className="font-semibold text-gray-900">Save</span> button changes to <span className="font-semibold text-gray-900">Save and Next</span>.
+            </p>
+            <p className="text-gray-600 mb-6">
+              Click the <span className="font-semibold text-gray-900">Save and Next</span> button to save your answer and proceed to the next question. Your answer must be saved before moving forward.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowSaveModal(false);
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

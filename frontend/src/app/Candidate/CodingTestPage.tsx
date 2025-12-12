@@ -6,12 +6,16 @@ import CodeEditor from '../../components/CodeEditor/CodeEditor';
 import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
+import Toast from '../../components/Toast';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { localStorage as storage } from '../../utils/localStorage';
+import { finalizeCodingSection } from '../../api/coding.api';
+import { useAuth } from '../../context/AuthContext';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code, submitAnswer, submittedQuestions, findNextUnsubmittedQuestion } = useCoding();
   const { goToProblem, currentProblemIndex, totalProblems } = useCodingSession();
+  const { user } = useAuth();
   const navigate = useNavigate();
   
   // Calculate attempted questions count
@@ -41,14 +45,49 @@ const CodingTestPageContent = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreenExited, setIsFullscreenExited] = useState(false);
   const wasFullscreenRef = useRef(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const pendingNavigationRef = useRef<{ nextIndex: number | null; showSectionModal: boolean } | null>(null);
 
   // Track section entry time using timer value
   useEffect(() => {
-    // Only start timing if not already started (to avoid resetting on re-renders)
-    const existingTiming = storage.getSectionTiming('coding');
-    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
-      // Use current timer value when entering section
-      storage.startSectionTiming('coding', timeRemaining);
+    // Check if section has been submitted
+    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+    const isSubmitted = submitted.coding === true;
+    
+    // If section hasn't been submitted, ALWAYS reset timing when entering to ensure accuracy
+    // This prevents timing from being started too early (e.g., on initial page load or provider mount)
+    if (!isSubmitted) {
+      const existingTiming = storage.getSectionTiming('coding');
+      // Always reset timing if section hasn't been submitted and timing hasn't been completed
+      // Also reset if existing timing was started significantly earlier (more than 30 seconds difference)
+      // This handles cases where timing was initialized before user actually entered the section
+      let shouldReset = !existingTiming || existingTiming.durationMinutes === null;
+      
+      if (existingTiming && existingTiming.startTimeRemaining !== null && existingTiming.startTimeRemaining !== undefined) {
+        const timeDiff = existingTiming.startTimeRemaining - timeRemaining;
+        // If timing was started more than 30 seconds ago (relative to current timer), reset it
+        if (timeDiff > 30) {
+          console.log(`Coding timing was started too early - Previous start: ${formatTime(existingTiming.startTimeRemaining)}, Current: ${formatTime(timeRemaining)}, Diff: ${Math.round(timeDiff / 60 * 100) / 100} minutes - RESETTING`);
+          shouldReset = true;
+        } else if (shouldReset) {
+          console.log(`Resetting Coding timing - Previous start: ${formatTime(existingTiming.startTimeRemaining)}, Current: ${formatTime(timeRemaining)}, Diff: ${Math.round(timeDiff / 60 * 100) / 100} minutes`);
+        }
+      }
+      
+      if (shouldReset) {
+        // Use current timer value when entering section - this will overwrite any existing timing
+        console.log('=== Coding Section Entry ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('============================');
+        storage.startSectionTiming('coding', timeRemaining);
+      } else {
+        console.log('=== Coding Section Entry (timing already completed) ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('========================================================');
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
@@ -166,9 +205,6 @@ const CodingTestPageContent = () => {
           style={{ width: `${leftPanelWidth}%` }}
         >
           <div className="p-6">
-            {/* All Questions Heading */}
-            <h3 className="text-base font-semibold text-gray-900 mb-4">All Questions</h3>
-            
             {/* Question Navigation Bar */}
             <div className="mb-6 flex gap-2">
               {Array.from({ length: totalProblems }).map((_, index) => {
@@ -200,6 +236,9 @@ const CodingTestPageContent = () => {
 
             {currentProblem && (
               <>
+                {/* Question Heading */}
+                <h3 className="text-base font-semibold text-gray-900 mb-4">Question</h3>
+                
                 {/* Problem Description */}
                 <div className="mb-6">
                   <style>{`
@@ -386,6 +425,27 @@ const CodingTestPageContent = () => {
         <Footer />
       </div>
 
+      {/* Toast Notification */}
+      <Toast
+        message={toastMessage}
+        type="success"
+        isVisible={showToast}
+        onClose={() => {
+          setShowToast(false);
+          // Execute pending navigation after toast closes
+          if (pendingNavigationRef.current) {
+            const { nextIndex, showSectionModal } = pendingNavigationRef.current;
+            if (showSectionModal) {
+              setShowSubmitSectionModal(true);
+            } else if (nextIndex !== null && nextIndex !== undefined) {
+              goToProblem(nextIndex);
+            }
+            pendingNavigationRef.current = null;
+          }
+        }}
+        duration={2000}
+      />
+
       {/* Submit Section Modal */}
       {showSubmitSectionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -439,6 +499,19 @@ const CodingTestPageContent = () => {
                     console.log(`Coding section completed in ${durationMinutes} minutes`);
                   }
                   
+                  // Call API to finalize coding section and generate analysis (fire-and-forget)
+                  console.log('Finalizing coding section...');
+                  finalizeCodingSection(user?.candidateId)
+                    .then((response) => {
+                      console.log('✅ Coding section finalized successfully:', response);
+                      console.log('Coding Analysis:', response.coding_analysis);
+                    })
+                    .catch((error) => {
+                      console.error('⚠️ Error finalizing coding section:', error);
+                      // Don't block navigation on error - analysis will be attempted during test completion
+                    });
+                  
+                  // Navigate immediately without waiting for API response
                   setShowSubmitSectionModal(false);
                   navigate('/test-overview');
                 }}
@@ -478,6 +551,10 @@ const CodingTestPageContent = () => {
                     submitAnswer();
                     setShowSubmitModal(false);
                     
+                    // Show success toast
+                    setToastMessage('Question submitted successfully!');
+                    setShowToast(true);
+                    
                     // Check if all questions will be submitted (including current one)
                     const willBeAllSubmitted = problems.every(problem => {
                       if (!problem?.question_uuid) return false;
@@ -488,8 +565,8 @@ const CodingTestPageContent = () => {
                     });
                     
                     if (willBeAllSubmitted) {
-                      // All questions will be submitted - show submit section modal
-                      setShowSubmitSectionModal(true);
+                      // All questions will be submitted - show submit section modal after toast
+                      pendingNavigationRef.current = { nextIndex: null, showSectionModal: true };
                     } else if (findNextUnsubmittedQuestion) {
                       // Find next unsubmitted question (excluding current one which will be submitted)
                       const tempSubmitted = new Set(submittedQuestions);
@@ -515,10 +592,8 @@ const CodingTestPageContent = () => {
                         }
                       }
                       
-                      if (nextIndex !== null && nextIndex !== undefined) {
-                        // Navigate to next unsubmitted question
-                        goToProblem(nextIndex);
-                      }
+                      // Store navigation info to execute after toast
+                      pendingNavigationRef.current = { nextIndex, showSectionModal: false };
                     }
                   }
                 }}

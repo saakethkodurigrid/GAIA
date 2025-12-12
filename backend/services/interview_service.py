@@ -5,7 +5,7 @@ import logging
 import asyncio
 import threading
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from models.candidate import Candidate
@@ -951,16 +951,165 @@ class InterviewService:
                 integrity_metadata=integrity_metadata
             )
             
-            # Save summary to interview_analysis_table
+            # Calculate overall score (average of MCQ, Coding, and System Design)
+            mcq_score = mcq_metadata.get("score", 0)
+            coding_score = coding_metadata.get("total_score", 0)
+            system_design_score = system_design_metadata.get("score", 0)
+            
+            overall_percentage = round((mcq_score + coding_score + system_design_score) / 3)
+            
+            # Determine integrity level
+            tab_change = cheat_metrics.get("tab_change", 0)
+            full_screen_exits = cheat_metrics.get("full_screen_exits", 0)
+            multiple_face = cheat_metrics.get("multiple_face", "no")
+            
+            is_low_integrity = False
+            if (tab_change + full_screen_exits) > 2:
+                is_low_integrity = True
+            if multiple_face == "yes":
+                is_low_integrity = True
+            
+            # Determine result (PASS/FAIL)
+            if is_low_integrity:
+                result = "FAIL"
+            elif overall_percentage > 70:
+                result = "PASS"
+            else:
+                result = "FAIL"
+            
+            # Save summary, overall_percentage, and result to interview_analysis_table
             interview_analysis.overall_summary = summary
+            interview_analysis.overall_percentage = overall_percentage
+            interview_analysis.result = result
             self.db.commit()
             
             logger.info(f"[INTERVIEW_ANALYSIS] ✅ Generated and saved overall_summary for candidate {candidate_id}")
+            logger.info(f"[INTERVIEW_ANALYSIS] ✅ Overall Score: {overall_percentage}%, Result: {result}, Integrity: {'Low' if is_low_integrity else 'High'}")
             
         except Exception as e:
             logger.error(f"Error generating interview summary for candidate {candidate_id}: {str(e)}", exc_info=True)
             # Don't raise - this is non-critical, don't break test completion
             self.db.rollback()
+    
+    def ensure_all_analyses_complete(self, candidate_id: str) -> Dict[str, Any]:
+        """
+        Ensure all section analyses are complete before test completion.
+        Performs analysis for any missing sections.
+        
+        This method intelligently checks each section (MCQ, Coding, System Design)
+        and only performs analysis if it doesn't already exist, preventing duplicates.
+        
+        Args:
+            candidate_id: UUID of the candidate
+            
+        Returns:
+            Dictionary with results:
+            {
+                "success": bool,
+                "completed_analyses": ["mcq", "coding", ...],
+                "skipped_analyses": ["system_design", ...],
+                "failed_analyses": [("section", "error_message"), ...]
+            }
+        """
+        from models.interview_analysis_table import InterviewAnalysisTable
+        from models.interview_coding import InterviewCoding
+        from models.interview_system_design import InterviewSystemDesign
+        
+        completed = []
+        skipped = []
+        failed = []
+        
+        # Get or create interview_analysis record
+        interview_analysis = self.db.query(InterviewAnalysisTable).filter(
+            InterviewAnalysisTable.candidate_id == candidate_id
+        ).first()
+        
+        if not interview_analysis:
+            interview_analysis = InterviewAnalysisTable(candidate_id=candidate_id)
+            self.db.add(interview_analysis)
+            self.db.flush()
+            logger.info(f"[ENSURE_ANALYSIS] Created new interview_analysis record for candidate {candidate_id}")
+        
+        # ============================================================================
+        # 1. MCQ Analysis
+        # ============================================================================
+        if not interview_analysis.mcq_analysis or interview_analysis.mcq_analysis.get("score") is None:
+            try:
+                self._update_mcq_analysis(candidate_id)
+                completed.append("mcq")
+                logger.info(f"[ENSURE_ANALYSIS] ✅ Completed MCQ analysis for {candidate_id}")
+            except Exception as e:
+                failed.append(("mcq", str(e)))
+                logger.error(f"[ENSURE_ANALYSIS] ❌ Failed MCQ analysis: {e}")
+        else:
+            skipped.append("mcq")
+            logger.info(f"[ENSURE_ANALYSIS] ⏭️  MCQ analysis already exists for {candidate_id}")
+        
+        # ============================================================================
+        # 2. Coding Analysis
+        # ============================================================================
+        self.db.refresh(interview_analysis)
+        if not interview_analysis.coding_analysis or interview_analysis.coding_analysis.get("total_score") is None:
+            # Check if candidate has coding questions
+            has_coding = self.db.query(InterviewCoding).filter(
+                InterviewCoding.candidate_id == candidate_id
+            ).first() is not None
+            
+            if has_coding:
+                try:
+                    self._update_coding_analysis(candidate_id)
+                    completed.append("coding")
+                    logger.info(f"[ENSURE_ANALYSIS] ✅ Completed Coding analysis for {candidate_id}")
+                except Exception as e:
+                    failed.append(("coding", str(e)))
+                    logger.error(f"[ENSURE_ANALYSIS] ❌ Failed Coding analysis: {e}")
+            else:
+                skipped.append("coding_no_questions")
+                logger.info(f"[ENSURE_ANALYSIS] ⏭️  No coding questions assigned for {candidate_id}")
+        else:
+            skipped.append("coding")
+            logger.info(f"[ENSURE_ANALYSIS] ⏭️  Coding analysis already exists for {candidate_id}")
+        
+        # ============================================================================
+        # 3. System Design Analysis
+        # ============================================================================
+        self.db.refresh(interview_analysis)
+        if not interview_analysis.system_design_analysis or interview_analysis.system_design_analysis.get("score") is None:
+            # Check if candidate has system design session
+            sd_record = self.db.query(InterviewSystemDesign).filter(
+                InterviewSystemDesign.candidate_id == candidate_id
+            ).first()
+            
+            if sd_record and (sd_record.current_canvas or sd_record.final_diagram):
+                try:
+                    from services.system_design_service import SystemDesignService
+                    import asyncio
+                    
+                    sd_service = SystemDesignService(self.db)
+                    asyncio.run(
+                        sd_service.generate_final_report(
+                            candidate_id=candidate_id,
+                            question_uuid=sd_record.question_uuid
+                        )
+                    )
+                    completed.append("system_design")
+                    logger.info(f"[ENSURE_ANALYSIS] ✅ Completed System Design analysis for {candidate_id}")
+                except Exception as e:
+                    failed.append(("system_design", str(e)))
+                    logger.error(f"[ENSURE_ANALYSIS] ❌ Failed System Design analysis: {e}")
+            else:
+                skipped.append("system_design_no_session")
+                logger.info(f"[ENSURE_ANALYSIS] ⏭️  No system design session or canvas data for {candidate_id}")
+        else:
+            skipped.append("system_design")
+            logger.info(f"[ENSURE_ANALYSIS] ⏭️  System Design analysis already exists for {candidate_id}")
+        
+        return {
+            "success": len(failed) == 0,
+            "completed_analyses": completed,
+            "skipped_analyses": skipped,
+            "failed_analyses": failed
+        }
     
     async def _assign_questions_and_generate_mcq(self, candidate_id: str, candidate: Candidate, scheduled_date_for_message: datetime) -> tuple:
         """

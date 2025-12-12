@@ -15,13 +15,43 @@ const SystemDesignPageContent = () => {
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
 
+  // Format time helper
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Track section entry time using timer value
   useEffect(() => {
-    // Only start timing if not already started (to avoid resetting on re-renders)
-    const existingTiming = storage.getSectionTiming('systemDesign');
-    if (!existingTiming || existingTiming.startTimeRemaining === null || existingTiming.startTimeRemaining === undefined) {
-      // Use current timer value when entering section
-      storage.startSectionTiming('systemDesign', timeRemaining);
+    // Check if section has been submitted
+    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+    const isSubmitted = submitted.systemDesign === true;
+    
+    // If section hasn't been submitted, ALWAYS reset timing when entering to ensure accuracy
+    // This prevents timing from being started too early (e.g., on initial page load or provider mount)
+    if (!isSubmitted) {
+      const existingTiming = storage.getSectionTiming('systemDesign');
+      // Reset timing if:
+      // 1. No timing exists, OR
+      // 2. Timing exists but hasn't been completed (durationMinutes is null), OR
+      // 3. Timing was started significantly earlier than current time (more than 10 seconds difference)
+      //    This handles cases where timing was initialized before user actually entered the section
+      const shouldReset = !existingTiming || 
+                         existingTiming.durationMinutes === null ||
+                         (existingTiming.startTimeRemaining !== null && 
+                          existingTiming.startTimeRemaining !== undefined &&
+                          (existingTiming.startTimeRemaining - timeRemaining) > 10);
+      
+      if (shouldReset) {
+        // Use current timer value when entering section - this will overwrite any existing timing
+        console.log('=== System Design Section Entry ===');
+        console.log(`Timer: ${formatTime(timeRemaining)}`);
+        console.log('====================================');
+        storage.startSectionTiming('systemDesign', timeRemaining);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
@@ -39,10 +69,13 @@ const SystemDesignPageContent = () => {
     }
     
     // End section timing and calculate duration using current timer value
+    console.log('=== System Design Section Exit ===');
+    console.log(`Timer: ${formatTime(timeRemaining)}`);
     const durationMinutes = storage.endSectionTiming('systemDesign', timeRemaining);
     if (durationMinutes !== null) {
-      console.log(`System Design section completed in ${durationMinutes} minutes`);
+      console.log(`Duration: ${durationMinutes} minutes`);
     }
+    console.log('===================================');
     
     // Navigate immediately to test overview without waiting for evaluation
     navigate('/test-overview');
@@ -76,12 +109,12 @@ const SystemDesignPageContent = () => {
         <div className="w-[70%] flex-shrink-0 flex flex-col bg-white border-r border-gray-200 h-full overflow-hidden">
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Problem Section - Fixed height, scrollable */}
-            <div className="flex-shrink-0 p-6 overflow-y-auto border-b border-gray-200 bg-gray-50" style={{ maxHeight: '200px' }}>
+            <div className="flex-shrink-0 p-6 overflow-y-auto border-b border-gray-200 bg-gray-50" style={{ maxHeight: '201px' }}>
               <div className="mb-3">
                 <h2 className="text-xl font-bold text-gray-900 mb-0">{problem?.title}</h2>
               </div>
               <div>
-                <p className="text-sm text-gray-700 leading-relaxed m-0">{problem?.description}</p>
+                <p className="text-base text-gray-700 leading-relaxed m-0">{problem?.description}</p>
               </div>
             </div>
             {/* Canvas Container */}

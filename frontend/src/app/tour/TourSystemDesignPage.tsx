@@ -20,8 +20,8 @@ const TourSystemDesignPageContent = () => {
   };
 
   const dummyProblem = {
-    title: 'Design a URL Shortener',
-    description: 'Design a service like TinyURL or bit.ly that takes a long URL and returns a shortened URL. The service should handle millions of requests per day and provide analytics on URL usage.'
+    title: 'System Design Question',
+    description: 'Design a scalable system architecture for the given problem. Consider factors like performance, reliability, scalability, and maintainability. Use the canvas below to draw your architecture diagram.'
   };
 
   return (
@@ -72,7 +72,7 @@ const TourSystemDesignPageContent = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-0">{dummyProblem.title}</h2>
               </div>
               <div>
-                <p className="text-sm text-gray-700 leading-relaxed m-0">{dummyProblem.description}</p>
+                <p className="text-base text-gray-700 leading-relaxed m-0">{dummyProblem.description}</p>
               </div>
             </div>
 
@@ -105,18 +105,6 @@ const TourSystemDesignPageContent = () => {
                       }}
                     />
                   </div>
-                </div>
-              </div>
-
-              {/* Submit Bar */}
-              <div className="flex-shrink-0">
-                <div className="flex justify-end">
-                  <button 
-                    className="px-8 py-3 bg-gray-900 text-white rounded-lg text-base font-semibold cursor-pointer transition-colors hover:bg-gray-800"
-                    disabled={isRunning}
-                  >
-                    Submit Design
-                  </button>
                 </div>
               </div>
             </div>

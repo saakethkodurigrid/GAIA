@@ -554,8 +554,8 @@ async def get_scheduled_interviews(
     """
     Get list of candidates for scheduled interviews view.
     
-    Returns candidates with status: scheduled, in progress, completed, selected, not selected.
-    Does not include rejected or shortlisted candidates.
+    Returns candidates with status: scheduled, in progress, selected, not selected.
+    Does not include rejected, shortlisted, or completed candidates.
     These are candidates in the interview pipeline.
     """
     from models.candidate import Candidate
@@ -571,13 +571,13 @@ async def get_scheduled_interviews(
             detail=str(e)
         )
     
-    # Get candidates assigned to this job with interview statuses (excluding rejected and shortlisted)
+    # Get candidates assigned to this job with interview statuses (excluding rejected, shortlisted, and completed)
     candidates = db.query(Candidate).join(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
     ).filter(
         RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
-        Candidate.status.in_(['scheduled', 'in progress', 'completed', 'selected', 'not selected'])
+        Candidate.status.in_(['scheduled', 'in progress', 'selected', 'not selected'])
     ).order_by(
         Candidate.scheduled_date.asc().nullslast(),
         Candidate.status
@@ -725,6 +725,26 @@ async def get_candidate_interview_analysis(
         system_design_analysis = interview_analysis.system_design_analysis if interview_analysis.system_design_analysis else None
         cheat_metrics = interview_analysis.cheat_metrics if interview_analysis.cheat_metrics else None
         
+        # Get section timings from test_session - extract only duration
+        section_timings = None
+        if candidate.test_session and candidate.test_session.section_timings:
+            timings_data = candidate.test_session.section_timings
+            # Extract only duration_seconds for each section
+            section_timings = {}
+            for section_name in ['mcq', 'coding', 'system_design']:
+                if section_name in timings_data:
+                    section_data = timings_data[section_name]
+                    # If it's already just a number (duration in seconds), use it directly
+                    if isinstance(section_data, (int, float)):
+                        section_timings[section_name] = int(section_data)
+                    # If it's a dict, extract duration_seconds
+                    elif isinstance(section_data, dict):
+                        if 'duration_seconds' in section_data:
+                            section_timings[section_name] = int(section_data['duration_seconds'])
+                        # Also check if duration_minutes exists and convert to seconds
+                        elif 'duration_minutes' in section_data:
+                            section_timings[section_name] = int(section_data['duration_minutes'] * 60)
+        
         # Fetch the candidate's image from blob storage and encode as base64
         image_data = None
         try:
@@ -750,7 +770,8 @@ async def get_candidate_interview_analysis(
             overall_percentage=interview_analysis.overall_percentage,
             result=interview_analysis.result,
             overall_summary=interview_analysis.overall_summary,
-            image_data=image_data
+            image_data=image_data,
+            section_timings=section_timings if section_timings else None
         )
         
     except HTTPException:

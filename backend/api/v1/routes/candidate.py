@@ -818,6 +818,20 @@ async def complete_test(
             - 401: If authentication fails
             - 403: If user is not a candidate or tries to complete another candidate's test
     """
+    # Log the complete test request received
+    logger.info(f"[COMPLETE TEST] Received complete test request for candidate {candidate_id}")
+    logger.info(f"[COMPLETE TEST] Completion method: {request.completion_method}")
+    logger.info(f"[COMPLETE TEST] Section timings in request: {request.section_timings}")
+    logger.info(f"[COMPLETE TEST] Sections completed: {request.sections_completed}")
+    if request.mcq_answers:
+        if isinstance(request.mcq_answers, list):
+            logger.info(f"[COMPLETE TEST] MCQ answers count (simplified format): {len(request.mcq_answers)}")
+        elif hasattr(request.mcq_answers, 'answers'):
+            logger.info(f"[COMPLETE TEST] MCQ answers count: {len(request.mcq_answers.answers)}")
+        else:
+            logger.info(f"[COMPLETE TEST] MCQ answers format: {type(request.mcq_answers)}")
+    logger.info(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
+    
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
         raise HTTPException(
@@ -900,11 +914,13 @@ async def complete_test(
         redis_answers = sync_service.get_answers_from_redis(candidate_id)
         redis_progress = sync_service.get_progress_from_redis(candidate_id)
         
-        # Merge Redis data with request data (Redis takes priority if both exist)
-        # If request has new answers, they will be saved to Redis first, then synced
-        
-        # Save MCQ answers if provided in request
+        # ============================================================================
+        # SAVE ANY PENDING MCQ ANSWERS (if provided in request)
+        # ============================================================================
+        # Save to Redis and PostgreSQL, but don't analyze yet
+        # The ensure_all_analyses_complete() method will handle analysis
         if mcq_request and mcq_request.answers:
+            logger.info(f"[TEST_COMPLETION] Saving pending MCQ answers for candidate {candidate_id}")
             # Save to Redis first (soft save)
             try:
                 from core.redis_client import get_redis_client
@@ -933,25 +949,49 @@ async def complete_test(
             except Exception as e:
                 logger.warning(f"Failed to save MCQ answers to Redis: {str(e)}")
             
-            # Save to PostgreSQL (hard save)
+            # Save to PostgreSQL (hard save) - analysis will be handled separately
             interview_service = InterviewService(db)
-            mcq_response = interview_service.save_mcq_answers(candidate_id, mcq_request)
-            if not mcq_response.success:
-                logger.warning(f"Some MCQ answers failed to save: {mcq_response.message}")
+            # Temporarily disable analysis in save_mcq_answers by catching any errors
+            try:
+                mcq_response = interview_service.save_mcq_answers(candidate_id, mcq_request)
+                if not mcq_response.success:
+                    logger.warning(f"Some MCQ answers failed to save: {mcq_response.message}")
+            except Exception as e:
+                logger.warning(f"Failed to save MCQ answers to PostgreSQL: {str(e)}")
         
-        # Sync all remaining data from Redis to PostgreSQL (final hard save)
+        # ============================================================================
+        # ENSURE ALL SECTION ANALYSES ARE COMPLETE
+        # ============================================================================
+        # This intelligently checks each section and only analyzes if needed
+        # Prevents duplicate analysis and ensures all data is ready for email
+        logger.info(f"[TEST_COMPLETION] Ensuring all analyses are complete for candidate {candidate_id}")
+        
+        interview_service = InterviewService(db)
+        analysis_result = interview_service.ensure_all_analyses_complete(candidate_id)
+        
+        if analysis_result["completed_analyses"]:
+            logger.info(f"[TEST_COMPLETION] ✅ Completed analyses: {', '.join(analysis_result['completed_analyses'])}")
+        if analysis_result["skipped_analyses"]:
+            logger.info(f"[TEST_COMPLETION] ⏭️  Skipped analyses (already done): {', '.join(analysis_result['skipped_analyses'])}")
+        if analysis_result["failed_analyses"]:
+            logger.warning(f"[TEST_COMPLETION] ❌ Failed analyses: {analysis_result['failed_analyses']}")
+        
+        # ============================================================================
+        # SYNC ALL REMAINING DATA FROM REDIS TO POSTGRESQL
+        # ============================================================================
+        # Final hard save of any remaining data
         sync_result = sync_service.sync_all_answers_to_postgresql(candidate_id)
         if not sync_result.get("success"):
             logger.warning(f"Some data failed to sync from Redis: {sync_result.get('error')}")
         
-        # TODO: Save coding answers if provided
-        # TODO: Save system design answers if provided
-        
+        # ============================================================================
+        # UPDATE CHEAT METRICS
+        # ============================================================================
         # Update cheat metrics in interview_analysis_table from integrity data
         if request.integrity:
             try:
-                interview_service = InterviewService(db)
                 interview_service._update_cheat_metrics(candidate_id, request.integrity)
+                logger.info(f"[TEST_COMPLETION] ✅ Updated cheat metrics for candidate {candidate_id}")
             except Exception as e:
                 # Don't fail test completion if cheat metrics update fails
                 logger.warning(f"Failed to update cheat metrics for candidate {candidate_id}: {str(e)}")
@@ -976,9 +1016,17 @@ async def complete_test(
         else:
             test_session.sections_completed = request.sections_completed or {}
         
-        # Use section_timings from Redis if available
-        if redis_progress.get("section_timings"):
+        # Use section_timings from request if available, otherwise from Redis
+        logger.info(f"[COMPLETE TEST] Section timings received from request: {request.section_timings}")
+        logger.info(f"[COMPLETE TEST] Section timings from Redis: {redis_progress.get('section_timings')}")
+        if request.section_timings:
+            test_session.section_timings = request.section_timings
+            logger.info(f"[COMPLETE TEST] Storing section_timings from request: {request.section_timings}")
+        elif redis_progress.get("section_timings"):
             test_session.section_timings = redis_progress["section_timings"]
+            logger.info(f"[COMPLETE TEST] Storing section_timings from Redis: {redis_progress.get('section_timings')}")
+        else:
+            logger.warning(f"[COMPLETE TEST] No section_timings found in request or Redis for candidate {candidate_id}")
         
         test_session.pending_answers = None  # Clear pending answers after completion
         
@@ -1218,42 +1266,23 @@ async def run_code(
         preprocessing_start_time = time.perf_counter()
         
         loader_service = TestDataLoaderService(db)
-        coding_question = None
         sample_test_cases = []
         test_cases = []
         
-        # Step 1: Try to get specific question from Redis first (optimized lookup)
-        try:
-            coding_question = loader_service.get_coding_question_from_redis(candidate_id, request.question_id)
-            if coding_question:
-                sample_test_cases = coding_question.get("sample_test_cases", [])
-                test_cases = coding_question.get("test_cases", [])
-        except Exception as e:
-            logger.warning(f"Failed to get coding question from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
-            coding_question = None
+        # Step 1: Get question from database (test_cases are not cached in Redis due to size)
+        coding_question_db = db.query(CodingQuestionBank).filter(
+            CodingQuestionBank.uuid == request.question_id
+        ).first()
         
-        # Step 2: Fallback to database if not found in Redis
-        if not coding_question:
-            logger.info(f"Question {request.question_id} not found in Redis, fetching from database")
-            coding_question_db = db.query(CodingQuestionBank).filter(
-                CodingQuestionBank.uuid == request.question_id
-            ).first()
-            
-            if not coding_question_db:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Coding question with ID {request.question_id} not found"
-                )
-            
-            # Extract test cases from database
-            sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
-            test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
-            
-            # Optionally reload test data to Redis for future requests
-            try:
-                loader_service.load_test_data_to_redis(candidate_id)
-            except Exception as e:
-                logger.warning(f"Failed to reload test data to Redis: {str(e)}")
+        if not coding_question_db:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Coding question with ID {request.question_id} not found"
+            )
+        
+        # Extract test cases from database
+        sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
+        test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
         
         # Step 3: Validate test cases exist
         if not sample_test_cases and not test_cases:
@@ -1514,42 +1543,23 @@ async def submit_coding_answer(
     
     try:
         loader_service = TestDataLoaderService(db)
-        coding_question = None
         sample_test_cases = []
         test_cases = []
         
-        # Step 1: Try to get specific question from Redis first (optimized lookup)
-        try:
-            coding_question = loader_service.get_coding_question_from_redis(candidate_id, request.question_id)
-            if coding_question:
-                sample_test_cases = coding_question.get("sample_test_cases", [])
-                test_cases = coding_question.get("test_cases", [])
-        except Exception as e:
-            logger.warning(f"Failed to get coding question from Redis for candidate {candidate_id}: {str(e)}, falling back to database")
-            coding_question = None
+        # Step 1: Get question from database (test_cases are not cached in Redis due to size)
+        coding_question_db = db.query(CodingQuestionBank).filter(
+            CodingQuestionBank.uuid == request.question_id
+        ).first()
         
-        # Step 2: Fallback to database if not found in Redis
-        if not coding_question:
-            logger.info(f"Question {request.question_id} not found in Redis, fetching from database")
-            coding_question_db = db.query(CodingQuestionBank).filter(
-                CodingQuestionBank.uuid == request.question_id
-            ).first()
-            
-            if not coding_question_db:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Coding question with ID {request.question_id} not found"
-                )
-            
-            # Extract test cases from database
-            sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
-            test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
-            
-            # Reload test data to Redis for future requests (optimization)
-            try:
-                loader_service.load_test_data_to_redis(candidate_id)
-            except Exception as e:
-                logger.warning(f"Failed to reload test data to Redis: {str(e)}")
+        if not coding_question_db:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Coding question with ID {request.question_id} not found"
+            )
+        
+        # Extract test cases from database
+        sample_test_cases = coding_question_db.sample_test_cases if coding_question_db.sample_test_cases else []
+        test_cases = coding_question_db.test_cases if coding_question_db.test_cases else []
         
         # Step 3: Validate test cases exist
         if not sample_test_cases and not test_cases:
@@ -1969,6 +1979,26 @@ async def get_interview_summary(
             "test_completed_at": candidate.test_session.test_completed_at.isoformat() if candidate.test_session and candidate.test_session.test_completed_at else None
         }
         
+        # Get section timings from test_session - extract only duration
+        section_timings = None
+        if candidate.test_session and candidate.test_session.section_timings:
+            timings_data = candidate.test_session.section_timings
+            # Extract only duration_seconds for each section
+            section_timings = {}
+            for section_name in ['mcq', 'coding', 'system_design']:
+                if section_name in timings_data:
+                    section_data = timings_data[section_name]
+                    # If it's already just a number (duration in seconds), use it directly
+                    if isinstance(section_data, (int, float)):
+                        section_timings[section_name] = int(section_data)
+                    # If it's a dict, extract duration_seconds
+                    elif isinstance(section_data, dict):
+                        if 'duration_seconds' in section_data:
+                            section_timings[section_name] = int(section_data['duration_seconds'])
+                        # Also check if duration_minutes exists and convert to seconds
+                        elif 'duration_minutes' in section_data:
+                            section_timings[section_name] = int(section_data['duration_minutes'] * 60)
+        
         # Convert JSONB fields to dict (they're already dicts, but ensure they're serializable)
         mcq_analysis = interview_analysis.mcq_analysis if interview_analysis.mcq_analysis else None
         coding_analysis = interview_analysis.coding_analysis if interview_analysis.coding_analysis else None
@@ -1983,7 +2013,8 @@ async def get_interview_summary(
             mcq_analysis=mcq_analysis,
             coding_analysis=coding_analysis,
             system_design_analysis=system_design_analysis,
-            cheat_metrics=cheat_metrics
+            cheat_metrics=cheat_metrics,
+            section_timings=section_timings if section_timings else None
         )
         
     except HTTPException:
