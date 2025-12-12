@@ -114,7 +114,7 @@ const SystemDesignPageContent = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-0">{problem?.title}</h2>
               </div>
               <div>
-                <p className="text-sm text-gray-700 leading-relaxed m-0">{problem?.description}</p>
+                <p className="text-base text-gray-700 leading-relaxed m-0">{problem?.description}</p>
               </div>
             </div>
             {/* Canvas Container */}

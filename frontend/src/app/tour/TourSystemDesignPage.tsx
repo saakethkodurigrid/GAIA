@@ -72,7 +72,7 @@ const TourSystemDesignPageContent = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-0">{dummyProblem.title}</h2>
               </div>
               <div>
-                <p className="text-sm text-gray-700 leading-relaxed m-0">{dummyProblem.description}</p>
+                <p className="text-base text-gray-700 leading-relaxed m-0">{dummyProblem.description}</p>
               </div>
             </div>
 

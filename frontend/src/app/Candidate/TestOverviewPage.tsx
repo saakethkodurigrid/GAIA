@@ -354,7 +354,7 @@ const TestOverviewPage = () => {
         const tabChangeCount = cheatingCounts.tabChange;
         
         // Calculate new fullscreen exit count: existing count minus tab change count
-        const fullScreenExits = Math.max(0, existingFullScreenExits - tabChangeCount);
+        const fullScreenExits = existingFullScreenExits;
         
         console.log(`[Fullscreen Exit Calculation] Existing count: ${existingFullScreenExits}, Tab changes: ${tabChangeCount}, New count: ${fullScreenExits}`);
 

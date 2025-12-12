@@ -6,6 +6,7 @@ import CodeEditor from '../../components/CodeEditor/CodeEditor';
 import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
+import Toast from '../../components/Toast';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { localStorage as storage } from '../../utils/localStorage';
 import { finalizeCodingSection } from '../../api/coding.api';
@@ -44,6 +45,9 @@ const CodingTestPageContent = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreenExited, setIsFullscreenExited] = useState(false);
   const wasFullscreenRef = useRef(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const pendingNavigationRef = useRef<{ nextIndex: number | null; showSectionModal: boolean } | null>(null);
 
   // Track section entry time using timer value
   useEffect(() => {
@@ -421,6 +425,27 @@ const CodingTestPageContent = () => {
         <Footer />
       </div>
 
+      {/* Toast Notification */}
+      <Toast
+        message={toastMessage}
+        type="success"
+        isVisible={showToast}
+        onClose={() => {
+          setShowToast(false);
+          // Execute pending navigation after toast closes
+          if (pendingNavigationRef.current) {
+            const { nextIndex, showSectionModal } = pendingNavigationRef.current;
+            if (showSectionModal) {
+              setShowSubmitSectionModal(true);
+            } else if (nextIndex !== null && nextIndex !== undefined) {
+              goToProblem(nextIndex);
+            }
+            pendingNavigationRef.current = null;
+          }
+        }}
+        duration={2000}
+      />
+
       {/* Submit Section Modal */}
       {showSubmitSectionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -456,44 +481,39 @@ const CodingTestPageContent = () => {
                 Cancel
               </button>
               <button
-                onClick={async () => {
+                onClick={() => {
+                  // Mark Coding section as submitted in localStorage
                   try {
-                    // Mark Coding section as submitted in localStorage
-                    try {
-                      const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
-                      const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
-                      const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
-                      submitted.coding = true;
-                      localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
-                    } catch (error) {
-                      console.error('Error marking Coding as submitted:', error);
-                    }
-                    
-                    // End section timing and calculate duration using current timer value
-                    const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
-                    if (durationMinutes !== null) {
-                      console.log(`Coding section completed in ${durationMinutes} minutes`);
-                    }
-                    
-                    // Call API to finalize coding section and generate analysis
-                    console.log('Finalizing coding section...');
-                    try {
-                      const response = await finalizeCodingSection(user?.candidateId);
+                    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+                    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+                    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+                    submitted.coding = true;
+                    localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+                  } catch (error) {
+                    console.error('Error marking Coding as submitted:', error);
+                  }
+                  
+                  // End section timing and calculate duration using current timer value
+                  const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
+                  if (durationMinutes !== null) {
+                    console.log(`Coding section completed in ${durationMinutes} minutes`);
+                  }
+                  
+                  // Call API to finalize coding section and generate analysis (fire-and-forget)
+                  console.log('Finalizing coding section...');
+                  finalizeCodingSection(user?.candidateId)
+                    .then((response) => {
                       console.log('✅ Coding section finalized successfully:', response);
                       console.log('Coding Analysis:', response.coding_analysis);
-                    } catch (error) {
+                    })
+                    .catch((error) => {
                       console.error('⚠️ Error finalizing coding section:', error);
                       // Don't block navigation on error - analysis will be attempted during test completion
-                    }
-                    
-                    setShowSubmitSectionModal(false);
-                    navigate('/test-overview');
-                  } catch (error) {
-                    console.error('Error during coding section submission:', error);
-                    // Navigate anyway to allow test to continue
-                    setShowSubmitSectionModal(false);
-                    navigate('/test-overview');
-                  }
+                    });
+                  
+                  // Navigate immediately without waiting for API response
+                  setShowSubmitSectionModal(false);
+                  navigate('/test-overview');
                 }}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
               >
@@ -531,6 +551,10 @@ const CodingTestPageContent = () => {
                     submitAnswer();
                     setShowSubmitModal(false);
                     
+                    // Show success toast
+                    setToastMessage('Question submitted successfully!');
+                    setShowToast(true);
+                    
                     // Check if all questions will be submitted (including current one)
                     const willBeAllSubmitted = problems.every(problem => {
                       if (!problem?.question_uuid) return false;
@@ -541,8 +565,8 @@ const CodingTestPageContent = () => {
                     });
                     
                     if (willBeAllSubmitted) {
-                      // All questions will be submitted - show submit section modal
-                      setShowSubmitSectionModal(true);
+                      // All questions will be submitted - show submit section modal after toast
+                      pendingNavigationRef.current = { nextIndex: null, showSectionModal: true };
                     } else if (findNextUnsubmittedQuestion) {
                       // Find next unsubmitted question (excluding current one which will be submitted)
                       const tempSubmitted = new Set(submittedQuestions);
@@ -568,10 +592,8 @@ const CodingTestPageContent = () => {
                         }
                       }
                       
-                      if (nextIndex !== null && nextIndex !== undefined) {
-                        // Navigate to next unsubmitted question
-                        goToProblem(nextIndex);
-                      }
+                      // Store navigation info to execute after toast
+                      pendingNavigationRef.current = { nextIndex, showSectionModal: false };
                     }
                   }
                 }}

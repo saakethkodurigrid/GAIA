@@ -100,13 +100,39 @@ const CallbackPage = () => {
         // Handle auth data from backend
         if (authParam) {
           try {
+            // Log the raw base64 encoded response from backend
+            console.log('=== EXACT BACKEND RESPONSE (RAW) ===');
+            console.log('Base64 Encoded Auth Param:', authParam);
+            console.log('Length:', authParam.length);
+            console.log('=====================================');
+            
             // Decode base64 auth data
             const authJson = atob(authParam);
+            console.log('=== EXACT BACKEND RESPONSE (DECODED JSON STRING) ===');
+            console.log('Decoded JSON String:', authJson);
+            console.log('====================================================');
+            
             const authResponse: AuthResponse = JSON.parse(authJson);
             
-            console.log('Auth response:', authResponse);
-            console.log('User type from response:', authResponse.user_type);
-            console.log('Status from response:', authResponse.status);
+            console.log('=== EXACT BACKEND RESPONSE (PARSED OBJECT) ===');
+            console.log('Full Response Object:', JSON.stringify(authResponse, null, 2));
+            console.log('');
+            console.log('Field-by-Field Breakdown:');
+            console.log('  success:', authResponse.success);
+            console.log('  message:', authResponse.message);
+            console.log('  user_type:', authResponse.user_type);
+            console.log('  email:', authResponse.email);
+            console.log('  name:', authResponse.name);
+            console.log('  status:', authResponse.status);
+            console.log('  candidate_id:', authResponse.candidate_id);
+            console.log('  job_role:', authResponse.job_role);
+            console.log('  redirect_url:', authResponse.redirect_url || 'not provided');
+            console.log('  id_token:', authResponse.id_token ? `${authResponse.id_token.substring(0, 50)}...` : 'not provided');
+            console.log('');
+            console.log('=== CANDIDATE INFORMATION ===');
+            console.log('Candidate Name:', authResponse.name || 'NOT PROVIDED');
+            console.log('Job Role:', authResponse.job_role || 'NOT PROVIDED');
+            console.log('===============================================');
             
             // Set auth state
             if (authContext.setAuthState) {

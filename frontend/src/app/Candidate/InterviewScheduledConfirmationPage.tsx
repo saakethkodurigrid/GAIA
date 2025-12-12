@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 
 const InterviewScheduledConfirmationPage = () => {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
   const [formattedDate, setFormattedDate] = useState<string>('');
 
@@ -32,35 +31,17 @@ const InterviewScheduledConfirmationPage = () => {
     }
   }, [location.state]);
 
-  // Auto-logout after 2 seconds
+  // Auto-logout after 5 seconds
   useEffect(() => {
     const logoutTimer = setTimeout(() => {
       logout();
-    }, 2000);
+    }, 5000);
 
     // Cleanup timer on unmount
     return () => {
       clearTimeout(logoutTimer);
     };
   }, [logout]);
-
-  const handleNext = () => {
-    // Get candidate_id from localStorage
-    const candidateId = localStorage.getItem('current_candidate_id');
-    
-    // Navigate to TestScheduledPage with the scheduled date and candidate_id in URL
-    const navigationPath = candidateId 
-      ? `/test/scheduled?candidate_id=${candidateId}`
-      : '/test/scheduled';
-    
-    console.log('InterviewScheduledConfirmationPage: Navigating to:', navigationPath);
-    
-    navigate(navigationPath, {
-      state: {
-        scheduledDate: location.state?.scheduledDate,
-      },
-    });
-  };
 
   const handleLogout = () => {
     logout();
@@ -123,14 +104,6 @@ const InterviewScheduledConfirmationPage = () => {
                 Please check your email for further information.
               </p>
             </div>
-
-            {/* Next Button */}
-            <button
-              onClick={handleNext}
-              className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 py-2.5 px-8 rounded-lg font-semibold text-base transition-colors shadow-md"
-            >
-              Next
-            </button>
           </div>
         </div>
       </div>
