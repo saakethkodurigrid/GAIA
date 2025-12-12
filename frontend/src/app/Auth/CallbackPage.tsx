@@ -27,6 +27,11 @@ const getRedirectPath = (userType?: UserType, status?: CandidateStatus): string 
   
   // Candidate users -> check status
   if (userType === 'candidate') {
+    // If test is completed, redirect to completed page
+    if (status === 'completed' || status === 'done') {
+      console.log('Redirecting candidate to /test/completed (test completed)');
+      return '/test/completed';
+    }
     // If already scheduled, redirect to scheduled page
     if (status === 'scheduled') {
       console.log('Redirecting candidate to /test/scheduled (already scheduled)');

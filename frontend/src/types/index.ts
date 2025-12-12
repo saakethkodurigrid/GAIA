@@ -127,7 +127,7 @@ export interface SystemDesignContextType {
 
 // Auth Types
 export type UserType = 'admin' | 'recruiter' | 'candidate';
-export type CandidateStatus = 'registered' | 'scheduled' | 'ongoing' | 'done';
+export type CandidateStatus = 'registered' | 'scheduled' | 'ongoing' | 'done' | 'completed' | 'shortlisted' | 'rejected' | 'in progress' | 'selected' | 'not selected';
 
 export interface GoogleTokenRequest {
   token: string;
