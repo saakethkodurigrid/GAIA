@@ -195,8 +195,8 @@ class AuthService:
             success=True,
             message="Authentication successful",
             user_type=user_type,
-            email=email,
-            name=user_info.get('name'),
+            email=recruiter.email_id,
+            name=recruiter.name,
             status=None,
             candidate_id=None
         )
@@ -311,8 +311,8 @@ class AuthService:
             success=True,
             message="Authentication successful",
             user_type=user_type,
-            email=email,
-            name=user_info.get('name'),
+            email=candidate.email_id,
+            name=candidate.name,
             status=status_enum,
             candidate_id=candidate_id,
             job_role=job_role
@@ -380,8 +380,8 @@ class AuthService:
             success=True,
             message="Authentication successful",
             user_type=user_type,
-            email=email,
-            name=name,
+            email=candidate.email_id,
+            name=candidate.name,
             status=status_enum,
             candidate_id=candidate.candidate_id,
             job_role=job_role
@@ -447,8 +447,8 @@ class AuthService:
                     success=True,
                     message="Authentication successful",
                     user_type=user_type,
-                    email=email,
-                    name=user_info.get('name'),
+                    email=recruiter.email_id,
+                    name=recruiter.name,
                     status=None,
                     candidate_id=None
                 )
