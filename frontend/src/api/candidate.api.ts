@@ -114,13 +114,39 @@ export const uploadCandidateImage = async (
     throw new Error('Candidate ID is required.');
   }
 
-  // Convert base64 data URL to blob
-  const response = await fetch(imageDataUrl);
-  const blob = await response.blob();
+  // Convert base64 data URL to blob (without using fetch to avoid CSP issues)
+  // Format: data:image/png;base64,iVBORw0KGgo...
+  let blob: Blob;
+  try {
+    // Extract base64 data from data URL
+    const base64Data = imageDataUrl.split(',')[1];
+    if (!base64Data) {
+      throw new Error('Invalid data URL format');
+    }
+    
+    // Convert base64 to binary
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Determine MIME type from data URL
+    const mimeMatch = imageDataUrl.match(/data:([^;]+);/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+    
+    // Create blob from bytes
+    blob = new Blob([bytes], { type: mimeType });
+  } catch (error) {
+    console.error('Error converting data URL to blob:', error);
+    throw new Error('Failed to process image. Please try again.');
+  }
 
   // Create FormData with the image file
   const formData = new FormData();
-  formData.append('file', blob, 'photo.png');
+  // Determine file extension from MIME type
+  const extension = blob.type.includes('jpeg') ? '.jpg' : blob.type.includes('png') ? '.png' : '.png';
+  formData.append('file', blob, `photo${extension}`);
 
   const uploadResponse = await fetch(`${API_BASE_URL}/blob-storage/upload/image/${candidateId}`, {
     method: 'POST',
