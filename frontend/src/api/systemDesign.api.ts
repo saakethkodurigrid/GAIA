@@ -36,8 +36,14 @@ const getCandidateId = (): string | null => {
 };
 
 // API Functions
-export const createSession = async (request?: Partial<SessionCreateRequest>): Promise<SessionResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions`, {
+export const createSession = async (request?: Partial<SessionCreateRequest>, candidateId?: string): Promise<SessionResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/sessions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -92,8 +98,14 @@ export interface CanvasUpdateResponse {
 }
 
 // Canvas Update API
-export const updateCanvas = async (request: CanvasUpdateRequest): Promise<CanvasUpdateResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/canvas/update`, {
+export const updateCanvas = async (request: CanvasUpdateRequest, candidateId?: string): Promise<CanvasUpdateResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/canvas/update`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -132,8 +144,14 @@ export interface ChatMessageResponse {
 }
 
 // Chat Message API
-export const sendChatMessage = async (request: ChatMessageRequest): Promise<ChatMessageResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/chat/message`, {
+export const sendChatMessage = async (request: ChatMessageRequest, candidateId?: string): Promise<ChatMessageResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -172,8 +190,15 @@ export const createProactivePromptsStream = (
   questionUuid: string,
   onMessage: (event: SSEPromptEvent) => void,
   onError?: (error: Error) => void,
-  onClose?: () => void
+  onClose?: () => void,
+  candidateId?: string
 ): AbortController => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
   const token = getAuthToken();
   if (!token) {
     throw new Error('No authentication token available');
@@ -181,7 +206,7 @@ export const createProactivePromptsStream = (
 
   const abortController = new AbortController();
 
-  const url = `${API_BASE_URL}/system-design/sessions/${questionUuid}/prompts-stream`;
+  const url = `${API_BASE_URL}/system-design/${finalCandidateId}/sessions/${questionUuid}/prompts-stream`;
 
   // Use fetch with ReadableStream to support custom headers (EventSource doesn't support headers)
   fetch(url, {
@@ -293,8 +318,14 @@ export interface ChatHistoryResponse {
 }
 
 // Get Chat History API
-export const getChatHistory = async (questionUuid: string): Promise<ChatHistoryResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/chat-history`, {
+export const getChatHistory = async (questionUuid: string, candidateId?: string): Promise<ChatHistoryResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/sessions/${questionUuid}/chat-history`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,
@@ -327,8 +358,14 @@ export interface FinalReportResponse {
 }
 
 // End Session API
-export const endSession = async (questionUuid: string): Promise<FinalReportResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/end`, {
+export const endSession = async (questionUuid: string, candidateId?: string): Promise<FinalReportResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/sessions/${questionUuid}/end`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,
@@ -344,8 +381,14 @@ export const endSession = async (questionUuid: string): Promise<FinalReportRespo
 };
 
 // Get Report API
-export const getReport = async (questionUuid: string): Promise<FinalReportResponse> => {
-  const response = await fetch(`${API_BASE_URL}/system-design/sessions/${questionUuid}/report`, {
+export const getReport = async (questionUuid: string, candidateId?: string): Promise<FinalReportResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/sessions/${questionUuid}/report`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,

@@ -391,9 +391,11 @@ class AuthService:
         """
         Main authentication method that routes based on user type.
         
+        For candidates, candidate_id is REQUIRED. For admin/recruiter, candidate_id is optional.
+        
         Args:
             token: Google OAuth ID token
-            candidate_id: Optional candidate UUID (for candidate login)
+            candidate_id: Optional candidate UUID (REQUIRED for candidates, None for admin/recruiter)
             
         Returns:
             AuthResponse with user type, status, and candidate_id
@@ -414,6 +416,7 @@ class AuthService:
         
         # If candidate_id is provided, authenticate as candidate
         if candidate_id:
+            logger.info(f"Candidate ID provided: {candidate_id}, authenticating as candidate")
             return self.authenticate_candidate(token, candidate_id)
         
         # Check if domain matches company domain
@@ -439,7 +442,7 @@ class AuthService:
                 user_type = self._get_user_type_from_role_id(recruiter.role_id)
                 logger.info(f"User type determined: {user_type.value} (from role_id={recruiter.role_id})")
                 
-                # Admin/Recruiter login
+                # Admin/Recruiter login - candidate_id not required
                 response = AuthResponse(
                     success=True,
                     message="Authentication successful",
@@ -452,65 +455,22 @@ class AuthService:
                 logger.info(f"Returning successful auth response: user_type={response.user_type.value if response.user_type else None}")
                 return response
             else:
+                # Company domain but not recruiter - must be candidate
                 logger.info(f"Recruiter not found for {email}, treating as candidate")
-                # Domain matches but not in recruiter table - treat as candidate
-                return self._handle_candidate_authentication(email, user_info.get('name'))
-        else:
-            logger.info(f"Email {email} does NOT match company domain")
-            # Not company domain - check if candidate exists
-            candidate = self._get_candidate_by_email(email)
-            if candidate:
-                # Determine user_type based on role_id (should be 0 for candidates)
-                user_type = self._get_user_type_from_role_id(candidate.role_id)
                 
-                # Verify candidate has correct role_id
-                if candidate.role_id != 0:
-                    return AuthResponse(
-                        success=False,
-                        message=f"Invalid role_id for candidate: {candidate.role_id}. Expected 0."
-                    )
-                
-                # Candidate exists - handle status-based routing
-                status = candidate.status.lower()
-                
-                # Map status to enum
-                status_enum = None
-                if status == 'shortlisted':
-                    status_enum = CandidateStatus.SHORTLISTED
-                elif status == 'rejected':
-                    status_enum = CandidateStatus.REJECTED
-                elif status == 'scheduled':
-                    status_enum = CandidateStatus.SCHEDULED
-                elif status == 'in progress':
-                    status_enum = CandidateStatus.IN_PROGRESS
-                elif status == 'completed':
-                    status_enum = CandidateStatus.COMPLETED
-                elif status == 'selected':
-                    status_enum = CandidateStatus.SELECTED
-                elif status == 'not selected':
-                    status_enum = CandidateStatus.NOT_SELECTED
-                else:
-                    return AuthResponse(
-                        success=False,
-                        message=f"Invalid candidate status: {status}"
-                    )
-                
-                # Get job role for candidate
-                job_role = self._get_candidate_job_role(candidate.candidate_id)
-                
+                # For candidates, candidate_id is REQUIRED
+                logger.warning(f"Candidate login attempted without candidate_id for email: {email}")
                 return AuthResponse(
-                    success=True,
-                    message="Authentication successful",
-                    user_type=user_type,
-                    email=email,
-                    name=user_info.get('name'),
-                    status=status_enum,
-                    candidate_id=candidate.candidate_id,
-                    job_role=job_role
+                    success=False,
+                    message="Candidate ID is required. Please access this page using the invitation link provided in your email."
                 )
-        
-        # User not found anywhere - access denied
-        return AuthResponse(
-            success=False,
-            message="Access denied. User not found in database."
-        )
+        else:
+            # Not company domain - must be candidate
+            logger.info(f"Email {email} does NOT match company domain - treating as candidate")
+            
+            # For candidates, candidate_id is REQUIRED
+            logger.warning(f"Candidate login attempted without candidate_id for email: {email}")
+            return AuthResponse(
+                success=False,
+                message="Candidate ID is required. Please access this page using the invitation link provided in your email."
+            )

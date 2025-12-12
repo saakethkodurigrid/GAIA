@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
@@ -7,8 +7,18 @@ import Footer from '../../components/Footer';
 const LoginPage = () => {
   const { login, isLoading, error, clearError, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check for login error from localStorage
+    const loginError = localStorage.getItem('login_error');
+    if (loginError) {
+      // Show error and clear it
+      console.error('Login error:', loginError);
+      setLocalError(loginError);
+      localStorage.removeItem('login_error');
+    }
+    
     // If already authenticated, check for saved redirect or go to home
     const userData = localStorage.getItem('user_data');
     if (isAuthenticated || userData) {
@@ -48,9 +58,15 @@ const LoginPage = () => {
           <div className="bg-white rounded-lg shadow-lg p-8">
             <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">User Login</h2>
 
-            {error && (
+            {(error || localError) && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">{error}</p>
+                <p className="text-sm text-red-800 font-semibold mb-2">Authentication Error</p>
+                <p className="text-sm text-red-800">{error || localError}</p>
+                {(error || localError)?.includes('Candidate ID') && (
+                  <p className="text-xs text-red-700 mt-2">
+                    Please use the invitation link provided in your email to access the candidate portal.
+                  </p>
+                )}
               </div>
             )}
 

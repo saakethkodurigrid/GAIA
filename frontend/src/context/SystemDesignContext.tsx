@@ -122,11 +122,10 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         }
 
         // Step 2: Create session with assigned question UUID (if available)
-        // Note: candidate_id is auto-filled by backend from authenticated user, don't send it
         console.log('Creating session...');
         const sessionResponse = await createSession({
           question_uuid: assignedQuestion?.question_uuid || undefined,
-        });
+        }, user.candidateId);
 
         console.log('Session created:', sessionResponse);
         
@@ -148,14 +147,12 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         let problemData: SystemDesignProblem;
         
         if (assignedQuestion) {
-          // Use assigned question data (has evaluation_criteria)
+          // Use assigned question data
           problemData = {
             id: 1,
             title: 'System Design Problem',
             description: assignedQuestion.question,
-            requirements: assignedQuestion.evaluation_criteria
-              ? assignedQuestion.evaluation_criteria.split('\n').filter(line => line.trim())
-              : [],
+            requirements: [],
           };
         } else if (sessionResponse.question_text) {
           // Use question_text from session (always available)
@@ -190,7 +187,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         const uuidToUse = sessionResponse.question_uuid || assignedQuestion?.question_uuid;
         if (uuidToUse) {
           try {
-            const chatHistory = await getChatHistory(uuidToUse);
+            const chatHistory = await getChatHistory(uuidToUse, user.candidateId);
             if (chatHistory.messages && chatHistory.messages.length > 0) {
               const mappedMessages: ChatMessage[] = chatHistory.messages.map((msg, index) => ({
                 id: `${msg.timestamp || index}`,
@@ -311,7 +308,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
               () => {
                 console.log('SSE stream closed');
                 cleanup();
-              }
+              },
+              user?.candidateId
             );
           } catch (err) {
             console.error('Failed to reconnect SSE stream:', err);
@@ -326,7 +324,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
                     () => {
                       console.log('SSE stream closed');
                       cleanup();
-                    }
+                    },
+                    user?.candidateId
                   );
                 } catch (reconnectErr) {
                   console.error('Failed to reconnect SSE stream after retry:', reconnectErr);
@@ -352,7 +351,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         questionUuid,
         handleSSEMessage,
         handleSSEError,
-        handleSSEClose
+        handleSSEClose,
+        user?.candidateId
       );
       console.log('[SSE] ✅ SSE connection established successfully');
     } catch (error) {
@@ -407,7 +407,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
 
   // Auto-update canvas to backend (debounced)
   useEffect(() => {
-    if (!questionUuid || !excalidrawData) return;
+    if (!questionUuid || !excalidrawData || !user?.candidateId) return;
 
     // Clear existing timeout
     const canvasUpdateTimeout = setTimeout(async () => {
@@ -420,7 +420,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
             files: excalidrawData.files,
           },
           action: 'update', // Lightweight sync
-        });
+        }, user.candidateId);
         console.log('Canvas updated to backend');
       } catch (error) {
         console.error('Failed to update canvas:', error);
@@ -430,15 +430,15 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     return () => {
       clearTimeout(canvasUpdateTimeout);
     };
-  }, [excalidrawData, questionUuid]);
+  }, [excalidrawData, questionUuid, user?.candidateId]);
 
   const handleUpdateNotes = useCallback((newNotes: string) => {
     setNotes(newNotes);
   }, []);
 
   const handleSendMessage = useCallback(async (message: string) => {
-    if (!message.trim() || !questionUuid) {
-      console.error('Cannot send message: missing question UUID');
+    if (!message.trim() || !questionUuid || !user?.candidateId) {
+      console.error('Cannot send message: missing question UUID or candidate ID');
       return;
     }
 
@@ -465,7 +465,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         message: message.trim(),
         question_uuid: questionUuid,
         canvas_data: canvasData,
-      });
+      }, user.candidateId);
 
       // Add AI response if available
       if (response.ai_response) {
@@ -493,7 +493,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       };
       setChatMessages((prev) => [...prev, errorMessage]);
     }
-  }, [questionUuid, excalidrawData]);
+  }, [questionUuid, excalidrawData, user?.candidateId]);
 
   const handleClearCanvas = useCallback((excalidrawAPI: any) => {
     if (excalidrawAPI) {
@@ -516,8 +516,8 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
   }, []);
 
   const handleSubmitSolution = useCallback(async () => {
-    if (!questionUuid || !excalidrawData) {
-      console.error('Cannot submit: missing question UUID or canvas data');
+    if (!questionUuid || !excalidrawData || !user?.candidateId) {
+      console.error('Cannot submit: missing question UUID, canvas data, or candidate ID');
       return;
     }
 
@@ -531,12 +531,12 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
           files: excalidrawData.files,
         },
         action: 'submit',
-      });
+      }, user.candidateId);
       console.log('Solution submitted successfully');
 
       // Then end the session to get final report
       try {
-        const report = await endSession(questionUuid);
+        const report = await endSession(questionUuid, user.candidateId);
         console.log('Final report received:', report);
         // You can store the report or show it to the user
       } catch (error) {
@@ -547,7 +547,7 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       console.error('Error submitting solution:', error);
       throw error;
     }
-  }, [questionUuid, excalidrawData]);
+  }, [questionUuid, excalidrawData, user?.candidateId]);
 
   const value: SystemDesignContextType = {
     problem,

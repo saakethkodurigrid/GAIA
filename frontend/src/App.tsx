@@ -34,10 +34,44 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
   const isAuth = isAuthenticated || (userData !== null);
 
   if (!isAuth) {
-    // Save the current URL (including query params) to redirect back after login
-    const currentUrl = window.location.pathname + window.location.search;
-    console.log('ProtectedRoute: User not authenticated, saving URL:', currentUrl);
-    localStorage.setItem('redirect_after_login', currentUrl);
+    // Check if this is a candidate route that requires candidate_id
+    const currentPath = window.location.pathname;
+    const candidateRoutes = ['/schedule', '/test/', '/candidate/'];
+    const isCandidateRoute = candidateRoutes.some(route => currentPath.includes(route));
+    
+    if (isCandidateRoute) {
+      // Check if candidate_id exists in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const candidateId = urlParams.get('candidate_id');
+      
+      if (candidateId) {
+        // Save candidate_id to localStorage
+        localStorage.setItem('current_candidate_id', candidateId);
+        // Save the current URL (including query params) to redirect back after login
+        const currentUrl = window.location.pathname + window.location.search;
+        console.log('ProtectedRoute: User not authenticated, saving URL:', currentUrl);
+        localStorage.setItem('redirect_after_login', currentUrl);
+      } else {
+        // Candidate route without candidate_id - show error
+        console.error('ProtectedRoute: Candidate route accessed without candidate_id');
+        const currentUrl = window.location.pathname;
+        localStorage.setItem('redirect_after_login', currentUrl);
+        localStorage.setItem('login_error', 'Candidate ID is required. Please access this page using the invitation link provided in your email.');
+      }
+    } else {
+      // Save the current URL (including query params) to redirect back after login
+      const currentUrl = window.location.pathname + window.location.search;
+      console.log('ProtectedRoute: User not authenticated, saving URL:', currentUrl);
+      localStorage.setItem('redirect_after_login', currentUrl);
+      
+      // Also check if candidate_id is in query params
+      const urlParams = new URLSearchParams(window.location.search);
+      const candidateId = urlParams.get('candidate_id');
+      if (candidateId) {
+        localStorage.setItem('current_candidate_id', candidateId);
+      }
+    }
+    
     return <Navigate to="/auth/login" replace />;
   }
 
@@ -122,11 +156,42 @@ const RootRoute = () => {
     return <Navigate to="/schedule" replace />;
   }
 
-  // Save the current URL if it has query params (for invitation links)
-  const currentUrl = window.location.pathname + window.location.search;
-  if (window.location.search) {
-    console.log('RootRoute: Saving URL with query params:', currentUrl);
-    localStorage.setItem('redirect_after_login', currentUrl);
+  // Check if this is a candidate route that requires candidate_id
+  const currentPath = window.location.pathname;
+  const candidateRoutes = ['/schedule', '/test/', '/candidate/'];
+  const isCandidateRoute = candidateRoutes.some(route => currentPath.includes(route));
+  
+  if (isCandidateRoute) {
+    // Check if candidate_id exists in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const candidateId = urlParams.get('candidate_id');
+    
+    if (candidateId) {
+      // Save candidate_id to localStorage
+      localStorage.setItem('current_candidate_id', candidateId);
+      // Save the current URL (including query params) to redirect back after login
+      const currentUrl = window.location.pathname + window.location.search;
+      console.log('RootRoute: Saving URL with query params:', currentUrl);
+      localStorage.setItem('redirect_after_login', currentUrl);
+    } else {
+      // Candidate route without candidate_id - show error
+      console.error('RootRoute: Candidate route accessed without candidate_id');
+      localStorage.setItem('login_error', 'Candidate ID is required. Please access this page using the invitation link provided in your email.');
+    }
+  } else {
+    // Save the current URL if it has query params (for invitation links)
+    const currentUrl = window.location.pathname + window.location.search;
+    if (window.location.search) {
+      console.log('RootRoute: Saving URL with query params:', currentUrl);
+      localStorage.setItem('redirect_after_login', currentUrl);
+      
+      // Also check if candidate_id is in query params for non-candidate routes
+      const urlParams = new URLSearchParams(window.location.search);
+      const candidateId = urlParams.get('candidate_id');
+      if (candidateId) {
+        localStorage.setItem('current_candidate_id', candidateId);
+      }
+    }
   }
 
   console.log('RootRoute: Not authenticated, redirecting to /auth/login');

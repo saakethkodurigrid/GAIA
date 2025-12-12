@@ -130,9 +130,24 @@ async def google_callback(
         })
         return RedirectResponse(url=f"{callback_url}?{error_params}", status_code=302)
     
+    # Extract candidate_id from state if present (for scheduling links)
+    candidate_id = None
+    if state:
+        try:
+            # Try to decode state as base64 JSON (if it contains candidate_id)
+            state_decoded = base64.b64decode(state).decode()
+            state_data = json.loads(state_decoded)
+            if isinstance(state_data, dict) and 'candidate_id' in state_data:
+                candidate_id = state_data.get('candidate_id')
+                logger.info(f"Extracted candidate_id from state: {candidate_id}")
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            # If state is not JSON, treat it as plain CSRF token (for admin/recruiter)
+            logger.info("State is plain CSRF token (no candidate_id)")
+            pass
+    
     # Authenticate user
     auth_service = AuthService(db)
-    response = auth_service.authenticate_user(token=id_token_str)
+    response = auth_service.authenticate_user(token=id_token_str, candidate_id=candidate_id)
     
     # Log authentication result
     logger.info(f"Authentication result: success={response.success}, user_type={response.user_type.value if response.user_type else None}, message={response.message}")
@@ -272,6 +287,7 @@ async def candidate_login(
 @router.post("/login", response_model=AuthResponse)
 async def general_login(
     request: GoogleTokenRequest,
+    candidate_id: Optional[str] = Query(None, description="Optional candidate UUID for candidate authentication"),
     db: Session = Depends(get_db)
 ):
     """
@@ -282,20 +298,23 @@ async def general_login(
     2. Check domain:
        - If @griddynamics.com:
          - Check RECRUITER_ADMIN table -> Admin dashboard
-         - If not found, check CANDIDATE table -> Status-based routing
+         - If not found, candidate_id is REQUIRED -> Candidate authentication
        - If not @griddynamics.com:
-         - Check CANDIDATE table -> Status-based routing
+         - candidate_id is REQUIRED -> Candidate authentication
     3. If user not found anywhere -> Access denied
+    
+    Note: For candidates, candidate_id is REQUIRED. For admin/recruiter, candidate_id is optional.
     
     Args:
         request: Google OAuth token request
+        candidate_id: Optional candidate UUID (REQUIRED for candidates)
         db: Database session
         
     Returns:
         AuthResponse with redirect URL or error
     """
     auth_service = AuthService(db)
-    response = auth_service.authenticate_user(token=request.token)
+    response = auth_service.authenticate_user(token=request.token, candidate_id=candidate_id)
     
     if not response.success:
         # Special handling for in progress status (multiple login)

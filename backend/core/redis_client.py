@@ -28,8 +28,8 @@ def get_redis_client() -> redis.Redis:
                 _redis_client = redis.from_url(
                     settings.REDIS_URL,
                     decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
+                    socket_connect_timeout=15,  # Increased for SSL/TLS handshake with Azure Redis
+                    socket_timeout=60,  # Increased for bulk write operations with pipeline
                     **ssl_params
                 )
                 logger.info("Redis connection established via REDIS_URL")
@@ -40,8 +40,10 @@ def get_redis_client() -> redis.Redis:
                     'port': settings.REDIS_PORT,
                     'db': settings.REDIS_DB,
                     'decode_responses': True,
-                    'socket_connect_timeout': 5,
-                    'socket_timeout': 5,
+                    'socket_connect_timeout': 15,  # Increased for SSL/TLS handshake with Azure Redis
+                    'socket_timeout': 60,  # Increased for bulk write operations with pipeline
+                    'socket_connect_timeout': 15,  # Increased for SSL/TLS handshake with Azure Redis
+                    'socket_timeout': 60,  # Increased for bulk write operations with pipeline
                 }
                 # Add SSL params if valid
                 connection_params.update(ssl_params)

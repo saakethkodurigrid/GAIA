@@ -536,7 +536,6 @@ This is an automated email. Please do not reply to this message.
             invitation_link = self._generate_invitation_link(candidate_id, link_type="scheduling")
             
             # Create email content (pass None for resume_score to not display it)
-            # Create email content (pass None for resume_score to not display it)
             html_content = self._create_invitation_email_html(
                 candidate_name, job_role, None, invitation_link
             )

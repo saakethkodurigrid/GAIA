@@ -19,8 +19,9 @@ import json
 router = APIRouter(prefix="/system-design", tags=["System Design"])
 
 
-@router.post("/sessions", response_model=SessionResponse)
+@router.post("/{candidate_id}/sessions", response_model=SessionResponse)
 async def create_session(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     request: SessionCreateRequest,
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -29,6 +30,7 @@ async def create_session(
     Create a new interview session.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         request: SessionCreateRequest with question details
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -63,8 +65,9 @@ async def create_session(
         )
 
 
-@router.post("/canvas/update", response_model=CanvasUpdateResponse)
+@router.post("/{candidate_id}/canvas/update", response_model=CanvasUpdateResponse)
 async def update_canvas(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     request: CanvasUpdateRequest,
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -73,6 +76,7 @@ async def update_canvas(
     Handle canvas updates (save, submit, or update).
     
     Args:
+        candidate_id: Candidate UUID (from path)
         request: CanvasUpdateRequest with canvas data and action
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -113,8 +117,9 @@ async def update_canvas(
         )
 
 
-@router.post("/chat/message", response_model=ChatMessageResponse)
+@router.post("/{candidate_id}/chat/message", response_model=ChatMessageResponse)
 async def send_message(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     request: ChatMessageRequest,
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -123,6 +128,7 @@ async def send_message(
     Send a chat message.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         request: ChatMessageRequest with message and question_uuid
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -158,8 +164,9 @@ async def send_message(
         )
 
 
-@router.get("/sessions/{session_id}/chat-history", response_model=ChatHistoryResponse)
+@router.get("/{candidate_id}/sessions/{question_uuid}/chat-history", response_model=ChatHistoryResponse)
 async def get_chat_history(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -168,6 +175,7 @@ async def get_chat_history(
     Get full chat history for a session.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -196,8 +204,9 @@ async def get_chat_history(
         )
 
 
-@router.post("/sessions/{question_uuid}/end", response_model=FinalReportResponse)
+@router.post("/{candidate_id}/sessions/{question_uuid}/end", response_model=FinalReportResponse)
 async def end_session(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -206,6 +215,7 @@ async def end_session(
     End session and generate final report.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -234,8 +244,9 @@ async def end_session(
         )
 
 
-@router.get("/sessions/{question_uuid}/report", response_model=FinalReportResponse)
+@router.get("/{candidate_id}/sessions/{question_uuid}/report", response_model=FinalReportResponse)
 async def get_report(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -244,6 +255,7 @@ async def get_report(
     Get final evaluation report.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -272,8 +284,9 @@ async def get_report(
         )
 
 
-@router.get("/sessions/{question_uuid}/check-prompts", response_model=ProactivePromptResponse)
+@router.get("/{candidate_id}/sessions/{question_uuid}/check-prompts", response_model=ProactivePromptResponse)
 async def check_prompts(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -283,6 +296,7 @@ async def check_prompts(
     Frontend should poll this endpoint every 5-10 seconds.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
@@ -311,8 +325,9 @@ async def check_prompts(
         )
 
 
-@router.get("/sessions/{question_uuid}/prompts-stream")
+@router.get("/{candidate_id}/sessions/{question_uuid}/prompts-stream")
 async def prompts_stream(
+    candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -323,6 +338,7 @@ async def prompts_stream(
     More efficient than polling /check-prompts repeatedly.
     
     Args:
+        candidate_id: Candidate UUID (from path)
         question_uuid: Question UUID
         current_candidate: Authenticated candidate (from dependency)
         db: Database session

@@ -32,6 +32,9 @@ class TestDataLoaderService:
         This is called when test starts. All questions are loaded once into Redis
         to avoid database queries during the test.
         
+        Uses Redis pipeline to batch all writes into a single operation,
+        preventing timeouts with multiple sequential writes.
+        
         Args:
             candidate_id: UUID of the candidate
             
@@ -74,6 +77,9 @@ class TestDataLoaderService:
                 InterviewCoding.candidate_id == candidate_id
             ).all()
             
+            # Prepare individual coding question data for pipeline
+            coding_question_cache = {}
+            
             for coding in coding_records:
                 # Get question details from CodingQuestionBank
                 coding_question = None
@@ -89,21 +95,17 @@ class TestDataLoaderService:
                     "question_uuid": coding.question_uuid if hasattr(coding, 'question_uuid') else None,
                     "question": coding_question.question if coding_question and hasattr(coding_question, 'question') else None,
                     "sample_test_cases": coding_question.sample_test_cases if coding_question and hasattr(coding_question, 'sample_test_cases') else None,
-                    "test_cases": coding_question.test_cases if coding_question and hasattr(coding_question, 'test_cases') else None,
+                    # NOTE: test_cases NOT cached in Redis (too large - causes timeouts)
+                    # They are fetched from database on-demand when code is executed
                     "boilerplate_code": coding_question.boiler_plate if coding_question and hasattr(coding_question, 'boiler_plate') else None,
                     "difficulty": coding.difficulty if hasattr(coding, 'difficulty') else None,
                     "tags": coding_question.tags if coding_question and hasattr(coding_question, 'tags') else None
                 }
                 test_data["coding_questions"].append(question_data)
                 
-                # Also cache individual question for optimized lookup
+                # Store for pipeline write
                 if coding.question_uuid:
-                    individual_key = f"candidate:{candidate_id}:coding_question:{coding.question_uuid}"
-                    self.redis_client.setex(
-                        individual_key,
-                        settings.REDIS_TTL_SECONDS,
-                        json.dumps(question_data)
-                    )
+                    coding_question_cache[coding.question_uuid] = question_data
             
             # Load System Design question
             assignment = self.db.query(InterviewSystemDesign).filter(
@@ -122,13 +124,30 @@ class TestDataLoaderService:
                         "tags": question.tags
                     }
             
-            # Store in Redis with TTL
+            # ===================================================================
+            # Use Redis Pipeline for atomic batch writes (prevents timeouts)
+            # ===================================================================
+            pipeline = self.redis_client.pipeline()
+            
+            # 1. Cache individual coding questions
+            for question_uuid, question_data in coding_question_cache.items():
+                individual_key = f"candidate:{candidate_id}:coding_question:{question_uuid}"
+                pipeline.setex(
+                    individual_key,
+                    settings.REDIS_TTL_SECONDS,
+                    json.dumps(question_data)
+                )
+            
+            # 2. Store main test data bundle
             redis_key = f"candidate:{candidate_id}:test_data"
-            self.redis_client.setex(
+            pipeline.setex(
                 redis_key,
                 settings.REDIS_TTL_SECONDS,
                 json.dumps(test_data)
             )
+            
+            # 3. Execute all writes in a single network call
+            pipeline.execute()
             
             logger.info(f"Loaded test data to Redis for candidate {candidate_id}: "
                        f"{len(test_data['mcq_questions'])} MCQ, "

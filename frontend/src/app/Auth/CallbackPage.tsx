@@ -54,16 +54,32 @@ const CallbackPage = () => {
       try {
         const authParam = searchParams.get('auth');
         const errorParam = searchParams.get('error');
+        const errorCode = searchParams.get('error_code');
         const state = searchParams.get('state');
 
         console.log('Callback page - authParam:', authParam ? 'present' : 'missing');
         console.log('Callback page - errorParam:', errorParam);
+        console.log('Callback page - errorCode:', errorCode);
         console.log('Callback page - state:', state);
 
         // Verify state matches (CSRF protection)
         const storedState = localStorage.getItem('oauth_state');
-        if (state && storedState && state !== storedState) {
-          throw new Error('Invalid state parameter. Possible CSRF attack.');
+        if (state && storedState) {
+          try {
+            // Try to parse stored state as JSON (if it contains candidate_id)
+            const storedStateData = JSON.parse(atob(storedState));
+            const stateData = JSON.parse(atob(state));
+            
+            // Compare CSRF tokens
+            if (storedStateData.csrf !== stateData.csrf) {
+              throw new Error('Invalid state parameter. Possible CSRF attack.');
+            }
+          } catch {
+            // If not JSON, compare as plain strings (backward compatibility)
+            if (state !== storedState) {
+              throw new Error('Invalid state parameter. Possible CSRF attack.');
+            }
+          }
         }
 
         // Clear OAuth state
@@ -71,6 +87,13 @@ const CallbackPage = () => {
 
         // Handle error from backend
         if (errorParam) {
+          const errorCode = searchParams.get('error_code');
+          // Special handling for missing candidate_id
+          if (errorCode === 'MISSING_CANDIDATE_ID') {
+            setError('Candidate ID is required. Please access this page using the invitation link provided in your email.');
+            setIsLoading(false);
+            return;
+          }
           throw new Error(errorParam);
         }
 
