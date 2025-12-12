@@ -1080,7 +1080,7 @@ class InterviewService:
                 InterviewSystemDesign.candidate_id == candidate_id
             ).first()
             
-            if sd_record and (sd_record.current_canvas or sd_record.final_diagram):
+            if sd_record and (sd_record.current_canvas or sd_record.diagram):
                 try:
                     from services.system_design_service import SystemDesignService
                     import asyncio
