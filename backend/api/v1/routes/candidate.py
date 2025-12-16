@@ -1062,18 +1062,6 @@ async def complete_test(
         if not sync_result.get("success"):
             logger.warning(f"Some data failed to sync from Redis: {sync_result.get('error')}")
         
-        # ============================================================================
-        # UPDATE CHEAT METRICS
-        # ============================================================================
-        # Update cheat metrics in interview_analysis_table from integrity data
-        if request.integrity:
-            try:
-                interview_service._update_cheat_metrics(candidate_id, request.integrity)
-                logger.info(f"[TEST_COMPLETION] ✅ Updated cheat metrics for candidate {candidate_id}")
-            except Exception as e:
-                # Don't fail test completion if cheat metrics update fails
-                logger.warning(f"Failed to update cheat metrics for candidate {candidate_id}: {str(e)}")
-        
         # Update candidate test completion
         now = datetime.utcnow()
         candidate.status = 'completed'
@@ -1108,7 +1096,31 @@ async def complete_test(
         
         test_session.pending_answers = None  # Clear pending answers after completion
         
-        db.commit()
+        # ============================================================================
+        # UPDATE CHEAT METRICS (before commit to ensure it's part of the transaction)
+        # ============================================================================
+        # Update cheat metrics in interview_analysis_table from integrity data
+        if request.integrity:
+            try:
+                logger.info(f"[TEST_COMPLETION] Updating cheat metrics for candidate {candidate_id}: {request.integrity}")
+                interview_service._update_cheat_metrics(candidate_id, request.integrity)
+                logger.info(f"[TEST_COMPLETION] ✅ Updated cheat metrics for candidate {candidate_id}")
+            except Exception as e:
+                # Log full error details but don't fail test completion
+                logger.error(f"Failed to update cheat metrics for candidate {candidate_id}: {str(e)}", exc_info=True)
+                # Continue - cheat metrics update failure shouldn't block test completion
+        
+        # Commit all changes (test session, cheat metrics, section timings) together
+        try:
+            db.commit()
+            logger.info(f"[TEST_COMPLETION] ✅ Successfully committed test completion data for candidate {candidate_id}")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to commit test completion data for candidate {candidate_id}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to save test completion data: {str(e)}"
+            )
         
         # Check if we should stop scheduler jobs (only if no other active tests)
         stop_scheduler_jobs_if_no_active_tests()
@@ -1201,7 +1213,10 @@ async def complete_test(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error completing test: {str(e)}")
+        logger.error(f"Error completing test for candidate {candidate_id}: {str(e)}", exc_info=True)
+        logger.error(f"Request data - completion_method: {request.completion_method if request else 'N/A'}, "
+                    f"has_integrity: {bool(request.integrity) if request else False}, "
+                    f"has_section_timings: {bool(request.section_timings) if request else False}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to complete test: {str(e)}"

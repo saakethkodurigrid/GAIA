@@ -842,17 +842,41 @@ class InterviewService:
                 - full_screen_exits: int
                 - tab_change: int
         """
+        if not integrity_data:
+            logger.warning(f"No integrity data provided for candidate {candidate_id}, skipping cheat_metrics update")
+            return
+        
         try:
-            if not integrity_data:
-                logger.warning(f"No integrity data provided for candidate {candidate_id}, skipping cheat_metrics update")
-                return
-            
             # Transform integrity data to cheat_metrics format
+            # Handle both Pydantic model and dict formats
+            if hasattr(integrity_data, 'multiple_face'):
+                multiple_face = integrity_data.multiple_face
+            elif isinstance(integrity_data, dict):
+                multiple_face = integrity_data.get('multiple_face', 'no')
+            else:
+                multiple_face = 'no'
+            
+            if hasattr(integrity_data, 'full_screen_exits'):
+                full_screen_exits = integrity_data.full_screen_exits
+            elif isinstance(integrity_data, dict):
+                full_screen_exits = integrity_data.get('full_screen_exits', 0)
+            else:
+                full_screen_exits = 0
+            
+            if hasattr(integrity_data, 'tab_change'):
+                tab_change = integrity_data.tab_change
+            elif isinstance(integrity_data, dict):
+                tab_change = integrity_data.get('tab_change', 0)
+            else:
+                tab_change = 0
+            
             cheat_metrics = {
-                "multiple_face": integrity_data.multiple_face if hasattr(integrity_data, 'multiple_face') else "no",
-                "full_screen_exits": integrity_data.full_screen_exits if hasattr(integrity_data, 'full_screen_exits') else 0,
-                "tab_change": integrity_data.tab_change if hasattr(integrity_data, 'tab_change') else 0
+                "multiple_face": multiple_face,
+                "full_screen_exits": full_screen_exits,
+                "tab_change": tab_change
             }
+            
+            logger.info(f"[INTERVIEW_ANALYSIS] Updating cheat_metrics for candidate {candidate_id}: {cheat_metrics}")
             
             # Get or create interview_analysis record
             interview_analysis = self.db.query(InterviewAnalysisTable).filter(
@@ -872,13 +896,17 @@ class InterviewService:
                 self.db.add(interview_analysis)
                 logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record with cheat_metrics for candidate {candidate_id}")
             
+            # Flush to ensure the changes are in the session (but don't commit - let caller handle it)
+            self.db.flush()
+            
             # Note: Don't commit here - let the calling method handle the transaction
             # This allows cheat_metrics to be part of the same transaction as test completion
             
         except Exception as e:
             logger.error(f"Error updating cheat metrics for candidate {candidate_id}: {str(e)}", exc_info=True)
-            # Don't raise - let the calling method handle it (non-critical update)
-            # Just log the error and continue
+            # Re-raise the exception so the caller knows it failed
+            # The caller can decide whether to fail the entire operation or continue
+            raise
     
     async def generate_and_save_interview_summary(self, candidate_id: str) -> None:
         """
