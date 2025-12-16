@@ -18,6 +18,13 @@ class ScheduleTestResponse(BaseModel):
     scheduled_date: Optional[str] = None  # ISO format datetime string
 
 
+class GetScheduledDateResponse(BaseModel):
+    """Response schema for getting scheduled date."""
+    success: bool
+    message: str
+    scheduled_date: Optional[str] = None  # ISO format datetime string with timezone
+
+
 class InterviewSummaryResponse(BaseModel):
     """Response schema for interview summary with candidate details."""
     success: bool

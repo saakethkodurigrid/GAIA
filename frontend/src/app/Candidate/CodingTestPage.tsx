@@ -7,6 +7,7 @@ import TestCaseViewer from '../../components/CodeEditor/TestCaseViewer';
 import OutputViewer from '../../components/CodeEditor/OutputViewer';
 import Footer from '../../components/Footer';
 import Toast from '../../components/Toast';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { localStorage as storage } from '../../utils/localStorage';
 import { finalizeCodingSection } from '../../api/coding.api';
@@ -36,9 +37,67 @@ const CodingTestPageContent = () => {
     });
     return attempted;
   };
+
+  // Handle instant submit solution
+  const handleSubmitSolution = () => {
+    const isCurrentQuestionSubmitted = !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid));
+    
+    if (isCurrentQuestionSubmitted) {
+      return;
+    }
+    
+    if (submitAnswer && currentProblem?.question_uuid) {
+      // Call submit (fires in background, returns immediately)
+      submitAnswer();
+      
+      // Show success toast
+      setToastMessage('Question submitted successfully!');
+      setShowToast(true);
+      
+      // Check if all questions will be submitted (including current one)
+      const willBeAllSubmitted = problems.every(problem => {
+        if (!problem?.question_uuid) return false;
+        if (problem.question_uuid === currentProblem.question_uuid) {
+          return true; // Current question will be submitted
+        }
+        return submittedQuestions?.has(problem.question_uuid);
+      });
+      
+      if (willBeAllSubmitted) {
+        // All questions will be submitted - show submit section modal after toast
+        pendingNavigationRef.current = { nextIndex: null, showSectionModal: true };
+      } else if (findNextUnsubmittedQuestion) {
+        // Find next unsubmitted question (excluding current one which will be submitted)
+        const tempSubmitted = new Set(submittedQuestions);
+        tempSubmitted.add(currentProblem.question_uuid);
+        
+        // Find next unsubmitted question
+        let nextIndex: number | null = null;
+        for (let i = currentProblemIndex + 1; i < problems.length; i++) {
+          const problem = problems[i];
+          if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
+            nextIndex = i;
+            break;
+          }
+        }
+        // If no unsubmitted question found after current, search from beginning
+        if (nextIndex === null) {
+          for (let i = 0; i < currentProblemIndex; i++) {
+            const problem = problems[i];
+            if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
+              nextIndex = i;
+              break;
+            }
+          }
+        }
+        
+        // Store navigation info to execute after toast
+        pendingNavigationRef.current = { nextIndex, showSectionModal: false };
+      }
+    }
+  };
   
   const [activeTab, setActiveTab] = useState<'testcases' | 'output'>('testcases');
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showSubmitSectionModal, setShowSubmitSectionModal] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
@@ -373,7 +432,7 @@ const CodingTestPageContent = () => {
                         Run All Testcases
                       </button>
                       <button
-                        onClick={() => setShowSubmitModal(true)}
+                        onClick={handleSubmitSolution}
                         disabled={isRunning || isCurrentQuestionSubmitted}
                         className="px-4 py-2 bg-yellow-400 text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -447,165 +506,59 @@ const CodingTestPageContent = () => {
       />
 
       {/* Submit Section Modal */}
-      {showSubmitSectionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold mb-4">Submit Section</h2>
-            <p className="text-gray-600 mb-2">
-              {(() => {
-                const submittedCount = problems.filter(p => 
-                  p?.question_uuid && submittedQuestions?.has(p.question_uuid)
-                ).length;
-                const allSubmitted = submittedCount === totalProblems;
-                
-                if (allSubmitted) {
-                  return (
-                    <>
-                      You have submitted all <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
-                    </>
-                  );
-                }
-                return (
-                  <>
-                    You have attempted <span className="font-semibold text-gray-900">{getAttemptedCount()}</span> out of <span className="font-semibold text-gray-900">{totalProblems}</span> questions.
-                  </>
-                );
-              })()}
-            </p>
-            <p className="text-gray-600 mb-6">Do you wish to submit this section?</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowSubmitSectionModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  // Mark Coding section as submitted in localStorage
-                  try {
-                    const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
-                    const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
-                    const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
-                    submitted.coding = true;
-                    localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
-                  } catch (error) {
-                    console.error('Error marking Coding as submitted:', error);
-                  }
-                  
-                  // End section timing and calculate duration using current timer value
-                  const durationMinutes = storage.endSectionTiming('coding', timeRemaining);
-                  if (durationMinutes !== null) {
-                    console.log(`Coding section completed in ${durationMinutes} minutes`);
-                  }
-                  
-                  // Call API to finalize coding section and generate analysis (fire-and-forget)
-                  console.log('Finalizing coding section...');
-                  finalizeCodingSection(user?.candidateId)
-                    .then((response) => {
-                      console.log('✅ Coding section finalized successfully:', response);
-                      console.log('Coding Analysis:', response.coding_analysis);
-                    })
-                    .catch((error) => {
-                      console.error('⚠️ Error finalizing coding section:', error);
-                      // Don't block navigation on error - analysis will be attempted during test completion
-                    });
-                  
-                  // Navigate immediately without waiting for API response
-                  setShowSubmitSectionModal(false);
-                  navigate('/test-overview');
-                }}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-              >
-                Submit Section
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationModal
+        isOpen={showSubmitSectionModal}
+        onClose={() => setShowSubmitSectionModal(false)}
+        onConfirm={() => {
+          // Mark Coding section as submitted in localStorage
+          try {
+            const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
+            const stored = localStorage.getItem(SUBMITTED_SECTIONS_KEY);
+            const submitted = stored ? JSON.parse(stored) : { mcq: false, coding: false, systemDesign: false };
+            submitted.coding = true;
+            localStorage.setItem(SUBMITTED_SECTIONS_KEY, JSON.stringify(submitted));
+          } catch (error) {
+            console.error('Error marking Coding as submitted:', error);
+          }
+          
+          // End section timing and calculate duration using current timer value
+          const durationSeconds = storage.endSectionTiming('coding', timeRemaining);
+          if (durationSeconds !== null) {
+            console.log(`Coding section completed in ${durationSeconds} seconds`);
+          }
+          
+          // Call API to finalize coding section and generate analysis (fire-and-forget)
+          console.log('Finalizing coding section...');
+          finalizeCodingSection(user?.candidateId)
+            .then((response) => {
+              console.log('✅ Coding section finalized successfully:', response);
+              console.log('Coding Analysis:', response.coding_analysis);
+            })
+            .catch((error) => {
+              console.error('⚠️ Error finalizing coding section:', error);
+              // Don't block navigation on error - analysis will be attempted during test completion
+            });
+          
+          // Navigate immediately without waiting for API response
+          setShowSubmitSectionModal(false);
+          navigate('/test-overview');
+        }}
+        title="Submit Section"
+        message={(() => {
+          const submittedCount = problems.filter(p => 
+            p?.question_uuid && submittedQuestions?.has(p.question_uuid)
+          ).length;
+          const allSubmitted = submittedCount === totalProblems;
+          
+          if (allSubmitted) {
+            return `You have submitted all ${totalProblems} questions. Do you wish to submit this section?`;
+          }
+          return `You have attempted ${getAttemptedCount()} out of ${totalProblems} questions. Do you wish to submit this section?`;
+        })()}
+        confirmButtonText="Submit"
+        confirmButtonColor="yellow"
+      />
 
-      {/* Submit Solution Modal */}
-      {showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold mb-4">Submit Solution</h2>
-            <p className="text-gray-600 mb-6">Are you sure you want to submit your solution?</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const isCurrentQuestionSubmitted = !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid));
-                  
-                  if (isCurrentQuestionSubmitted) {
-                    setShowSubmitModal(false);
-                    return;
-                  }
-                  
-                  if (submitAnswer && currentProblem?.question_uuid) {
-                    // Call submit (fires in background, returns immediately)
-                    submitAnswer();
-                    setShowSubmitModal(false);
-                    
-                    // Show success toast
-                    setToastMessage('Question submitted successfully!');
-                    setShowToast(true);
-                    
-                    // Check if all questions will be submitted (including current one)
-                    const willBeAllSubmitted = problems.every(problem => {
-                      if (!problem?.question_uuid) return false;
-                      if (problem.question_uuid === currentProblem.question_uuid) {
-                        return true; // Current question will be submitted
-                      }
-                      return submittedQuestions?.has(problem.question_uuid);
-                    });
-                    
-                    if (willBeAllSubmitted) {
-                      // All questions will be submitted - show submit section modal after toast
-                      pendingNavigationRef.current = { nextIndex: null, showSectionModal: true };
-                    } else if (findNextUnsubmittedQuestion) {
-                      // Find next unsubmitted question (excluding current one which will be submitted)
-                      const tempSubmitted = new Set(submittedQuestions);
-                      tempSubmitted.add(currentProblem.question_uuid);
-                      
-                      // Find next unsubmitted question
-                      let nextIndex: number | null = null;
-                      for (let i = currentProblemIndex + 1; i < problems.length; i++) {
-                        const problem = problems[i];
-                        if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
-                          nextIndex = i;
-                          break;
-                        }
-                      }
-                      // If no unsubmitted question found after current, search from beginning
-                      if (nextIndex === null) {
-                        for (let i = 0; i < currentProblemIndex; i++) {
-                          const problem = problems[i];
-                          if (problem?.question_uuid && !tempSubmitted.has(problem.question_uuid)) {
-                            nextIndex = i;
-                            break;
-                          }
-                        }
-                      }
-                      
-                      // Store navigation info to execute after toast
-                      pendingNavigationRef.current = { nextIndex, showSectionModal: false };
-                    }
-                  }
-                }}
-                disabled={isRunning || !!(currentProblem?.question_uuid && submittedQuestions?.has(currentProblem.question_uuid))}
-                className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Submit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

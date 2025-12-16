@@ -37,7 +37,7 @@ const TestReadyPage = () => {
         {/* Left Panel */}
         <div className="w-96 border-r-2 border-black flex flex-col p-6" style={{ backgroundColor: '#FFFBF0' }}>
           <div className="flex-1 flex flex-col justify-center">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Gen AI Engineer Interview</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">{user?.jobRole || 'Technical'} Interview</h2>
             <div>
               <p className="text-sm text-gray-600 mb-1">Test duration</p>
               <p className="text-base font-semibold text-gray-900">180 mins</p>

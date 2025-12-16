@@ -27,6 +27,73 @@ const getSubmittedSections = (): { mcq: boolean; coding: boolean; systemDesign: 
   return { mcq: false, coding: false, systemDesign: false };
 };
 
+// Helper function to calculate and format duration from section timing
+// Calculates duration by subtracting end time from start time (both in seconds)
+const formatSectionDuration = (sectionName: 'mcq' | 'coding' | 'systemDesign'): string => {
+  const timing = storage.getSectionTiming(sectionName);
+  
+  // Check if section was attempted
+  if (!timing || timing.startTimeRemaining === null || timing.startTimeRemaining === undefined) {
+    return 'Not attempted';
+  }
+  
+  // Calculate duration in seconds
+  let durationSeconds: number;
+  
+  if (timing.endTimeRemaining !== null && timing.endTimeRemaining !== undefined) {
+    // Section was completed: duration = startTimeRemaining - endTimeRemaining
+    durationSeconds = timing.startTimeRemaining - timing.endTimeRemaining;
+  } else {
+    // Section is still active: use current time remaining
+    const currentTimeRemaining = storage.getRemainingTime();
+    if (currentTimeRemaining === null) {
+      return 'Not attempted';
+    }
+    durationSeconds = timing.startTimeRemaining - currentTimeRemaining;
+  }
+  
+  // Ensure non-negative
+  if (durationSeconds < 0) {
+    return 'Not attempted';
+  }
+  
+  // Convert seconds to minutes and seconds
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = Math.round(durationSeconds % 60);
+  
+  // Format as "X min Y sec"
+  if (minutes === 0 && seconds === 0) {
+    return '0 sec';
+  } else if (minutes === 0) {
+    return `${seconds} sec`;
+  } else if (seconds === 0) {
+    return `${minutes} min`;
+  } else {
+    return `${minutes} min ${seconds} sec`;
+  }
+};
+
+// Helper function to format duration from seconds to "X min Y sec"
+const formatDurationFromSeconds = (durationSeconds: number | null | undefined): string => {
+  if (durationSeconds === null || durationSeconds === undefined || durationSeconds < 0) {
+    return 'Not attempted';
+  }
+  
+  const totalSeconds = Math.round(durationSeconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  if (minutes === 0 && seconds === 0) {
+    return '0 sec';
+  } else if (minutes === 0) {
+    return `${seconds} sec`;
+  } else if (seconds === 0) {
+    return `${minutes} min`;
+  } else {
+    return `${minutes} min ${seconds} sec`;
+  }
+};
+
 const TestOverviewPage = () => {
   const { user, logout } = useAuth();
   const { videoStream, requestVideoStream } = useVideo();
@@ -45,6 +112,21 @@ const TestOverviewPage = () => {
   const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
   const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
+
+  // Check if candidate_id has changed and flush test data if needed
+  useEffect(() => {
+    if (user?.candidateId) {
+      const storedCandidateId = localStorage.getItem('current_candidate_id');
+      if (storedCandidateId && storedCandidateId !== user.candidateId) {
+        console.log(`[TestOverview] Candidate ID mismatch detected. Flushing test data...`);
+        storage.checkAndFlushOnCandidateChange(user.candidateId);
+        localStorage.setItem('current_candidate_id', user.candidateId);
+      } else if (!storedCandidateId && user.candidateId) {
+        // First time storing for this candidate
+        localStorage.setItem('current_candidate_id', user.candidateId);
+      }
+    }
+  }, [user?.candidateId]);
 
   // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
   useEffect(() => {
@@ -278,10 +360,11 @@ const TestOverviewPage = () => {
     }
     
     // Print section timings to console
+    // Calculate duration from start and end times (in seconds) for accurate results
     console.log('=== Section Timings ===');
-    console.log(`MCQ Section: ${mcqMinutes !== null ? `${mcqMinutes} minutes` : 'Not attempted'}`);
-    console.log(`Coding Section: ${codingMinutes !== null ? `${codingMinutes} minutes` : 'Not attempted'}`);
-    console.log(`System Design Section: ${systemDesignMinutes !== null ? `${systemDesignMinutes} minutes` : 'Not attempted'}`);
+    console.log(`MCQ Section: ${formatSectionDuration('mcq')}`);
+    console.log(`Coding Section: ${formatSectionDuration('coding')}`);
+    console.log(`System Design Section: ${formatSectionDuration('systemDesign')}`);
     console.log('=======================');
     
     // Get cheating event counts from context
@@ -320,22 +403,23 @@ const TestOverviewPage = () => {
           // Fetch MCQ questions
           const mcqQuestions = await fetchQuestions(candidateId);
           
-          // Get saved answers from localStorage
+          // Get saved answers from localStorage (stored as 1-based indexing)
           const STORAGE_KEY = 'mcq_answers';
           const storedAnswersStr = localStorage.getItem(STORAGE_KEY);
-          const answers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
+          const storedAnswers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
           
           // Convert to API format
+          // localStorage stores 1-based, so we can use it directly (no need to add 1)
           mcqAnswerItems = mcqQuestions
             .filter((q) => {
-              const answer = answers[q.id];
+              const answer = storedAnswers[q.id];
               return answer !== undefined && answer !== null && q.question_uuid;
             })
             .map((q) => {
-              const answer = answers[q.id];
+              const answer = storedAnswers[q.id];
               return {
                 question_uuid: q.question_uuid!,
-                candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based: "1", "2", "3", or "4"
+                candidate_answer: String(answer), // Already 1-based from localStorage: "1", "2", "3", or "4"
               };
             });
           
@@ -359,6 +443,7 @@ const TestOverviewPage = () => {
         console.log(`[Fullscreen Exit Calculation] Existing count: ${existingFullScreenExits}, Tab changes: ${tabChangeCount}, New count: ${fullScreenExits}`);
 
         // Convert section timings to backend format - only duration in seconds
+        // Calculate duration from start and end times (in seconds) for accuracy
         const convertSectionTimings = () => {
           const timings: { mcq?: number; coding?: number; system_design?: number } = {};
           
@@ -366,9 +451,28 @@ const TestOverviewPage = () => {
             const sectionKey = section === 'systemDesign' ? 'system_design' : section;
             const timing = storage.getSectionTiming(section as 'mcq' | 'coding' | 'systemDesign');
             
-            if (timing && timing.durationMinutes !== null) {
-              // Convert minutes to seconds
-              timings[sectionKey as 'mcq' | 'coding' | 'system_design'] = Math.round(timing.durationMinutes * 60);
+            if (!timing || timing.startTimeRemaining === null || timing.startTimeRemaining === undefined) {
+              return; // Section not attempted
+            }
+            
+            // Calculate duration in seconds: startTimeRemaining - endTimeRemaining
+            let durationSeconds: number;
+            
+            if (timing.endTimeRemaining !== null && timing.endTimeRemaining !== undefined) {
+              // Section was completed: duration = startTimeRemaining - endTimeRemaining
+              durationSeconds = timing.startTimeRemaining - timing.endTimeRemaining;
+            } else {
+              // Section is still active: use current time remaining
+              const currentTimeRemaining = storage.getRemainingTime();
+              if (currentTimeRemaining === null) {
+                return; // Cannot calculate duration
+              }
+              durationSeconds = timing.startTimeRemaining - currentTimeRemaining;
+            }
+            
+            // Only include if duration is valid and non-negative
+            if (durationSeconds >= 0) {
+              timings[sectionKey as 'mcq' | 'coding' | 'system_design'] = Math.round(durationSeconds);
             }
           });
           
@@ -387,9 +491,9 @@ const TestOverviewPage = () => {
         console.log('Converted section timings (seconds):', sectionTimings);
         if (sectionTimings) {
           console.log('Section timings breakdown:', {
-            mcq: sectionTimings.mcq ? `${sectionTimings.mcq}s (${Math.round(sectionTimings.mcq / 60 * 100) / 100} min)` : 'Not attempted',
-            coding: sectionTimings.coding ? `${sectionTimings.coding}s (${Math.round(sectionTimings.coding / 60 * 100) / 100} min)` : 'Not attempted',
-            system_design: sectionTimings.system_design ? `${sectionTimings.system_design}s (${Math.round(sectionTimings.system_design / 60 * 100) / 100} min)` : 'Not attempted',
+            mcq: sectionTimings.mcq ? formatDurationFromSeconds(sectionTimings.mcq) : 'Not attempted',
+            coding: sectionTimings.coding ? formatDurationFromSeconds(sectionTimings.coding) : 'Not attempted',
+            system_design: sectionTimings.system_design ? formatDurationFromSeconds(sectionTimings.system_design) : 'Not attempted',
           });
         }
         console.log('===================================');

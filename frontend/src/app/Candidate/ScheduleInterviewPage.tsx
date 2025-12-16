@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { scheduleTest } from '../../api/candidate.api';
+import { localStorage as storage } from '../../utils/localStorage';
 
 const ScheduleInterviewPage = () => {
   const { user, logout } = useAuth();
@@ -337,6 +338,8 @@ const ScheduleInterviewPage = () => {
     }
     
     if (candidateIdFromUrl) {
+      // Check if candidate_id has changed and flush test data if needed
+      storage.checkAndFlushOnCandidateChange(candidateIdFromUrl);
       // Store candidate_id in localStorage to use throughout the session
       localStorage.setItem('current_candidate_id', candidateIdFromUrl);
       console.log('✓ Stored candidate_id in localStorage:', candidateIdFromUrl);

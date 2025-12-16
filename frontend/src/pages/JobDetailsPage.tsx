@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { uploadCandidatesBatch, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry } from '../api/recruiter.api';
+import { uploadCandidatesBatchStream, getResumesList, getScheduledInterviews, getCompletedInterviews, type ResumeCandidateResponse, type ScheduledInterviewCandidateResponse, type CompletedInterviewCandidateResponse, type CandidateEntry, type CandidateBatchItemResponse, type FailedFileResponse } from '../api/recruiter.api';
 import { isTokenExpiredError } from '../utils/apiErrorHandler';
 
 const JobDetailsPage = () => {
@@ -34,6 +34,9 @@ const JobDetailsPage = () => {
   const [completedInterviews, setCompletedInterviews] = useState<CompletedInterviewCandidateResponse[]>([]);
   const [isLoadingCompletedInterviews, setIsLoadingCompletedInterviews] = useState(false);
   const [completedInterviewsError, setCompletedInterviewsError] = useState<string | null>(null);
+  const [streamingErrors, setStreamingErrors] = useState<FailedFileResponse[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamProgress, setStreamProgress] = useState({ total: 0, processed: 0, successful: 0, failed: 0 });
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleLogout = () => {
@@ -131,6 +134,13 @@ const JobDetailsPage = () => {
 
     try {
       const response = await getCompletedInterviews(jobId);
+      console.log('=== Completed Interviews API Response ===');
+      console.log('Full Response:', JSON.stringify(response, null, 2));
+      console.log('Response Success:', response.success);
+      console.log('Response Count:', response.count);
+      console.log('Response Message:', response.message);
+      console.log('Candidates:', response.candidates);
+      console.log('==========================================');
       if (response.success) {
         setCompletedInterviews(response.candidates);
       } else {
@@ -339,47 +349,83 @@ const JobDetailsPage = () => {
       return;
     }
 
+    // Close modal immediately when upload starts
+    setShowUploadModal(false);
+    
+    // Initialize streaming state
+    setIsStreaming(true);
     setIsUploading(true);
     setUploadError(null);
     setUploadSuccess(null);
+    setStreamingErrors([]);
+    setStreamProgress({ total: validCandidates.length, processed: 0, successful: 0, failed: 0 });
 
     try {
-      const response = await uploadCandidatesBatch(jobId, validCandidates);
-      
-      if (response.success) {
-        let successMsg = `Successfully uploaded ${response.successful} candidate(s)`;
-        
-        // Add details about failed files if any
-        if (response.failed > 0 && response.failed_files && response.failed_files.length > 0) {
-          const failedFileNames = response.failed_files.map(f => f.filename).join(', ');
-          successMsg += `. ${response.failed} candidate(s) failed: ${failedFileNames}`;
+      await uploadCandidatesBatchStream(
+        jobId,
+        validCandidates,
+        // onCandidate callback - called when a candidate is successfully processed
+        (candidate: CandidateBatchItemResponse) => {
+          // Add candidate directly to resumes table
+          const newResume: ResumeCandidateResponse = {
+            candidate_id: candidate.candidate_id,
+            name: candidate.name,
+            email_id: candidate.email_id,
+            resume_score: candidate.resume_score,
+            status: candidate.status
+          };
+          
+          // Add to resumes state (merge with existing, avoiding duplicates)
+          setResumes(prev => {
+            const exists = prev.some(r => r.candidate_id === newResume.candidate_id);
+            if (exists) return prev;
+            // Insert at the beginning and sort by score descending
+            return [...prev, newResume].sort((a, b) => b.resume_score - a.resume_score);
+          });
+          
+          setStreamProgress(prev => ({
+            ...prev,
+            processed: prev.processed + 1,
+            successful: prev.successful + 1
+          }));
+        },
+        // onError callback - called when a candidate fails
+        (error: FailedFileResponse | { message: string }) => {
+          if ('filename' in error && 'error' in error) {
+            setStreamingErrors(prev => [...prev, error as FailedFileResponse]);
+          } else {
+            setUploadError(error.message || 'An error occurred');
+          }
+          setStreamProgress(prev => ({
+            ...prev,
+            processed: prev.processed + 1,
+            failed: prev.failed + 1
+          }));
+        },
+        // onComplete callback - called when all candidates are processed
+        (summary: { total: number; successful: number; failed: number }) => {
+          setIsStreaming(false);
+          setIsUploading(false);
+          let successMsg = `Successfully uploaded ${summary.successful} candidate(s)`;
+          
+          if (summary.failed > 0) {
+            successMsg += `. ${summary.failed} candidate(s) failed.`;
+          }
+          
+          setUploadSuccess(successMsg);
+          setCandidates([{ name: '', email: '', file: null }]);
+          fileInputRefs.current = [];
+          
+          // Clear success message after 7 seconds
+          setTimeout(() => {
+            setUploadSuccess(null);
+            setStreamingErrors([]);
+          }, 7000);
         }
-        
-        setUploadSuccess(successMsg);
-        setShowUploadModal(false);
-        setCandidates([{ name: '', email: '', file: null }]);
-        fileInputRefs.current = [];
-        
-        // Refresh resumes list after successful upload
-        await fetchResumes();
-        
-        // Clear success message after 7 seconds
-        setTimeout(() => {
-          setUploadSuccess(null);
-        }, 7000);
-      } else {
-        // Handle partial success or complete failure
-        let errorMsg = response.message || 'Failed to upload candidates';
-        
-        if (response.failed_files && response.failed_files.length > 0) {
-          const failedDetails = response.failed_files.map(f => `${f.filename}: ${f.error}`).join('; ');
-          errorMsg += `. Failed candidates: ${failedDetails}`;
-        }
-        
-        setUploadError(errorMsg);
-        setTimeout(() => setUploadError(null), 8000);
-      }
+      );
     } catch (err) {
+      setIsStreaming(false);
+      setIsUploading(false);
       // Check if it's a token expiration error - logout immediately
       if (isTokenExpiredError(err)) {
         console.log('Token expired, logging out...');
@@ -389,13 +435,11 @@ const JobDetailsPage = () => {
       const errorMessage = err instanceof Error ? err.message : 'Failed to upload candidates. Please try again.';
       setUploadError(errorMessage);
       setTimeout(() => setUploadError(null), 5000);
-    } finally {
-      setIsUploading(false);
     }
   };
 
   const handleModalClose = () => {
-    if (!isUploading) {
+    if (!isUploading && !isStreaming) {
       setShowUploadModal(false);
       setCandidates([{ name: '', email: '', file: null }]);
       setUploadError(null);
@@ -528,6 +572,39 @@ const JobDetailsPage = () => {
                   {resumesError && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
                       {resumesError}
+                    </div>
+                  )}
+
+                  {/* Streaming Progress - Show in main UI */}
+                  {isStreaming && (
+                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span className="text-base font-semibold text-blue-900">Parsing resumes...</span>
+                        </div>
+                        <span className="text-sm text-blue-700">
+                          {streamProgress.processed} / {streamProgress.total} processed • ✓ {streamProgress.successful} successful • ✗ {streamProgress.failed} failed
+                        </span>
+                      </div>
+                      <div className="w-full bg-blue-200 rounded-full h-2.5">
+                        <div
+                          className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${(streamProgress.processed / streamProgress.total) * 100}%` }}
+                        />
+                      </div>
+                      {streamingErrors.length > 0 && (
+                        <div className="mt-3 space-y-1">
+                      {streamingErrors.map((error) => (
+                        <div key={error.filename} className="text-xs text-red-700">
+                          <span className="font-medium">{error.filename}:</span> {error.error}
+                        </div>
+                      ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -684,7 +761,7 @@ const JobDetailsPage = () => {
                             <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">ID</th>
                             <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Candidate Name</th>
                             <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Email</th>
-                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Interview Score</th>
+                            <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Resume Score</th>
                             <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Status</th>
                             <th className="text-left py-3 px-4 text-base font-semibold text-gray-700">Report</th>
                           </tr>
@@ -779,7 +856,7 @@ const JobDetailsPage = () => {
             {/* Close Button */}
             <button
               onClick={handleModalClose}
-              disabled={isUploading}
+              disabled={isUploading || isStreaming}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors z-10 disabled:opacity-50"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -909,32 +986,20 @@ const JobDetailsPage = () => {
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={handleModalClose}
-                  disabled={isUploading}
+                  disabled={isUploading || isStreaming}
                   className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleModalSubmit}
-                  disabled={isUploading}
+                  disabled={isUploading || isStreaming}
                   className="px-6 py-2 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isUploading ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Submit
-                    </>
-                  )}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Upload & Parse
                 </button>
               </div>
             </div>

@@ -6,8 +6,8 @@ import base64
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
+from fastapi.responses import StreamingResponse
 from typing import List
-import json
 import json
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -492,6 +492,225 @@ async def add_candidates_batch(
         )
     
     return response
+
+
+@router.post("/jobs/{job_id}/candidates/batch-stream")
+async def add_candidates_batch_stream(
+    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
+    request: Request = ...,
+    files: List[UploadFile] = File(..., description="Resume files (PDF or DOCX, max 10 files)"),
+    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Add candidates in batch with Server-Sent Events (SSE) streaming.
+    
+    Streams results as each candidate is processed, providing real-time feedback.
+    Each event contains either:
+    - A successfully processed candidate with score
+    - A failed file with error message
+    - A completion message when all candidates are processed
+    
+    Stream Format:
+        data: {"type": "candidate", "data": {...candidate data...}}
+        data: {"type": "error", "data": {...error data...}}
+        data: {"type": "complete", "data": {...summary...}}
+    """
+    # Parse form data (same validation as batch endpoint)
+    form_data = await request.form()
+    candidates_data_str = form_data.get('candidates_data')
+    
+    if not candidates_data_str:
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Missing candidates_data field'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    try:
+        candidates_list = json.loads(candidates_data_str)
+    except json.JSONDecodeError as e:
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Invalid JSON: {str(e)}'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    if not isinstance(candidates_list, list):
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'candidates_data must be a JSON array'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    if len(candidates_list) > 10:
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Maximum 10 candidates allowed. Received {len(candidates_list)}'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    if len(files) != len(candidates_list):
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    # Validate file types
+    allowed_extensions = {'pdf', 'docx', 'doc'}
+    invalid_files = []
+    for file in files:
+        if not file.filename:
+            invalid_files.append("Unknown filename")
+            continue
+        extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ""
+        if extension not in allowed_extensions:
+            invalid_files.append(file.filename)
+    
+    if invalid_files:
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Invalid file types: {', '.join(invalid_files)}'}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    # Validate and parse candidate data
+    validated_candidates = []
+    for idx, candidate in enumerate(candidates_list):
+        try:
+            validated_candidate = CandidateBatchItemRequest(**candidate)
+            validated_candidates.append(validated_candidate)
+        except Exception as e:
+            async def error_stream():
+                yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Invalid candidate data at index {idx}: {str(e)}'}})}\n\n"
+            return StreamingResponse(
+                error_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+    
+    # Get job by reference number
+    job_service = JobService(db)
+    try:
+        job = job_service.get_job_by_reference_number(job_id)
+    except ValueError as e:
+        async def error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': str(e)}})}\n\n"
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    # Prepare candidate data with files
+    candidate_data_list = []
+    for candidate, file in zip(validated_candidates, files):
+        candidate_data_list.append({
+            "name": candidate.name,
+            "email": candidate.email,
+            "file": file
+        })
+    
+    # Create a new database session for streaming (to avoid session conflicts)
+    from core.database import SessionLocal
+    stream_db = SessionLocal()
+    
+    async def event_stream():
+        """Generate SSE stream with candidate processing results"""
+        try:
+            batch_service = CandidateBatchService(stream_db)
+            successful_count = 0
+            failed_count = 0
+            
+            # Process each candidate and stream results
+            for idx, candidate_data in enumerate(candidate_data_list):
+                try:
+                    # Process single candidate
+                    result = await batch_service.process_single_candidate(
+                        job_id=job.job_id,
+                        candidate_data=candidate_data,
+                        recruiter_email=current_user.email_id
+                    )
+                    
+                    if result.get("success"):
+                        # Stream successful candidate
+                        successful_count += 1
+                        candidate_response = CandidateBatchItemResponse(**result["candidate"])
+                        yield f"data: {json.dumps({'type': 'candidate', 'data': candidate_response.dict()})}\n\n"
+                    else:
+                        # Stream failed candidate
+                        failed_count += 1
+                        failed_file = FailedFileResponse(**result["failed_file"])
+                        yield f"data: {json.dumps({'type': 'error', 'data': failed_file.dict()})}\n\n"
+                        
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"Error processing candidate {idx}: {str(e)}")
+                    yield f"data: {json.dumps({'type': 'error', 'data': {'filename': candidate_data['file'].filename or 'unknown', 'error': str(e)}})}\n\n"
+            
+            # Send completion message
+            yield f"data: {json.dumps({'type': 'complete', 'data': {'total': len(candidate_data_list), 'successful': successful_count, 'failed': failed_count}})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error in SSE stream: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Stream error: {str(e)}'}})}\n\n"
+        finally:
+            stream_db.close()
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.get("/jobs/{job_id}/candidates/resumes", response_model=ResumesListResponse)

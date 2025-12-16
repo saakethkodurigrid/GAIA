@@ -268,6 +268,212 @@ export const uploadCandidatesBatch = async (
   }
 };
 
+// SSE Event Types
+export interface SSEEvent {
+  type: 'candidate' | 'error' | 'complete';
+  data: CandidateBatchItemResponse | FailedFileResponse | { message: string } | { total: number; successful: number; failed: number };
+}
+
+export interface SSECandidateEvent {
+  type: 'candidate';
+  data: CandidateBatchItemResponse;
+}
+
+export interface SSEErrorEvent {
+  type: 'error';
+  data: FailedFileResponse | { message: string };
+}
+
+export interface SSECompleteEvent {
+  type: 'complete';
+  data: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}
+
+/**
+ * Upload multiple resume files with Server-Sent Events (SSE) streaming.
+ * 
+ * This function streams results as each candidate is processed, providing
+ * real-time feedback to the user.
+ * 
+ * @param jobId - Job reference number in format JD-XXXXXX
+ * @param candidates - Array of candidate entries with name, email, and resume file
+ * @param onCandidate - Callback when a candidate is successfully processed
+ * @param onError - Callback when a candidate fails or an error occurs
+ * @param onComplete - Callback when all candidates are processed
+ * @returns Promise that resolves when the stream is complete
+ */
+export const uploadCandidatesBatchStream = async (
+  jobId: string,
+  candidates: CandidateEntry[],
+  onCandidate: (candidate: CandidateBatchItemResponse) => void,
+  onError: (error: FailedFileResponse | { message: string }) => void,
+  onComplete: (summary: { total: number; successful: number; failed: number }) => void
+): Promise<void> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  // Validate candidate count
+  if (candidates.length === 0) {
+    throw new Error('At least one candidate is required');
+  }
+
+  if (candidates.length > 10) {
+    throw new Error('Maximum 10 candidates allowed');
+  }
+
+  // Validate jobId format
+  const jobIdPattern = /^JD-\d{6}$/;
+  if (!jobIdPattern.test(jobId)) {
+    throw new Error('Invalid job ID format. Expected format: JD-XXXXXX (e.g., JD-783901)');
+  }
+
+  // Validate file types and required fields
+  const allowedExtensions = ['pdf', 'docx', 'doc'];
+  const invalidFiles: string[] = [];
+  const missingFields: string[] = [];
+  
+  candidates.forEach((candidate, index) => {
+    if (!candidate.name || candidate.name.trim() === '') {
+      missingFields.push(`Candidate ${index + 1}: Name is required`);
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!candidate.email || !emailRegex.test(candidate.email)) {
+      missingFields.push(`Candidate ${index + 1}: Valid email is required`);
+    }
+    
+    if (!candidate.file) {
+      missingFields.push(`Candidate ${index + 1}: Resume file is required`);
+    } else {
+      const extension = candidate.file.name.toLowerCase().split('.').pop() || '';
+      if (!allowedExtensions.includes(extension)) {
+        invalidFiles.push(candidate.file.name);
+      }
+    }
+  });
+
+  if (missingFields.length > 0) {
+    throw new Error(`Missing required fields: ${missingFields.join('; ')}`);
+  }
+
+  if (invalidFiles.length > 0) {
+    throw new Error(`Invalid file types. Only PDF, DOCX, and DOC are allowed. Invalid files: ${invalidFiles.join(', ')}`);
+  }
+
+  // Create FormData
+  const formData = new FormData();
+  const candidatesData = candidates.map(candidate => ({
+    name: candidate.name.trim(),
+    email: candidate.email.trim().toLowerCase()
+  }));
+  
+  formData.append('candidates_data', JSON.stringify(candidatesData));
+  candidates.forEach((candidate) => {
+    formData.append('files', candidate.file);
+  });
+
+  // Use fetch with POST to send form data
+  // Note: We can't use EventSource for POST, so we'll use fetch with ReadableStream
+  const response = await fetch(`${API_BASE_URL}/admin/jobs/${jobId}/candidates/batch-stream`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      // Don't set Content-Type - browser will set it with boundary
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to start upload stream' }));
+    throw new Error(error.detail || error.message || 'Failed to start upload stream');
+  }
+
+  // Read the stream
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Process complete SSE messages (lines ending with \n\n)
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const jsonStr = line.substring(6); // Remove 'data: ' prefix
+            const event: SSEEvent = JSON.parse(jsonStr);
+            
+            switch (event.type) {
+              case 'candidate':
+                onCandidate(event.data as CandidateBatchItemResponse);
+                break;
+              case 'error':
+                onError(event.data as FailedFileResponse | { message: string });
+                break;
+              case 'complete':
+                onComplete(event.data as { total: number; successful: number; failed: number });
+                break;
+            }
+          } catch (parseError) {
+            console.error('Error parsing SSE event:', parseError);
+            onError({ message: 'Failed to parse server response' });
+          }
+        }
+      }
+    }
+    
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const lines = buffer.split('\n\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const jsonStr = line.substring(6);
+            const event: SSEEvent = JSON.parse(jsonStr);
+            
+            switch (event.type) {
+              case 'candidate':
+                onCandidate(event.data as CandidateBatchItemResponse);
+                break;
+              case 'error':
+                onError(event.data as FailedFileResponse | { message: string });
+                break;
+              case 'complete':
+                onComplete(event.data as { total: number; successful: number; failed: number });
+                break;
+            }
+          } catch (parseError) {
+            console.error('Error parsing SSE event:', parseError);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 export interface ResumeCandidateResponse {
   candidate_id: string;
   name: string;

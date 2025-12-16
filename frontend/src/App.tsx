@@ -24,6 +24,7 @@ import TestOverviewPage from './app/Candidate/TestOverviewPage';
 import TestCompletedPage from './app/Candidate/TestCompletedPage';
 import TestReadyPage from './app/Candidate/TestReadyPage';
 import AnalysisPage from './app/Candidate/AnalysisPage';
+import { localStorage as storage } from './utils/localStorage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
@@ -45,6 +46,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
       const candidateId = urlParams.get('candidate_id');
       
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         // Save candidate_id to localStorage
         localStorage.setItem('current_candidate_id', candidateId);
         // Save the current URL (including query params) to redirect back after login
@@ -68,6 +71,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
       const urlParams = new URLSearchParams(window.location.search);
       const candidateId = urlParams.get('candidate_id');
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         localStorage.setItem('current_candidate_id', candidateId);
       }
     }
@@ -184,6 +189,8 @@ const RootRoute = () => {
     const candidateId = urlParams.get('candidate_id');
     
     if (candidateId) {
+      // Check if candidate_id has changed and flush test data if needed
+      storage.checkAndFlushOnCandidateChange(candidateId);
       // Save candidate_id to localStorage
       localStorage.setItem('current_candidate_id', candidateId);
       // Save the current URL (including query params) to redirect back after login
@@ -206,6 +213,8 @@ const RootRoute = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const candidateId = urlParams.get('candidate_id');
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         localStorage.setItem('current_candidate_id', candidateId);
       }
     }

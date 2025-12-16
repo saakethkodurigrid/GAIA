@@ -16,7 +16,7 @@ from models.coding_question_bank import CodingQuestionBank
 from models.interview_coding import InterviewCoding
 from services.interview_service import InterviewService
 from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
-from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse, InterviewSummaryResponse
+from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse, GetScheduledDateResponse, InterviewSummaryResponse
 from schemas.admin import AssignedQuestionResponse
 from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse, FinalizeCodingSectionResponse
 from schemas.test_session import (
@@ -31,7 +31,7 @@ from schemas.test_session import (
 from services.question_assignment_service import QuestionAssignmentService
 from services.test_data_loader_service import TestDataLoaderService
 from services.redis_sync_service import RedisSyncService
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from utils.section_timings import start_section_timing, complete_section_timing
 from core.scheduler_manager import start_scheduler_jobs, stop_scheduler_jobs_if_no_active_tests
 
@@ -448,6 +448,84 @@ async def schedule_test(
         raise
     except Exception as e:
         logger.error(f"Unexpected error in schedule_test: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/{candidate_id}/scheduled-date", response_model=GetScheduledDateResponse)
+async def get_scheduled_date(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the scheduled date for a candidate.
+    
+    Returns the scheduled_date stored in the database for the candidate.
+    The date is returned in ISO format with timezone information preserved.
+    
+    Args:
+        candidate_id: Candidate UUID
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        GetScheduledDateResponse with scheduled_date in ISO format
+        
+    Raises:
+        HTTPException:
+            - 403: If candidate_id doesn't match authenticated candidate
+            - 404: If candidate not found
+    """
+    try:
+        # Verify that the candidate_id matches the authenticated candidate
+        if current_candidate.candidate_id != candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Candidate ID does not match authenticated candidate."
+            )
+        
+        # Fetch candidate from database to get the latest scheduled_date
+        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found"
+            )
+        
+        # Return scheduled_date in ISO format with IST timezone
+        if candidate.scheduled_date:
+            # scheduled_date is stored as naive IST time (not UTC)
+            # If timezone-naive, treat it as IST time
+            ist_timezone = timezone(timedelta(hours=5, minutes=30))
+            if candidate.scheduled_date.tzinfo is None:
+                # Treat naive datetime as IST time
+                ist_datetime = candidate.scheduled_date.replace(tzinfo=ist_timezone)
+            else:
+                # If timezone-aware, convert to IST
+                ist_datetime = candidate.scheduled_date.astimezone(ist_timezone)
+            
+            # Return in ISO format with IST timezone
+            scheduled_date_iso = ist_datetime.isoformat()
+            return GetScheduledDateResponse(
+                success=True,
+                message="Scheduled date retrieved successfully",
+                scheduled_date=scheduled_date_iso
+            )
+        else:
+            return GetScheduledDateResponse(
+                success=True,
+                message="No scheduled date found for this candidate",
+                scheduled_date=None
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in get_scheduled_date: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

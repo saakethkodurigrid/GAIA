@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { getGoogleAuthURL } from '../api/auth.api';
 import type { AuthContextType, AuthResponse } from '../types';
+import { localStorage as storage } from '../utils/localStorage';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -107,6 +108,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     console.log('Login data from backend:', authResponse);
     setIsAuthenticated(authResponse.success);
     if (authResponse.success) {
+      // Check if candidate_id has changed and flush test data if needed
+      if (authResponse.candidate_id) {
+        storage.checkAndFlushOnCandidateChange(authResponse.candidate_id);
+        // Store candidate_id in localStorage
+        localStorage.setItem('current_candidate_id', authResponse.candidate_id);
+      }
+      
       setUser({
         email: authResponse.email,
         name: authResponse.name,
