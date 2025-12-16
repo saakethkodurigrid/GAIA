@@ -12,6 +12,8 @@ import { useCodingSession } from '../../hooks/useCodingSession';
 import { localStorage as storage } from '../../utils/localStorage';
 import { finalizeCodingSection } from '../../api/coding.api';
 import { useAuth } from '../../context/AuthContext';
+import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
+import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 
 const CodingTestPageContent = () => {
   const { formatTime, timeRemaining, isLoading, currentProblem, runCode, runAllTestCases, isRunning, problems, code, submitAnswer, submittedQuestions, findNextUnsubmittedQuestion } = useCoding();
@@ -102,11 +104,16 @@ const CodingTestPageContent = () => {
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isFullscreenExited, setIsFullscreenExited] = useState(false);
-  const wasFullscreenRef = useRef(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const pendingNavigationRef = useRef<{ nextIndex: number | null; showSectionModal: boolean } | null>(null);
+
+  // Monitor fullscreen exit with 5 second countdown
+  const { showViolation, countdown, handleRedirect } = useFullscreenWarning({
+    onFinalAttempt: () => {
+      // This will be called when time runs out
+    },
+  });
 
   // Track section entry time using timer value
   useEffect(() => {
@@ -150,51 +157,6 @@ const CodingTestPageContent = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
-
-  // Monitor fullscreen exit - just disable buttons, no popup
-  useEffect(() => {
-    const checkFullscreen = (): boolean => {
-      const doc = document as Document & {
-        webkitFullscreenElement?: Element | null;
-        mozFullScreenElement?: Element | null;
-        msFullscreenElement?: Element | null;
-      };
-      return !!(
-        document.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-    };
-
-    wasFullscreenRef.current = checkFullscreen();
-
-    const handleFullscreenChange = () => {
-      const isFullscreen = checkFullscreen();
-
-      // If user exits fullscreen, disable navigation
-      if (wasFullscreenRef.current && !isFullscreen) {
-        setIsFullscreenExited(true);
-      } else if (!wasFullscreenRef.current && isFullscreen) {
-        // User returned to fullscreen - re-enable navigation
-        setIsFullscreenExited(false);
-      }
-
-      wasFullscreenRef.current = isFullscreen;
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
-    };
-  }, []);
 
   // Handle resize
   useEffect(() => {
@@ -270,18 +232,15 @@ const CodingTestPageContent = () => {
                 const problem = problems[index];
                 const isSubmitted = !!(problem?.question_uuid && submittedQuestions?.has(problem.question_uuid));
                 const isCurrent = currentProblemIndex === index;
-                const isDisabled = isSubmitted || isFullscreenExited;
                 
                 return (
                   <button
                     key={index}
                     onClick={() => goToProblem(index)}
-                    disabled={isDisabled}
+                    disabled={isSubmitted}
                     className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${
                       isSubmitted
                         ? 'bg-green-50 border-2 border-green-500 text-gray-900 cursor-not-allowed opacity-75'
-                        : isFullscreenExited
-                        ? 'bg-gray-100 border-2 border-gray-400 text-gray-500 cursor-not-allowed opacity-50'
                         : isCurrent
                         ? 'bg-blue-50 border-4 border-blue-600 text-gray-900 shadow-lg ring-2 ring-blue-300 font-bold'
                         : 'bg-amber-50 border-2 border-yellow-500 text-gray-900 hover:bg-amber-100'
@@ -502,7 +461,7 @@ const CodingTestPageContent = () => {
             pendingNavigationRef.current = null;
           }
         }}
-        duration={2000}
+        duration={1000}
       />
 
       {/* Submit Section Modal */}
@@ -522,10 +481,14 @@ const CodingTestPageContent = () => {
           }
           
           // End section timing and calculate duration using current timer value
+          console.log('=== Coding Section Exit ===');
+          console.log(`Timer: ${formatTime(timeRemaining)}`);
           const durationSeconds = storage.endSectionTiming('coding', timeRemaining);
           if (durationSeconds !== null) {
-            console.log(`Coding section completed in ${durationSeconds} seconds`);
+            const durationMinutes = Math.round((durationSeconds / 60) * 100) / 100;
+            console.log(`Duration: ${durationMinutes} minutes`);
           }
+          console.log('===========================');
           
           // Call API to finalize coding section and generate analysis (fire-and-forget)
           console.log('Finalizing coding section...');
@@ -559,7 +522,12 @@ const CodingTestPageContent = () => {
         confirmButtonColor="yellow"
       />
 
-
+      {/* Fullscreen Violation Modal */}
+      <FullscreenViolationModal
+        isOpen={showViolation}
+        countdown={countdown}
+        onRedirect={handleRedirect}
+      />
     </div>
   );
 };

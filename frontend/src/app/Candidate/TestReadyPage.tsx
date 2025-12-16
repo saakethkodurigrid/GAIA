@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import { localStorage as storage } from '../../utils/localStorage';
+import { clearFullscreenExitCount } from '../../hooks/useFullscreenWarning';
 
 const TestReadyPage = () => {
   const { user, logout } = useAuth();
@@ -22,8 +24,34 @@ const TestReadyPage = () => {
   };
 
   const handleStartAssessment = () => {
+    // Always reset timer to 180 minutes when user clicks "Start Assessment"
+    // Clear any existing timer first
+    console.log('User clicked Start Assessment - Initializing fresh timer...');
+    storage.clearTimer();
+    
+    // Clear section timings first for new test session
+    console.log('Clearing section timings for new test session...');
+    storage.clearAllSectionTimings();
+    console.log('Section timings reset to 0. Starting fresh test session.');
+    
+    // Initialize timer to 180 minutes (10800 seconds) - timer starts NOW
+    console.log('Initializing timer to 180 minutes (10800 seconds) starting now...');
+    storage.setTimerEndTime(10800); // 180 minutes = 10800 seconds, timer starts counting down immediately
+    console.log('Timer initialized: Starting with 10800 seconds (180 minutes) at', new Date().toISOString());
+    
+    // Reset violation counts for new test session
+    console.log('Resetting violation counts for new test session...');
+    clearFullscreenExitCount();
+    window.localStorage.removeItem('fullscreenWarning');
+    window.localStorage.removeItem('cheating_detection_events');
+    console.log('Violation counts reset to 0. Starting fresh test session.');
+    
+    // Set a flag and timestamp to indicate timer was just initialized (so TestOverviewPage doesn't override it)
+    window.localStorage.setItem('timer_just_initialized', 'true');
+    window.localStorage.setItem('timer_initialized_at', Date.now().toString());
+    
     // Navigate to test overview page
-    // Timer will be initialized on test-overview page
+    // Timer is now initialized and counting down
     navigate('/test-overview');
   };
 
@@ -36,11 +64,11 @@ const TestReadyPage = () => {
       <div className="flex-1 flex overflow-hidden w-full" style={{ backgroundColor: '#FFFBF0' }}>
         {/* Left Panel */}
         <div className="w-96 border-r-2 border-black flex flex-col p-6" style={{ backgroundColor: '#FFFBF0' }}>
-          <div className="flex-1 flex flex-col justify-center">
+          <div className="flex-1 flex flex-col justify-center items-center text-center">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">{user?.jobRole || 'Technical'} Interview</h2>
             <div>
-              <p className="text-sm text-gray-600 mb-1">Test duration</p>
-              <p className="text-base font-semibold text-gray-900">180 mins</p>
+              <p className="text-lg font-bold text-gray-600 mb-1">Test duration</p>
+              <p className="text-xl font-bold text-gray-900">180 mins</p>
             </div>
           </div>
         </div>

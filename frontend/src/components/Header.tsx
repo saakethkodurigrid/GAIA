@@ -51,7 +51,7 @@ const Header = ({ showUserInfo = false, showLogout = false, showTechInterviewLog
             {showTechInterviewLogo && (
               <div className="flex items-center gap-2">
                 <div className="text-2xl font-bold text-yellow-500">&lt;/&gt;</div>
-                <span className="text-xl font-semibold text-gray-900">TechInterview</span>
+                <span className="text-2xl font-bold" style={{ color: '#0069B4' }}>GAIA</span>
               </div>
             )}
           </div>

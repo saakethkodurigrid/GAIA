@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useVideo } from '../../context/VideoContext';
 import Header from '../../components/Header';
@@ -10,6 +11,7 @@ const STORAGE_KEY = 'cheating_detection_events';
 const TestCompletedPage = () => {
   const { user, logout } = useAuth();
   const { setVideoStream } = useVideo();
+  const navigate = useNavigate();
 
   // Load and log cheating detection events
   useEffect(() => {
@@ -93,8 +95,14 @@ const TestCompletedPage = () => {
   };
 
   const handleClose = () => {
-    // Logout and redirect to login page
-    logout();
+    // Clear any error states before navigating
+    localStorage.removeItem('login_error');
+    
+    // Update auth context state and clear localStorage (skip redirect)
+    logout(true);
+    
+    // Navigate to login page using React Router (no page reload, no error flash)
+    navigate('/auth/login', { replace: true });
   };
 
   return (

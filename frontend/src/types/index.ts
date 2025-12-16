@@ -169,6 +169,6 @@ export interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   login: () => Promise<void>;
-  logout: () => void;
+  logout: (skipRedirect?: boolean) => void;
   clearError: () => void;
 }

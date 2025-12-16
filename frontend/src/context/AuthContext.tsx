@@ -81,22 +81,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((skipRedirect = false) => {
     setIsAuthenticated(false);
     setUser(null);
+    setError(null); // Clear any error state
     localStorage.removeItem('oauth_state');
     localStorage.removeItem('auth_token');
     localStorage.removeItem('google_id_token');
     localStorage.removeItem('user_data');
     localStorage.removeItem('redirect_after_login');
     localStorage.removeItem('current_candidate_id');
+    localStorage.removeItem('login_error'); // Clear login error if any
     // Clear all test-related data
     localStorage.removeItem('mcq_answers');
     localStorage.removeItem('submitted_sections');
     // Clear any other test-related localStorage items
     // Note: This ensures a clean slate when user logs out
-    // Redirect to login page after logout
-    window.location.href = '/auth/login';
+    // Redirect to login page after logout (unless skipRedirect is true)
+    if (!skipRedirect) {
+      window.location.href = '/auth/login';
+    }
   }, []);
 
   const clearError = useCallback(() => {

@@ -129,7 +129,31 @@ const TestOverviewPage = () => {
   }, [user?.candidateId]);
 
   // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
+  // BUT only if timer wasn't just initialized by TestReadyPage
   useEffect(() => {
+    // Check if timer was just initialized by TestReadyPage
+    const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+    const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+    const wasRecentlyInitialized = timerInitializedAt && 
+      (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+    
+    if (timerJustInitialized || wasRecentlyInitialized) {
+      // Timer was just set by TestReadyPage, use it and remove the flag
+      console.log('Timer was just initialized by TestReadyPage, using existing timer...');
+      const existingTime = storage.getRemainingTime();
+      if (existingTime !== null && existingTime > 0) {
+        setTimeRemaining(existingTime);
+        setIsTimerInitialized(true);
+        console.log('Using timer from TestReadyPage:', existingTime, 'seconds remaining');
+      }
+      if (timerJustInitialized) {
+        localStorage.removeItem('timer_just_initialized');
+        localStorage.removeItem('timer_initialized_at');
+      }
+      return; // Don't override the timer
+    }
+    
+    // Only initialize if timer doesn't exist and wasn't just set
     const existingTime = storage.getRemainingTime();
     if (existingTime === null || existingTime <= 0) {
       // Clear section timings first for new test session
@@ -150,6 +174,10 @@ const TestOverviewPage = () => {
       localStorage.removeItem('fullscreenWarning');
       localStorage.removeItem('cheating_detection_events');
       console.log('Violation counts reset to 0. Starting fresh test session.');
+    } else {
+      // Timer exists, use it
+      setTimeRemaining(existingTime);
+      setIsTimerInitialized(true);
     }
   }, []); // Run once on mount
 
@@ -162,19 +190,57 @@ const TestOverviewPage = () => {
         const token = window.localStorage.getItem('auth_token') || window.localStorage.getItem('google_id_token');
         if (!token) return;
 
+        // Check if timer was just initialized - if so, don't override with backend
+        const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+        const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+        const localTime = storage.getRemainingTime();
+        
+        // Check if timer was initialized within the last 60 seconds (prevent backend override)
+        const wasRecentlyInitialized = timerInitializedAt && 
+          (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+
         const status = await getTestStatus(user.candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
-          setTimeRemaining(status.remaining_seconds);
-          // Update localStorage with backend time
-          storage.setTimerEndTime(status.remaining_seconds);
-          setIsTimerInitialized(true);
+          // If timer was just initialized or was initialized recently, don't override with backend time
+          // Use the local timer that was just set
+          if ((timerJustInitialized || wasRecentlyInitialized) && localTime !== null && localTime > 0) {
+            console.log('Timer was just initialized (or initialized recently), keeping local timer:', localTime, 'seconds (not overriding with backend:', status.remaining_seconds, 'seconds)');
+            setTimeRemaining(localTime);
+            setIsTimerInitialized(true);
+            if (timerJustInitialized) {
+              localStorage.removeItem('timer_just_initialized');
+              localStorage.removeItem('timer_initialized_at');
+            }
+          } else if (localTime !== null && localTime > 0 && status.remaining_seconds < localTime - 60) {
+            // Safeguard: If backend time is significantly less than local time (more than 60 seconds difference),
+            // keep the local time to prevent accidental reduction
+            // This handles cases where backend might have stale data
+            console.log('Backend timer is significantly less than local timer. Keeping local timer:', localTime, 'seconds (backend:', status.remaining_seconds, 'seconds)');
+            setTimeRemaining(localTime);
+            setIsTimerInitialized(true);
+          } else {
+            // Normal sync - use backend time
+            setTimeRemaining(status.remaining_seconds);
+            // Update localStorage with backend time
+            storage.setTimerEndTime(status.remaining_seconds);
+            setIsTimerInitialized(true);
+          }
         } else {
           // If backend doesn't have active timer, check localStorage
+          const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+          const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+          const wasRecentlyInitialized = timerInitializedAt && 
+            (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
           const localTime = storage.getRemainingTime();
           if (localTime !== null && localTime > 0) {
             setTimeRemaining(localTime);
-          } else {
-            // If no timer exists locally either, reset to 180 minutes for new test session
+            if (timerJustInitialized) {
+              console.log('Using timer from TestReadyPage (backend sync):', localTime, 'seconds remaining');
+              localStorage.removeItem('timer_just_initialized');
+              localStorage.removeItem('timer_initialized_at');
+            }
+          } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+            // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
             console.log('No timer found in backend or localStorage, resetting to 180 minutes...');
             storage.setTimerEndTime(10800);
             setTimeRemaining(10800);
@@ -185,11 +251,20 @@ const TestOverviewPage = () => {
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
         // Fallback to localStorage if backend sync fails
+        const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+        const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+        const wasRecentlyInitialized = timerInitializedAt && 
+          (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
         const localTime = storage.getRemainingTime();
         if (localTime !== null && localTime > 0) {
           setTimeRemaining(localTime);
-        } else {
-          // If no timer exists, reset to 180 minutes for new test session
+          if (timerJustInitialized) {
+            console.log('Using timer from TestReadyPage (error fallback):', localTime, 'seconds remaining');
+            localStorage.removeItem('timer_just_initialized');
+            localStorage.removeItem('timer_initialized_at');
+          }
+        } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+          // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
           console.log('No timer found after sync error, resetting to 180 minutes...');
           storage.setTimerEndTime(10800);
           setTimeRemaining(10800);
@@ -200,12 +275,24 @@ const TestOverviewPage = () => {
     };
 
     // First, try to use localStorage immediately for faster UI
+    // Check if timer was just initialized by TestReadyPage
+    const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+    const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+    const wasRecentlyInitialized = timerInitializedAt && 
+      (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+    
     const localTime = storage.getRemainingTime();
     if (localTime !== null && localTime > 0) {
       setTimeRemaining(localTime);
       setIsTimerInitialized(true);
-    } else {
-      // If no timer exists, reset to 180 minutes for new test session
+      if (timerJustInitialized) {
+        console.log('Using timer from TestReadyPage:', localTime, 'seconds remaining');
+        localStorage.removeItem('timer_just_initialized');
+        localStorage.removeItem('timer_initialized_at');
+      }
+    } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+      // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
+      // If timer was just initialized, wait for it to be set
       console.log('No timer found in localStorage, resetting to 180 minutes...');
       storage.setTimerEndTime(10800);
       setTimeRemaining(10800);
