@@ -235,6 +235,10 @@ const Recruiter = () => {
   };
 
   const handleCloseModal = () => {
+    // Prevent closing modal while saving
+    if (isLoading) {
+      return;
+    }
     setIsModalOpen(false);
     setError(null);
     setSuccessMessage(null);
@@ -258,6 +262,11 @@ const Recruiter = () => {
   };
 
   const handleSave = async () => {
+    // Prevent multiple simultaneous saves
+    if (isLoading) {
+      return;
+    }
+
     // Validate form data
     if (!formData.jobRole.trim()) {
       setError('Job Role is required');
@@ -298,17 +307,18 @@ const Recruiter = () => {
           setJobDescriptions(mappedJobs);
           console.log(mappedJobs);
         }
-        // Close modal after 1.5 seconds
+        // Close modal immediately after successful creation
         setTimeout(() => {
+          setIsLoading(false);
           handleCloseModal();
-        }, 1500);
+        }, 500);
       } else {
         setError(response.message || 'Failed to create job');
+        setIsLoading(false);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create job. Please try again.';
       setError(errorMessage);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -520,12 +530,14 @@ const Recruiter = () => {
                           <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(interview.status)} mb-3`}>
                             {interview.status}
                           </span>
-                          <div className="flex items-center gap-1 text-sm text-gray-600">
-                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>{interview.time}</span>
-                          </div>
+                          {interview.status !== 'Completed' && (
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>{interview.time}</span>
+                            </div>
+                          )}
                           {interview.status === 'Completed' && (
                             <button className="text-blue-600 hover:text-blue-800 mt-1">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -549,8 +561,14 @@ const Recruiter = () => {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={isLoading ? undefined : handleCloseModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">Create Job</h2>
@@ -582,7 +600,8 @@ const Recruiter = () => {
                   name="jobRole"
                   value={formData.jobRole}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
                   placeholder="Enter job role"
                 />
               </div>
@@ -596,7 +615,8 @@ const Recruiter = () => {
                   name="grade"
                   value={formData.grade}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent appearance-none bg-white bg-[url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27currentColor%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3e%3cpolyline points=%276 9 12 15 18 9%27%3e%3c/polyline%3e%3c/svg%3e')] bg-[length:20px] bg-[right_0.5rem_center] bg-no-repeat pr-10"
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent appearance-none bg-white bg-[url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27currentColor%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3e%3cpolyline points=%276 9 12 15 18 9%27%3e%3c/polyline%3e%3c/svg%3e')] bg-[length:20px] bg-[right_0.5rem_center] bg-no-repeat pr-10 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
                 >
                   <option value="">Select grade</option>
                   <option value="T1">T1</option>
@@ -616,7 +636,8 @@ const Recruiter = () => {
                   value={formData.jobDescription}
                   onChange={handleInputChange}
                   rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent resize-none"
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
                   placeholder="Enter job description"
                 />
               </div>
@@ -642,7 +663,7 @@ const Recruiter = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Saving...
+                    Creating JD...
                   </>
                 ) : (
                   'Save'

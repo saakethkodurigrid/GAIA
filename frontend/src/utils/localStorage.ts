@@ -96,7 +96,9 @@ export const localStorage = {
       timing.durationMinutes = durationMinutes;
       this.set(key, JSON.stringify(timing));
       
-      return durationMinutes;
+      // return durationMinutes;
+      return durationSeconds;
+
     } catch (error) {
       console.error(`Error ending section timing for ${sectionName}:`, error);
       return null;
@@ -151,6 +153,36 @@ export const localStorage = {
     this.remove('section_timing_coding');
     this.remove('section_timing_systemDesign');
     this.remove('section_timings_final');
+  },
+
+  // Check if candidate_id has changed and flush all test data if it has
+  // Preserves auth data (tokens, user_data) but clears all test-related data
+  checkAndFlushOnCandidateChange: function(newCandidateId: string | null): boolean {
+    const storedCandidateId = this.get('current_candidate_id');
+    
+    // If no new candidate ID provided, don't flush
+    if (!newCandidateId) {
+      return false;
+    }
+    
+    // If candidate ID has changed, flush all test-related data
+    if (storedCandidateId && storedCandidateId !== newCandidateId) {
+      console.log(`[localStorage] Candidate ID changed from ${storedCandidateId} to ${newCandidateId}. Flushing all test data...`);
+      
+      // Clear all test-related localStorage (preserves auth data)
+      this.clearAllSectionTimings();
+      this.clearTimer();
+      this.remove('fullscreenExitCount');
+      this.remove('fullscreenWarning');
+      this.remove('cheating_detection_events');
+      this.remove('mcq_answers');
+      this.remove('submitted_sections');
+      
+      console.log('[localStorage] All test data flushed for new candidate.');
+      return true; // Indicates data was flushed
+    }
+    
+    return false; // No flush occurred
   }
 };
 

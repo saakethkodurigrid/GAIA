@@ -90,9 +90,9 @@ const MCQPageContent = () => {
     // End section timing and calculate duration using current timer value
     console.log('=== MCQ Section Exit ===');
     console.log(`Timer: ${formatTime(timeRemaining)}`);
-    const durationMinutes = storage.endSectionTiming('mcq', timeRemaining);
-    if (durationMinutes !== null) {
-      console.log(`Duration: ${durationMinutes} minutes`);
+    const durationSeconds = storage.endSectionTiming('mcq', timeRemaining);
+    if (durationSeconds !== null) {
+      console.log(`Duration: ${durationSeconds} seconds`);
     }
     console.log('=======================');
     

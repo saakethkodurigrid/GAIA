@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SystemDesignProvider, useSystemDesign } from '../../context/SystemDesignContext';
 import { useVideo } from '../../context/VideoContext';
 import DesignHeader from '../../components/SystemDesign/DesignHeader';
@@ -9,11 +9,13 @@ import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import { localStorage as storage } from '../../utils/localStorage';
 const SystemDesignPageContent = () => {
   const { problem, isLoading, submitSolution, timeRemaining } = useSystemDesign();
   const { videoStream, requestVideoStream } = useVideo();
   const navigate = useNavigate();
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Format time helper
   const formatTime = (seconds: number) => {
@@ -56,7 +58,11 @@ const SystemDesignPageContent = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount - we intentionally don't want to restart timing when timeRemaining changes
 
-  const handleSubmit = async () => {
+  const handleSubmitClick = () => {
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmSubmit = async () => {
     // Mark System Design section as submitted in localStorage immediately
     try {
       const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
@@ -71,13 +77,14 @@ const SystemDesignPageContent = () => {
     // End section timing and calculate duration using current timer value
     console.log('=== System Design Section Exit ===');
     console.log(`Timer: ${formatTime(timeRemaining)}`);
-    const durationMinutes = storage.endSectionTiming('systemDesign', timeRemaining);
-    if (durationMinutes !== null) {
-      console.log(`Duration: ${durationMinutes} minutes`);
+    const durationSeconds = storage.endSectionTiming('systemDesign', timeRemaining);
+    if (durationSeconds !== null) {
+      console.log(`Duration: ${durationSeconds} seconds`);
     }
     console.log('===================================');
     
     // Navigate immediately to test overview without waiting for evaluation
+    setShowConfirmDialog(false);
     navigate('/test-overview');
     
     // Submit solution in the background (fire-and-forget)
@@ -102,7 +109,7 @@ const SystemDesignPageContent = () => {
   return (
     <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
       {/* Header */}
-      <DesignHeader onSubmit={handleSubmit} />
+      <DesignHeader onSubmit={handleSubmitClick} />
       {/* Main Content */}
       <div className="flex flex-1 w-full max-w-full h-0 m-0 p-0 overflow-hidden relative">
         {/* Left Panel (70%) */}
@@ -145,6 +152,16 @@ const SystemDesignPageContent = () => {
       <VideoPreview
         videoStream={videoStream}
         onStreamRequest={requestVideoStream}
+      />
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmDialog}
+        onClose={() => setShowConfirmDialog(false)}
+        onConfirm={handleConfirmSubmit}
+        title="Submit Section"
+        message="Are you ready to submit your solution? Once submitted, you will not be able to make any changes."
+        confirmButtonText="Submit"
+        confirmButtonColor="yellow"
       />
     </div>
   );

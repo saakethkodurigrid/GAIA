@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import type { AuthResponse, AuthContextType, UserType, CandidateStatus } from '../../types';
+import { localStorage as storage } from '../../utils/localStorage';
 
 interface AuthContextWithSetAuthState {
   setAuthState?: (authResponse: AuthResponse) => void;
@@ -159,6 +160,8 @@ const CallbackPage = () => {
                   const urlParams = new URLSearchParams(savedRedirect.split('?')[1] || '');
                   const candidateId = urlParams.get('candidate_id');
                   if (candidateId) {
+                    // Check if candidate_id has changed and flush test data if needed
+                    storage.checkAndFlushOnCandidateChange(candidateId);
                     localStorage.setItem('current_candidate_id', candidateId);
                     console.log('CallbackPage: Stored candidate_id in localStorage:', candidateId);
                   }

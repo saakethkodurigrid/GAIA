@@ -168,9 +168,8 @@ const TestPermissionsPage = () => {
       console.error('Error clearing fullscreen warning state:', error);
     }
     
-    // Navigate directly to test overview page
-    // Timer will be initialized on test-overview page
-    navigate('/test-overview');
+    // Navigate directly to test ready page
+    navigate('/test/ready');
   };
 
   const handleLogout = () => {

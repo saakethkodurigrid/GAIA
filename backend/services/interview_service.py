@@ -4,7 +4,7 @@ Interview service for managing interviews.
 import logging
 import asyncio
 import threading
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
@@ -842,17 +842,41 @@ class InterviewService:
                 - full_screen_exits: int
                 - tab_change: int
         """
+        if not integrity_data:
+            logger.warning(f"No integrity data provided for candidate {candidate_id}, skipping cheat_metrics update")
+            return
+        
         try:
-            if not integrity_data:
-                logger.warning(f"No integrity data provided for candidate {candidate_id}, skipping cheat_metrics update")
-                return
-            
             # Transform integrity data to cheat_metrics format
+            # Handle both Pydantic model and dict formats
+            if hasattr(integrity_data, 'multiple_face'):
+                multiple_face = integrity_data.multiple_face
+            elif isinstance(integrity_data, dict):
+                multiple_face = integrity_data.get('multiple_face', 'no')
+            else:
+                multiple_face = 'no'
+            
+            if hasattr(integrity_data, 'full_screen_exits'):
+                full_screen_exits = integrity_data.full_screen_exits
+            elif isinstance(integrity_data, dict):
+                full_screen_exits = integrity_data.get('full_screen_exits', 0)
+            else:
+                full_screen_exits = 0
+            
+            if hasattr(integrity_data, 'tab_change'):
+                tab_change = integrity_data.tab_change
+            elif isinstance(integrity_data, dict):
+                tab_change = integrity_data.get('tab_change', 0)
+            else:
+                tab_change = 0
+            
             cheat_metrics = {
-                "multiple_face": integrity_data.multiple_face if hasattr(integrity_data, 'multiple_face') else "no",
-                "full_screen_exits": integrity_data.full_screen_exits if hasattr(integrity_data, 'full_screen_exits') else 0,
-                "tab_change": integrity_data.tab_change if hasattr(integrity_data, 'tab_change') else 0
+                "multiple_face": multiple_face,
+                "full_screen_exits": full_screen_exits,
+                "tab_change": tab_change
             }
+            
+            logger.info(f"[INTERVIEW_ANALYSIS] Updating cheat_metrics for candidate {candidate_id}: {cheat_metrics}")
             
             # Get or create interview_analysis record
             interview_analysis = self.db.query(InterviewAnalysisTable).filter(
@@ -872,13 +896,17 @@ class InterviewService:
                 self.db.add(interview_analysis)
                 logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record with cheat_metrics for candidate {candidate_id}")
             
+            # Flush to ensure the changes are in the session (but don't commit - let caller handle it)
+            self.db.flush()
+            
             # Note: Don't commit here - let the calling method handle the transaction
             # This allows cheat_metrics to be part of the same transaction as test completion
             
         except Exception as e:
             logger.error(f"Error updating cheat metrics for candidate {candidate_id}: {str(e)}", exc_info=True)
-            # Don't raise - let the calling method handle it (non-critical update)
-            # Just log the error and continue
+            # Re-raise the exception so the caller knows it failed
+            # The caller can decide whether to fail the entire operation or continue
+            raise
     
     async def generate_and_save_interview_summary(self, candidate_id: str) -> None:
         """
@@ -1281,8 +1309,20 @@ class InterviewService:
             
             # Allow scheduling for candidates in any status (removed status check)
             
+            # Convert scheduled_date to IST naive datetime for storage
+            # The incoming datetime is timezone-aware (e.g., 2025-12-16T10:00:00+05:30)
+            # We need to convert it to IST timezone and make it naive so it stores correctly
+            scheduled_date_to_store = request.scheduled_date
+            if scheduled_date_to_store.tzinfo is not None:
+                # Convert to IST timezone (UTC+5:30)
+                ist_timezone = timezone(timedelta(hours=5, minutes=30))
+                # Convert to IST
+                ist_datetime = scheduled_date_to_store.astimezone(ist_timezone)
+                # Make it naive (remove timezone) so it stores as IST time directly
+                scheduled_date_to_store = ist_datetime.replace(tzinfo=None)
+            
             # Update candidate's scheduled_date and status (SCHEDULE-BASED: uses request.scheduled_date)
-            candidate.scheduled_date = request.scheduled_date
+            candidate.scheduled_date = scheduled_date_to_store
             candidate.status = 'scheduled'
             
             # Commit the schedule update first
@@ -1332,15 +1372,19 @@ class InterviewService:
                 # Don't fail scheduling if email fails
                 logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
             
-            # Build response message
-            base_message = f"Test scheduled successfully for {request.scheduled_date.isoformat()}"
+            # Build response message - format stored IST datetime with IST timezone for display
+            ist_timezone = timezone(timedelta(hours=5, minutes=30))
+            stored_datetime_ist = scheduled_date_to_store.replace(tzinfo=ist_timezone)
+            scheduled_date_iso = stored_datetime_ist.isoformat()
+            
+            base_message = f"Test scheduled successfully for {scheduled_date_iso}"
             if error_messages:
                 base_message += f". Warnings: {'; '.join(error_messages)}"
             
             return ScheduleTestResponse(
                 success=True,
                 message=base_message,
-                scheduled_date=request.scheduled_date.isoformat()
+                scheduled_date=scheduled_date_iso
             )
             
         except Exception as e:
@@ -1464,11 +1508,11 @@ class InterviewService:
         Save test schedule for a candidate and assign system design question, coding questions, and generate MCQ questions.
         
         This is a wrapper that calls the appropriate function based on the flow you want to use.
-        Currently set to use IMMEDIATE START FLOW (scheduled_date set when test starts).
+        Currently set to use SCHEDULE-BASED FLOW (scheduled_date set during scheduling).
         
         To switch between flows, change the function call below:
-        - save_test_schedule_immediate_start: scheduled_date set when test starts (current)
-        - save_test_schedule_with_scheduled_date: scheduled_date set during scheduling (commented out)
+        - save_test_schedule_with_scheduled_date: scheduled_date set during scheduling (current)
+        - save_test_schedule_immediate_start: scheduled_date set when test starts (commented out)
         
         Args:
             candidate_id: UUID of the candidate
@@ -1477,9 +1521,9 @@ class InterviewService:
         Returns:
             ScheduleTestResponse with success status and scheduled_date
         """
-        # IMMEDIATE START FLOW: scheduled_date will be set when test starts
-        return await self.save_test_schedule_immediate_start(candidate_id, request)
+        # SCHEDULE-BASED FLOW: scheduled_date is set during scheduling
+        return await self.save_test_schedule_with_scheduled_date(candidate_id, request)
         
-        # SCHEDULE-BASED FLOW: scheduled_date is set during scheduling (commented out)
-        # return await self.save_test_schedule_with_scheduled_date(candidate_id, request)
+        # IMMEDIATE START FLOW: scheduled_date will be set when test starts (commented out)
+        # return await self.save_test_schedule_immediate_start(candidate_id, request)
 

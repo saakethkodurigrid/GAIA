@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { getGoogleAuthURL } from '../api/auth.api';
 import type { AuthContextType, AuthResponse } from '../types';
+import { localStorage as storage } from '../utils/localStorage';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -80,22 +81,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((skipRedirect = false) => {
     setIsAuthenticated(false);
     setUser(null);
+    setError(null); // Clear any error state
     localStorage.removeItem('oauth_state');
     localStorage.removeItem('auth_token');
     localStorage.removeItem('google_id_token');
     localStorage.removeItem('user_data');
     localStorage.removeItem('redirect_after_login');
     localStorage.removeItem('current_candidate_id');
+    localStorage.removeItem('login_error'); // Clear login error if any
     // Clear all test-related data
     localStorage.removeItem('mcq_answers');
     localStorage.removeItem('submitted_sections');
     // Clear any other test-related localStorage items
     // Note: This ensures a clean slate when user logs out
-    // Redirect to login page after logout
-    window.location.href = '/auth/login';
+    // Redirect to login page after logout (unless skipRedirect is true)
+    if (!skipRedirect) {
+      window.location.href = '/auth/login';
+    }
   }, []);
 
   const clearError = useCallback(() => {
@@ -107,6 +112,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     console.log('Login data from backend:', authResponse);
     setIsAuthenticated(authResponse.success);
     if (authResponse.success) {
+      // Check if candidate_id has changed and flush test data if needed
+      if (authResponse.candidate_id) {
+        storage.checkAndFlushOnCandidateChange(authResponse.candidate_id);
+        // Store candidate_id in localStorage
+        localStorage.setItem('current_candidate_id', authResponse.candidate_id);
+      }
+      
       setUser({
         email: authResponse.email,
         name: authResponse.name,

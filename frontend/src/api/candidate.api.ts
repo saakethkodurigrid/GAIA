@@ -10,13 +10,22 @@ export interface ScheduleTestResponse {
   scheduled_date: string | null; // ISO format datetime string
 }
 
+export interface GetScheduledDateResponse {
+  success: boolean;
+  message: string;
+  scheduled_date: string | null; // ISO format datetime string with timezone
+}
+
 /**
  * Convert a Date object to IST (Indian Standard Time) format
  * Treats the date/time as IST time and formats it with +05:30 offset
  * IST is UTC+5:30
  */
 const toISTString = (date: Date): string => {
-  // Extract date components (treating them as IST time)
+  // The date parameter represents a time selected by the user in their local timezone.
+  // However, we need to interpret the selected time as IST time for storage.
+  // Extract the date/time components and treat them as IST components.
+  
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -24,7 +33,8 @@ const toISTString = (date: Date): string => {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   
-  // Format as ISO string with IST offset (+05:30)
+  // Create an ISO string with IST offset, treating the extracted components as IST time
+  // This ensures that when the user selects "10 AM", it's stored as "10 AM IST"
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+05:30`;
 };
 
@@ -44,18 +54,12 @@ export const scheduleTest = async (
     throw new Error('Candidate ID is required. Please login again.');
   }
   
-  // Log what's being sent to backend
-  console.log('=== API Call: scheduleTest ===');
-  console.log('Input Date object:', scheduledDate);
-  console.log('Input Date ISO:', scheduledDate.toISOString());
-  console.log('Input Date Local:', scheduledDate.toString());
-  console.log('Converted IST string:', scheduledDateISO);
-  console.log('Candidate ID:', candidateId);
-  console.log('Request body:', JSON.stringify({
+  const requestPayload = {
     scheduled_date: scheduledDateISO,
-  }));
-  console.log('API Endpoint:', `${API_BASE_URL}/candidate/schedule-test?candidate_id=${candidateId}`);
-  console.log('================================');
+  };
+  
+  // Log exact payload being sent to backend
+  console.log('Schedule API Payload:', JSON.stringify(requestPayload));
   
   const response = await fetch(
     `${API_BASE_URL}/candidate/schedule-test?candidate_id=${encodeURIComponent(candidateId)}`,
@@ -65,18 +69,72 @@ export const scheduleTest = async (
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        scheduled_date: scheduledDateISO,
-      } as ScheduleTestRequest),
+      body: JSON.stringify(requestPayload as ScheduleTestRequest),
     }
   );
 
+  // Log response
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to schedule test' }));
+    console.log('Schedule API Response:', error);
     throw new Error(error.detail || 'Failed to schedule test');
   }
 
-  return response.json();
+  const responseData = await response.json();
+  console.log('Schedule API Response:', responseData);
+  
+  return responseData;
+};
+
+/**
+ * Get the scheduled date for a candidate
+ * Fetches the scheduled_date directly from the backend to avoid timezone conversion issues
+ */
+export const getScheduledDate = async (
+  candidateId: string,
+  token?: string
+): Promise<GetScheduledDateResponse> => {
+  // Validate candidateId
+  if (!candidateId) {
+    throw new Error('Candidate ID is required. Please access this page using the invitation link.');
+  }
+
+  // Use provided token or get from localStorage
+  const finalToken = token || getAuthToken();
+  if (!finalToken) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  console.log('=== getScheduledDate API Call ===');
+  console.log('URL:', `${API_BASE_URL}/candidate/${candidateId}/scheduled-date`);
+  console.log('Candidate ID:', candidateId);
+  
+  const response = await fetch(
+    `${API_BASE_URL}/candidate/${candidateId}/scheduled-date`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${finalToken}`,
+      },
+    }
+  );
+
+  console.log('Response Status:', response.status);
+  console.log('Response OK:', response.ok);
+  console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to get scheduled date' }));
+    console.error('API Error Response:', error);
+    throw new Error(error.detail || 'Failed to get scheduled date');
+  }
+
+  const responseData = await response.json();
+  console.log('API Success Response:', JSON.stringify(responseData, null, 2));
+  console.log('===============================');
+  
+  return responseData;
 };
 
 // Get auth token from localStorage

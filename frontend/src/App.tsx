@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { VideoProvider } from './context/VideoContext';
 import { CheatingDetectionProvider } from './context/CheatingDetectionContext';
-import HomePage from './app/HomePage';
 import MCQPage from './app/Candidate/MCQPage';
 import CodingTestPage from './app/Candidate/CodingTestPage';
 import SystemDesignPage from './app/Candidate/SystemDesignPage';
@@ -24,6 +23,8 @@ import TestOverviewPage from './app/Candidate/TestOverviewPage';
 import TestCompletedPage from './app/Candidate/TestCompletedPage';
 import TestReadyPage from './app/Candidate/TestReadyPage';
 import AnalysisPage from './app/Candidate/AnalysisPage';
+import NotFoundPage from './pages/NotFoundPage';
+import { localStorage as storage } from './utils/localStorage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
@@ -45,6 +46,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
       const candidateId = urlParams.get('candidate_id');
       
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         // Save candidate_id to localStorage
         localStorage.setItem('current_candidate_id', candidateId);
         // Save the current URL (including query params) to redirect back after login
@@ -68,6 +71,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
       const urlParams = new URLSearchParams(window.location.search);
       const candidateId = urlParams.get('candidate_id');
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         localStorage.setItem('current_candidate_id', candidateId);
       }
     }
@@ -184,6 +189,8 @@ const RootRoute = () => {
     const candidateId = urlParams.get('candidate_id');
     
     if (candidateId) {
+      // Check if candidate_id has changed and flush test data if needed
+      storage.checkAndFlushOnCandidateChange(candidateId);
       // Save candidate_id to localStorage
       localStorage.setItem('current_candidate_id', candidateId);
       // Save the current URL (including query params) to redirect back after login
@@ -206,6 +213,8 @@ const RootRoute = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const candidateId = urlParams.get('candidate_id');
       if (candidateId) {
+        // Check if candidate_id has changed and flush test data if needed
+        storage.checkAndFlushOnCandidateChange(candidateId);
         localStorage.setItem('current_candidate_id', candidateId);
       }
     }
@@ -231,7 +240,6 @@ function AppRoutes() {
       <Route path="/" element={<RootRoute />} />
       
       {/* Protected Routes - require authentication */}
-      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/recruiter" element={<ProtectedRoute><Recruiter /></ProtectedRoute>} />
       <Route path="/recruiter/job-details" element={<ProtectedRoute><JobDetailsPage /></ProtectedRoute>} />
@@ -286,7 +294,7 @@ function AppRoutes() {
         }
       />
       
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

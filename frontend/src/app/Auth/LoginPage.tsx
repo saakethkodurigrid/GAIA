@@ -28,7 +28,7 @@ const LoginPage = () => {
         localStorage.removeItem('redirect_after_login');
         navigate(savedRedirect);
       } else {
-        navigate('/home');
+        navigate('/');
       }
     }
   }, [isAuthenticated, navigate]);
@@ -50,7 +50,8 @@ const LoginPage = () => {
           <div className="text-center mb-12">
             <div className="flex flex-col items-center justify-center mb-4">
               <div className="text-5xl font-bold text-yellow-500 mb-3">&lt;/&gt;</div>
-              <h1 className="text-4xl font-bold" style={{ color: '#0069B4' }}>TechInterview Platform</h1>
+              <h1 className="text-4xl font-bold" style={{ color: '#0069B4' }}>GAIA</h1>
+              <p className="text-xl font-bold mt-2 text-center whitespace-nowrap" style={{ color: '#0069B4' }}>Grid Dynamics' Autonomous Interview Agent</p>
             </div>
           </div>
 

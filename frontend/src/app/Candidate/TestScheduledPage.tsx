@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { startTest } from '../../api/candidate.api';
+import { startTest, getScheduledDate } from '../../api/candidate.api';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import { localStorage as storage } from '../../utils/localStorage';
 
 const TestScheduledPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [timeRemaining, setTimeRemaining] = useState({
     days: 0,
@@ -20,6 +20,7 @@ const TestScheduledPage = () => {
   const [formattedDate, setFormattedDate] = useState<string>('');
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [isLoadingScheduledDate, setIsLoadingScheduledDate] = useState(true);
 
   // Extract and store candidate_id from URL on mount, restore to URL if missing
   useEffect(() => {
@@ -32,6 +33,8 @@ const TestScheduledPage = () => {
     console.log('candidate_id from localStorage:', storedCandidateId || 'NOT FOUND');
     
     if (candidateIdFromUrl) {
+      // Check if candidate_id has changed and flush test data if needed
+      storage.checkAndFlushOnCandidateChange(candidateIdFromUrl);
       // Store candidate_id in localStorage to use throughout the session
       localStorage.setItem('current_candidate_id', candidateIdFromUrl);
       console.log('✓ Stored candidate_id in localStorage:', candidateIdFromUrl);
@@ -48,46 +51,154 @@ const TestScheduledPage = () => {
     console.log('====================================');
   }, [searchParams]);
 
-  // Initialize scheduled date from location state or fetch from user data
+  // Fetch scheduled date from API based on candidate_id
   useEffect(() => {
-    const scheduledDateFromState = location.state?.scheduledDate;
-    
-    if (scheduledDateFromState) {
-      const date = new Date(scheduledDateFromState);
-      setScheduledDate(date);
-      
-      // Format the date for display
-      const formatted = date.toLocaleDateString('en-US', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-      const time = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-      setFormattedDate(`${formatted} at ${time}`);
-    } else {
-      // Fallback: try to get from user data or use default
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() + 1);
-      defaultDate.setHours(14, 0, 0, 0);
-      setScheduledDate(defaultDate);
-      
-      const formatted = defaultDate.toLocaleDateString('en-US', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-      const time = defaultDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-      setFormattedDate(`${formatted} at ${time}`);
-    }
-  }, [location.state]);
+    const fetchScheduledDate = async () => {
+      const candidateId = localStorage.getItem('current_candidate_id');
+      if (!candidateId) {
+        setIsLoadingScheduledDate(false);
+        return;
+      }
+
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+      if (!token) {
+        setIsLoadingScheduledDate(false);
+        return;
+      }
+
+      try {
+        setIsLoadingScheduledDate(true);
+        console.log('=== Fetching Scheduled Date ===');
+        console.log('Candidate ID:', candidateId);
+        const response = await getScheduledDate(candidateId, token);
+        
+        console.log('=== Backend Response ===');
+        console.log('Full Response:', JSON.stringify(response, null, 2));
+        console.log('Response Success:', response.success);
+        console.log('Response Message:', response.message);
+        console.log('Scheduled Date String:', response.scheduled_date);
+        console.log('Scheduled Date Type:', typeof response.scheduled_date);
+        console.log('========================');
+        
+        if (response.success && response.scheduled_date) {
+          // Parse the date string from backend (should be in ISO format with timezone)
+          const scheduledDateStr = response.scheduled_date;
+          console.log('Parsing scheduled date string:', scheduledDateStr);
+          
+          // Extract IST time components from the string to display correctly
+          // The date string format is: YYYY-MM-DDTHH:mm:ss+05:30 or YYYY-MM-DDTHH:mm:ss
+          const match = scheduledDateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+          console.log('Regex Match Result:', match);
+          
+          if (match) {
+            const [, year, month, day, hours, minutes] = match;
+            console.log('Extracted Components:', { year, month, day, hours, minutes });
+            const monthIndex = parseInt(month, 10) - 1;
+            const dayNum = parseInt(day, 10);
+            const hoursNum = parseInt(hours, 10);
+            
+            // Create a date object using IST components for date formatting
+            // Note: We use local timezone for date formatting, but extract time directly from IST string
+            const istDate = new Date(parseInt(year, 10), monthIndex, dayNum);
+            
+            // Format the date part
+            const formatted = istDate.toLocaleDateString('en-US', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            });
+            
+            // Format the time directly from IST components (without timezone conversion)
+            let hours12 = hoursNum;
+            let period = 'AM';
+            if (hoursNum === 0) {
+              hours12 = 12;
+            } else if (hoursNum === 12) {
+              hours12 = 12;
+              period = 'PM';
+            } else if (hoursNum > 12) {
+              hours12 = hoursNum - 12;
+              period = 'PM';
+            }
+            const time = `${hours12}:${minutes.padStart(2, '0')} ${period}`;
+            
+            setFormattedDate(`${formatted} at ${time} IST`);
+            console.log('Formatted Date String:', `${formatted} at ${time} IST`);
+            
+            // Set scheduledDate for countdown timer (parse as UTC to avoid timezone conversion)
+            // Parse the ISO string and create a date object that represents the IST time
+            const date = new Date(scheduledDateStr);
+            console.log('Parsed Date Object:', date);
+            console.log('Date ISO String:', date.toISOString());
+            console.log('Date Local String:', date.toLocaleString());
+            setScheduledDate(date);
+          } else {
+            // Fallback to regular date parsing if regex fails
+            const date = new Date(scheduledDateStr);
+            setScheduledDate(date);
+            
+            const formatted = date.toLocaleDateString('en-US', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            });
+            const time = date.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+            setFormattedDate(`${formatted} at ${time}`);
+          }
+        } else {
+          // No scheduled date found, use fallback
+          console.log('No scheduled date found in response, using fallback');
+          const defaultDate = new Date();
+          defaultDate.setDate(defaultDate.getDate() + 1);
+          defaultDate.setHours(14, 0, 0, 0);
+          setScheduledDate(defaultDate);
+          
+          const formatted = defaultDate.toLocaleDateString('en-US', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          });
+          const time = defaultDate.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          });
+          setFormattedDate(`${formatted} at ${time}`);
+        }
+      } catch (error) {
+        console.error('=== Error Fetching Scheduled Date ===');
+        console.error('Error:', error);
+        console.error('Error Details:', JSON.stringify(error, null, 2));
+        console.error('=====================================');
+        // Fallback on error
+        const defaultDate = new Date();
+        defaultDate.setDate(defaultDate.getDate() + 1);
+        defaultDate.setHours(14, 0, 0, 0);
+        setScheduledDate(defaultDate);
+        
+        const formatted = defaultDate.toLocaleDateString('en-US', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+        const time = defaultDate.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        setFormattedDate(`${formatted} at ${time}`);
+      } finally {
+        setIsLoadingScheduledDate(false);
+        console.log('=== Finished Fetching Scheduled Date ===');
+      }
+    };
+
+    fetchScheduledDate();
+  }, []); // Only run once on mount
 
   // Countdown timer logic
   useEffect(() => {
@@ -245,7 +356,7 @@ const TestScheduledPage = () => {
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-1">Scheduled Time</p>
                 <p className="text-sm font-semibold text-gray-900">
-                  {formattedDate || 'Loading...'}
+                  {isLoadingScheduledDate ? 'Loading...' : (formattedDate || 'Not scheduled')}
                 </p>
               </div>
             </div>

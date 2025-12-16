@@ -88,6 +88,180 @@ class CandidateBatchService:
         
         return pii_data
     
+    async def process_single_candidate(
+        self,
+        job_id: str,
+        candidate_data: Dict[str, Any],
+        recruiter_email: str
+    ) -> Dict[str, Any]:
+        """
+        Process a single candidate and return result immediately.
+        
+        Used for streaming responses where we need to return results one at a time.
+        
+        Args:
+            job_id: Job UUID
+            candidate_data: Dict with keys: name, email, file (UploadFile)
+            recruiter_email: Email of recruiter/admin
+            
+        Returns:
+            Dictionary with either:
+            - success: True, candidate: {...} (on success)
+            - success: False, failed_file: {...} (on failure)
+        """
+        name = candidate_data["name"]
+        email = candidate_data["email"]
+        file = candidate_data["file"]
+        
+        try:
+            # Step 1: Extract text from file
+            original_text = file_extractor.extract_text(file)
+            if not original_text or not original_text.strip():
+                return {
+                    "success": False,
+                    "failed_file": {
+                        "filename": file.filename or "unknown",
+                        "error": "No text extracted from file. File may be corrupted or empty."
+                    }
+                }
+            
+            # Step 2: Scrub PII from resume text
+            scrubbed_resume = pii_scrubber.scrub_pii(original_text)
+            
+            # Validate no PII remains
+            if not pii_scrubber.validate_no_pii(scrubbed_resume):
+                logger.warning(f"PII still detected in scrubbed resume for {file.filename}. Re-scrubbing...")
+                scrubbed_resume = pii_scrubber.scrub_pii(scrubbed_resume)
+            
+            # Get job details
+            job = self.db.query(Job).filter(Job.job_id == job_id).first()
+            if not job:
+                return {
+                    "success": False,
+                    "failed_file": {
+                        "filename": file.filename or "unknown",
+                        "error": f"Job with ID {job_id} not found"
+                    }
+                }
+            
+            # Step 3: Calculate resume score
+            resume_score = await resume_scorer.calculate_score(
+                scrubbed_resume=scrubbed_resume,
+                job_description=job.job_description,
+                grade=job.grade,
+                role_name=job.job_role
+            )
+            
+            # Determine initial status
+            initial_status = 'shortlisted' if resume_score >= settings.RESUME_SCORE_THRESHOLD else 'rejected'
+            
+            # Step 4: Create candidate record
+            candidate_id = str(uuid.uuid4())
+            candidate_service = CandidateService(self.db)
+            candidate_reference_number = candidate_service._generate_candidate_reference_number(candidate_id)
+            
+            # Check for existing assignment
+            existing_assignment = self.db.query(RecruiterAdminCandidate).join(
+                Candidate,
+                RecruiterAdminCandidate.candidate_id == Candidate.candidate_id
+            ).filter(
+                Candidate.email_id == email.lower(),
+                RecruiterAdminCandidate.job_id == job_id
+            ).first()
+            
+            if existing_assignment:
+                return {
+                    "success": False,
+                    "failed_file": {
+                        "filename": file.filename or "unknown",
+                        "error": f"Candidate with email {email} is already assigned to this job"
+                    }
+                }
+            
+            new_candidate = Candidate(
+                candidate_id=candidate_id,
+                candidate_reference_number=candidate_reference_number,
+                name=name,
+                email_id=email.lower(),
+                phone_number=None,
+                location=None,
+                resume=scrubbed_resume,
+                resume_score=resume_score,
+                role_id=0,
+                status=initial_status
+            )
+            
+            self.db.add(new_candidate)
+            
+            # Step 5: Assign candidate to job
+            assignment = RecruiterAdminCandidate(
+                recruiter_admin_email=recruiter_email.lower(),
+                candidate_id=candidate_id,
+                job_id=job_id,
+                assigned_at=date.today()
+            )
+            
+            self.db.add(assignment)
+            self.db.commit()
+            
+            # Step 6: Send email if shortlisted (async, non-blocking)
+            if initial_status == 'shortlisted' and resume_score >= settings.RESUME_SCORE_THRESHOLD:
+                try:
+                    job_role = job.job_role if job else "Technical Interview"
+                    
+                    def send_email_async():
+                        try:
+                            asyncio.run(
+                                email_service.send_scheduling_invitation_email(
+                                    candidate_email=email.lower(),
+                                    candidate_name=name,
+                                    candidate_id=candidate_id,
+                                    job_role=job_role,
+                                    resume_score=resume_score
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in background email thread: {str(e)}")
+                    
+                    email_thread = threading.Thread(target=send_email_async, daemon=True)
+                    email_thread.start()
+                    logger.info(f"Scheduling invitation email queued for candidate {candidate_id}")
+                except Exception as e:
+                    logger.error(f"Failed to queue scheduling invitation email to {email}: {str(e)}")
+            
+            return {
+                "success": True,
+                "candidate": {
+                    "candidate_id": candidate_reference_number,  # Return reference number for consistency
+                    "name": name,
+                    "email_id": email,
+                    "status": initial_status,
+                    "resume_score": round(resume_score, 2),
+                    "processing_status": "success",
+                    "errors": None
+                }
+            }
+            
+        except IntegrityError as e:
+            self.db.rollback()
+            return {
+                "success": False,
+                "failed_file": {
+                    "filename": file.filename or "unknown",
+                    "error": f"Database error: {str(e)}"
+                }
+            }
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error processing candidate {name} ({email}): {str(e)}")
+            return {
+                "success": False,
+                "failed_file": {
+                    "filename": file.filename or "unknown",
+                    "error": f"Processing error: {str(e)}"
+                }
+            }
+    
     async def process_batch_candidates(
         self,
         job_id: str,

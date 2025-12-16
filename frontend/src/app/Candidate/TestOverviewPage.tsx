@@ -27,6 +27,73 @@ const getSubmittedSections = (): { mcq: boolean; coding: boolean; systemDesign: 
   return { mcq: false, coding: false, systemDesign: false };
 };
 
+// Helper function to calculate and format duration from section timing
+// Calculates duration by subtracting end time from start time (both in seconds)
+const formatSectionDuration = (sectionName: 'mcq' | 'coding' | 'systemDesign'): string => {
+  const timing = storage.getSectionTiming(sectionName);
+  
+  // Check if section was attempted
+  if (!timing || timing.startTimeRemaining === null || timing.startTimeRemaining === undefined) {
+    return 'Not attempted';
+  }
+  
+  // Calculate duration in seconds
+  let durationSeconds: number;
+  
+  if (timing.endTimeRemaining !== null && timing.endTimeRemaining !== undefined) {
+    // Section was completed: duration = startTimeRemaining - endTimeRemaining
+    durationSeconds = timing.startTimeRemaining - timing.endTimeRemaining;
+  } else {
+    // Section is still active: use current time remaining
+    const currentTimeRemaining = storage.getRemainingTime();
+    if (currentTimeRemaining === null) {
+      return 'Not attempted';
+    }
+    durationSeconds = timing.startTimeRemaining - currentTimeRemaining;
+  }
+  
+  // Ensure non-negative
+  if (durationSeconds < 0) {
+    return 'Not attempted';
+  }
+  
+  // Convert seconds to minutes and seconds
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = Math.round(durationSeconds % 60);
+  
+  // Format as "X min Y sec"
+  if (minutes === 0 && seconds === 0) {
+    return '0 sec';
+  } else if (minutes === 0) {
+    return `${seconds} sec`;
+  } else if (seconds === 0) {
+    return `${minutes} min`;
+  } else {
+    return `${minutes} min ${seconds} sec`;
+  }
+};
+
+// Helper function to format duration from seconds to "X min Y sec"
+const formatDurationFromSeconds = (durationSeconds: number | null | undefined): string => {
+  if (durationSeconds === null || durationSeconds === undefined || durationSeconds < 0) {
+    return 'Not attempted';
+  }
+  
+  const totalSeconds = Math.round(durationSeconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  if (minutes === 0 && seconds === 0) {
+    return '0 sec';
+  } else if (minutes === 0) {
+    return `${seconds} sec`;
+  } else if (seconds === 0) {
+    return `${minutes} min`;
+  } else {
+    return `${minutes} min ${seconds} sec`;
+  }
+};
+
 const TestOverviewPage = () => {
   const { user, logout } = useAuth();
   const { videoStream, requestVideoStream } = useVideo();
@@ -46,8 +113,47 @@ const TestOverviewPage = () => {
   const [submittedSections, setSubmittedSections] = useState(getSubmittedSections());
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
 
-  // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
+  // Check if candidate_id has changed and flush test data if needed
   useEffect(() => {
+    if (user?.candidateId) {
+      const storedCandidateId = localStorage.getItem('current_candidate_id');
+      if (storedCandidateId && storedCandidateId !== user.candidateId) {
+        console.log(`[TestOverview] Candidate ID mismatch detected. Flushing test data...`);
+        storage.checkAndFlushOnCandidateChange(user.candidateId);
+        localStorage.setItem('current_candidate_id', user.candidateId);
+      } else if (!storedCandidateId && user.candidateId) {
+        // First time storing for this candidate
+        localStorage.setItem('current_candidate_id', user.candidateId);
+      }
+    }
+  }, [user?.candidateId]);
+
+  // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
+  // BUT only if timer wasn't just initialized by TestReadyPage
+  useEffect(() => {
+    // Check if timer was just initialized by TestReadyPage
+    const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+    const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+    const wasRecentlyInitialized = timerInitializedAt && 
+      (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+    
+    if (timerJustInitialized || wasRecentlyInitialized) {
+      // Timer was just set by TestReadyPage, use it and remove the flag
+      console.log('Timer was just initialized by TestReadyPage, using existing timer...');
+      const existingTime = storage.getRemainingTime();
+      if (existingTime !== null && existingTime > 0) {
+        setTimeRemaining(existingTime);
+        setIsTimerInitialized(true);
+        console.log('Using timer from TestReadyPage:', existingTime, 'seconds remaining');
+      }
+      if (timerJustInitialized) {
+        localStorage.removeItem('timer_just_initialized');
+        localStorage.removeItem('timer_initialized_at');
+      }
+      return; // Don't override the timer
+    }
+    
+    // Only initialize if timer doesn't exist and wasn't just set
     const existingTime = storage.getRemainingTime();
     if (existingTime === null || existingTime <= 0) {
       // Clear section timings first for new test session
@@ -68,6 +174,10 @@ const TestOverviewPage = () => {
       localStorage.removeItem('fullscreenWarning');
       localStorage.removeItem('cheating_detection_events');
       console.log('Violation counts reset to 0. Starting fresh test session.');
+    } else {
+      // Timer exists, use it
+      setTimeRemaining(existingTime);
+      setIsTimerInitialized(true);
     }
   }, []); // Run once on mount
 
@@ -80,19 +190,57 @@ const TestOverviewPage = () => {
         const token = window.localStorage.getItem('auth_token') || window.localStorage.getItem('google_id_token');
         if (!token) return;
 
+        // Check if timer was just initialized - if so, don't override with backend
+        const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+        const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+        const localTime = storage.getRemainingTime();
+        
+        // Check if timer was initialized within the last 60 seconds (prevent backend override)
+        const wasRecentlyInitialized = timerInitializedAt && 
+          (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+
         const status = await getTestStatus(user.candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
-          setTimeRemaining(status.remaining_seconds);
-          // Update localStorage with backend time
-          storage.setTimerEndTime(status.remaining_seconds);
-          setIsTimerInitialized(true);
+          // If timer was just initialized or was initialized recently, don't override with backend time
+          // Use the local timer that was just set
+          if ((timerJustInitialized || wasRecentlyInitialized) && localTime !== null && localTime > 0) {
+            console.log('Timer was just initialized (or initialized recently), keeping local timer:', localTime, 'seconds (not overriding with backend:', status.remaining_seconds, 'seconds)');
+            setTimeRemaining(localTime);
+            setIsTimerInitialized(true);
+            if (timerJustInitialized) {
+              localStorage.removeItem('timer_just_initialized');
+              localStorage.removeItem('timer_initialized_at');
+            }
+          } else if (localTime !== null && localTime > 0 && status.remaining_seconds < localTime - 60) {
+            // Safeguard: If backend time is significantly less than local time (more than 60 seconds difference),
+            // keep the local time to prevent accidental reduction
+            // This handles cases where backend might have stale data
+            console.log('Backend timer is significantly less than local timer. Keeping local timer:', localTime, 'seconds (backend:', status.remaining_seconds, 'seconds)');
+            setTimeRemaining(localTime);
+            setIsTimerInitialized(true);
+          } else {
+            // Normal sync - use backend time
+            setTimeRemaining(status.remaining_seconds);
+            // Update localStorage with backend time
+            storage.setTimerEndTime(status.remaining_seconds);
+            setIsTimerInitialized(true);
+          }
         } else {
           // If backend doesn't have active timer, check localStorage
+          const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+          const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+          const wasRecentlyInitialized = timerInitializedAt && 
+            (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
           const localTime = storage.getRemainingTime();
           if (localTime !== null && localTime > 0) {
             setTimeRemaining(localTime);
-          } else {
-            // If no timer exists locally either, reset to 180 minutes for new test session
+            if (timerJustInitialized) {
+              console.log('Using timer from TestReadyPage (backend sync):', localTime, 'seconds remaining');
+              localStorage.removeItem('timer_just_initialized');
+              localStorage.removeItem('timer_initialized_at');
+            }
+          } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+            // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
             console.log('No timer found in backend or localStorage, resetting to 180 minutes...');
             storage.setTimerEndTime(10800);
             setTimeRemaining(10800);
@@ -103,11 +251,20 @@ const TestOverviewPage = () => {
       } catch (error) {
         console.error('Failed to sync timer from backend:', error);
         // Fallback to localStorage if backend sync fails
+        const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+        const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+        const wasRecentlyInitialized = timerInitializedAt && 
+          (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
         const localTime = storage.getRemainingTime();
         if (localTime !== null && localTime > 0) {
           setTimeRemaining(localTime);
-        } else {
-          // If no timer exists, reset to 180 minutes for new test session
+          if (timerJustInitialized) {
+            console.log('Using timer from TestReadyPage (error fallback):', localTime, 'seconds remaining');
+            localStorage.removeItem('timer_just_initialized');
+            localStorage.removeItem('timer_initialized_at');
+          }
+        } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+          // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
           console.log('No timer found after sync error, resetting to 180 minutes...');
           storage.setTimerEndTime(10800);
           setTimeRemaining(10800);
@@ -118,12 +275,24 @@ const TestOverviewPage = () => {
     };
 
     // First, try to use localStorage immediately for faster UI
+    // Check if timer was just initialized by TestReadyPage
+    const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
+    const timerInitializedAt = localStorage.getItem('timer_initialized_at');
+    const wasRecentlyInitialized = timerInitializedAt && 
+      (Date.now() - parseInt(timerInitializedAt, 10)) < 60000; // 60 seconds
+    
     const localTime = storage.getRemainingTime();
     if (localTime !== null && localTime > 0) {
       setTimeRemaining(localTime);
       setIsTimerInitialized(true);
-    } else {
-      // If no timer exists, reset to 180 minutes for new test session
+      if (timerJustInitialized) {
+        console.log('Using timer from TestReadyPage:', localTime, 'seconds remaining');
+        localStorage.removeItem('timer_just_initialized');
+        localStorage.removeItem('timer_initialized_at');
+      }
+    } else if (!timerJustInitialized && !wasRecentlyInitialized) {
+      // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
+      // If timer was just initialized, wait for it to be set
       console.log('No timer found in localStorage, resetting to 180 minutes...');
       storage.setTimerEndTime(10800);
       setTimeRemaining(10800);
@@ -278,10 +447,11 @@ const TestOverviewPage = () => {
     }
     
     // Print section timings to console
+    // Calculate duration from start and end times (in seconds) for accurate results
     console.log('=== Section Timings ===');
-    console.log(`MCQ Section: ${mcqMinutes !== null ? `${mcqMinutes} minutes` : 'Not attempted'}`);
-    console.log(`Coding Section: ${codingMinutes !== null ? `${codingMinutes} minutes` : 'Not attempted'}`);
-    console.log(`System Design Section: ${systemDesignMinutes !== null ? `${systemDesignMinutes} minutes` : 'Not attempted'}`);
+    console.log(`MCQ Section: ${formatSectionDuration('mcq')}`);
+    console.log(`Coding Section: ${formatSectionDuration('coding')}`);
+    console.log(`System Design Section: ${formatSectionDuration('systemDesign')}`);
     console.log('=======================');
     
     // Get cheating event counts from context
@@ -320,22 +490,23 @@ const TestOverviewPage = () => {
           // Fetch MCQ questions
           const mcqQuestions = await fetchQuestions(candidateId);
           
-          // Get saved answers from localStorage
+          // Get saved answers from localStorage (stored as 1-based indexing)
           const STORAGE_KEY = 'mcq_answers';
           const storedAnswersStr = localStorage.getItem(STORAGE_KEY);
-          const answers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
+          const storedAnswers: Record<number, number> = storedAnswersStr ? JSON.parse(storedAnswersStr) : {};
           
           // Convert to API format
+          // localStorage stores 1-based, so we can use it directly (no need to add 1)
           mcqAnswerItems = mcqQuestions
             .filter((q) => {
-              const answer = answers[q.id];
+              const answer = storedAnswers[q.id];
               return answer !== undefined && answer !== null && q.question_uuid;
             })
             .map((q) => {
-              const answer = answers[q.id];
+              const answer = storedAnswers[q.id];
               return {
                 question_uuid: q.question_uuid!,
-                candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based: "1", "2", "3", or "4"
+                candidate_answer: String(answer), // Already 1-based from localStorage: "1", "2", "3", or "4"
               };
             });
           
@@ -359,6 +530,7 @@ const TestOverviewPage = () => {
         console.log(`[Fullscreen Exit Calculation] Existing count: ${existingFullScreenExits}, Tab changes: ${tabChangeCount}, New count: ${fullScreenExits}`);
 
         // Convert section timings to backend format - only duration in seconds
+        // Calculate duration from start and end times (in seconds) for accuracy
         const convertSectionTimings = () => {
           const timings: { mcq?: number; coding?: number; system_design?: number } = {};
           
@@ -366,9 +538,28 @@ const TestOverviewPage = () => {
             const sectionKey = section === 'systemDesign' ? 'system_design' : section;
             const timing = storage.getSectionTiming(section as 'mcq' | 'coding' | 'systemDesign');
             
-            if (timing && timing.durationMinutes !== null) {
-              // Convert minutes to seconds
-              timings[sectionKey as 'mcq' | 'coding' | 'system_design'] = Math.round(timing.durationMinutes * 60);
+            if (!timing || timing.startTimeRemaining === null || timing.startTimeRemaining === undefined) {
+              return; // Section not attempted
+            }
+            
+            // Calculate duration in seconds: startTimeRemaining - endTimeRemaining
+            let durationSeconds: number;
+            
+            if (timing.endTimeRemaining !== null && timing.endTimeRemaining !== undefined) {
+              // Section was completed: duration = startTimeRemaining - endTimeRemaining
+              durationSeconds = timing.startTimeRemaining - timing.endTimeRemaining;
+            } else {
+              // Section is still active: use current time remaining
+              const currentTimeRemaining = storage.getRemainingTime();
+              if (currentTimeRemaining === null) {
+                return; // Cannot calculate duration
+              }
+              durationSeconds = timing.startTimeRemaining - currentTimeRemaining;
+            }
+            
+            // Only include if duration is valid and non-negative
+            if (durationSeconds >= 0) {
+              timings[sectionKey as 'mcq' | 'coding' | 'system_design'] = Math.round(durationSeconds);
             }
           });
           
@@ -387,9 +578,9 @@ const TestOverviewPage = () => {
         console.log('Converted section timings (seconds):', sectionTimings);
         if (sectionTimings) {
           console.log('Section timings breakdown:', {
-            mcq: sectionTimings.mcq ? `${sectionTimings.mcq}s (${Math.round(sectionTimings.mcq / 60 * 100) / 100} min)` : 'Not attempted',
-            coding: sectionTimings.coding ? `${sectionTimings.coding}s (${Math.round(sectionTimings.coding / 60 * 100) / 100} min)` : 'Not attempted',
-            system_design: sectionTimings.system_design ? `${sectionTimings.system_design}s (${Math.round(sectionTimings.system_design / 60 * 100) / 100} min)` : 'Not attempted',
+            mcq: sectionTimings.mcq ? formatDurationFromSeconds(sectionTimings.mcq) : 'Not attempted',
+            coding: sectionTimings.coding ? formatDurationFromSeconds(sectionTimings.coding) : 'Not attempted',
+            system_design: sectionTimings.system_design ? formatDurationFromSeconds(sectionTimings.system_design) : 'Not attempted',
           });
         }
         console.log('===================================');
