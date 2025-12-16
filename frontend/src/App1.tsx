@@ -1,4 +1,3 @@
-import HomePage from './app/HomePage'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import TourMCQPage from './app/tour/TourMCQPage'
 import TourSystemDesignPage from './app/tour/TourSystemDesignPage'
@@ -6,6 +5,7 @@ import TourCodingPage from './app/tour/TourCodingPage'
 import MCQPage from './app/Candidate/MCQPage'
 import CodingTestPage from './app/Candidate/CodingTestPage'
 import SystemDesignPage from './app/Candidate/SystemDesignPage'
+import NotFoundPage from './pages/NotFoundPage'
 function AppRoutes1(){
     return(
         <Routes>
@@ -16,7 +16,7 @@ function AppRoutes1(){
      
         
         {/* Protected Routes - require authentication */}
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<Navigate to="/candidate/mcq" replace />} />
         
         {/* Tutorial/Mock Test Pages */}
         <Route path="/tutorial/mcq" element={<TourMCQPage />} />
@@ -28,7 +28,7 @@ function AppRoutes1(){
         <Route path="/candidate/coding" element={<CodingTestPage />} />
         <Route path="/candidate/system-design" element={<SystemDesignPage />} />
         
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       
 
