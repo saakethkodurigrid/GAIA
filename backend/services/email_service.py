@@ -169,9 +169,22 @@ class EmailService:
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td style="text-align: center;">
+                            <table cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                                <tr>
+                                    <td style="padding-right: 8px; vertical-align: middle;">
+                                        <span style="font-size: 28px; color: #FF6B35; font-weight: bold;">&lt;/&gt;</span>
+                                    </td>
+                                    <td style="vertical-align: middle;">
+                                        <span style="font-size: 28px; font-weight: 600; color: #0069B4;">GAIA</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </div>
             
             <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -207,7 +220,7 @@ class EmailService:
                 <p style="margin-top: 30px;">We look forward to speaking with you!</p>
                 
                 <p>Best regards,<br>
-                <strong>TechInterview Platform Team</strong></p>
+                <strong>GAIA Team</strong></p>
             </div>
             
             <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
@@ -238,7 +251,7 @@ class EmailService:
             Plain text email content
         """
         text_content = f"""
-Interview Invitation - TechInterview Platform
+Interview Invitation - GAIA
 
 Dear {candidate_name},
 
@@ -259,7 +272,7 @@ What to expect:
 We look forward to speaking with you!
 
 Best regards,
-TechInterview Platform Team
+GAIA Team
 
 ---
 This is an automated email. Please do not reply to this message.
@@ -384,9 +397,22 @@ This is an automated email. Please do not reply to this message.
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td style="text-align: center;">
+                            <table cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                                <tr>
+                                    <td style="padding-right: 8px; vertical-align: middle;">
+                                        <span style="font-size: 28px; color: #FF6B35; font-weight: bold;">&lt;/&gt;</span>
+                                    </td>
+                                    <td style="vertical-align: middle;">
+                                        <span style="font-size: 28px; font-weight: 600; color: #0069B4;">GAIA</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </div>
             
             <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -427,7 +453,7 @@ This is an automated email. Please do not reply to this message.
                 <p style="margin-top: 30px;">Good luck with your assessment!</p>
                 
                 <p>Best regards,<br>
-                <strong>TechInterview Platform Team</strong></p>
+                <strong>GAIA Team</strong></p>
             </div>
             
             <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
@@ -460,7 +486,7 @@ This is an automated email. Please do not reply to this message.
         formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
         
         text_content = f"""
-Test Scheduled - Ready to Begin - TechInterview Platform
+Test Scheduled - Ready to Begin - GAIA
 
 Dear {candidate_name},
 
@@ -483,7 +509,7 @@ Important Instructions:
 Good luck with your assessment!
 
 Best regards,
-TechInterview Platform Team
+GAIA Team
 
 ---
 This is an automated email. Please do not reply to this message.
@@ -703,9 +729,22 @@ This is an automated email. Please do not reply to this message.
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td style="text-align: center;">
+                            <table cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                                <tr>
+                                    <td style="padding-right: 8px; vertical-align: middle;">
+                                        <span style="font-size: 28px; color: #FF6B35; font-weight: bold;">&lt;/&gt;</span>
+                                    </td>
+                                    <td style="vertical-align: middle;">
+                                        <span style="font-size: 28px; font-weight: 600; color: #0069B4;">GAIA</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </div>
             
             <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -733,10 +772,10 @@ This is an automated email. Please do not reply to this message.
                     </ul>
                 </div>
                 
-                <p style="margin-top: 30px;">This is an automated notification from the TechInterview Platform.</p>
+                <p style="margin-top: 30px;">This is an automated notification from GAIA.</p>
                 
                 <p>Best regards,<br>
-                <strong>TechInterview Platform Team</strong></p>
+                <strong>GAIA Team</strong></p>
             </div>
             
             <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
@@ -774,7 +813,7 @@ This is an automated email. Please do not reply to this message.
         ref_display = f" ({candidate_reference_number})" if candidate_reference_number else ""
         
         text_content = f"""
-Interview Scheduled - Notification - TechInterview Platform
+Interview Scheduled - Notification - GAIA
 
 Dear {recruiter_name},
 
@@ -793,10 +832,10 @@ Assessment Details:
 - The assessment includes multiple choice questions, Coding, and System Design evaluations
 - You will be notified once the candidate completes the assessment
 
-This is an automated notification from the TechInterview Platform.
+This is an automated notification from GAIA.
 
 Best regards,
-TechInterview Platform Team
+GAIA Team
 
 ---
 This is an automated email. Please do not reply to this message.
@@ -1102,7 +1141,7 @@ This is an automated email. Please do not reply to this message.
                                                 <span style="font-size: 24px; color: #FF6B35; font-weight: bold;">&lt;/&gt;</span>
                                             </td>
                                             <td style="vertical-align: middle;">
-                                                <span style="font-size: 20px; font-weight: 600; color: #333;">TechInterview</span>
+                                                <span style="font-size: 20px; font-weight: 600; color: #0069B4;">GAIA</span>
                                             </td>
                                         </tr>
                                     </table>
@@ -1270,7 +1309,7 @@ This is an automated email. Please do not reply to this message.
         formatted_date = completion_date.strftime("%B %d, %Y at %I:%M %p")
         
         text_content = f"""
-Interview Assessment Report - TechInterview Platform
+Interview Assessment Report - GAIA
 
 Assessment completed on {formatted_date}
 
@@ -1453,7 +1492,7 @@ Grid Dynamics © 2006-2025
             
             # Create message
             message = MessageSchema(
-                subject="Interview Assessment Report - TechInterview Platform",
+                subject="Interview Assessment Report - GAIA",
                 recipients=[candidate_email],
                 body=html_content,
                 subtype="html",
