@@ -3,6 +3,7 @@ Candidate API routes for interview-related operations.
 """
 import json
 import logging
+import random
 import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
@@ -117,6 +118,9 @@ async def get_mcq_questions(
                 )
                 for q in mcq_questions
             ]
+            
+            # Shuffle the questions to randomize their order
+            random.shuffle(questions_list)
             
             return MCQQuestionsResponse(
                 success=True,

@@ -10,3 +10,8 @@ __pycache__/
 test_*.db
 *.log
 .DS_Store
+
+# Google Calendar Service Account Credentials
+service-account-*.json
+*-service-account.json
+credentials.json

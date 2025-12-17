@@ -3,6 +3,7 @@ Interview service for managing interviews.
 """
 import logging
 import asyncio
+import random
 import threading
 from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -19,6 +20,7 @@ from schemas.admin import ListInterviewsResponse, InterviewResponse
 from schemas.mcq import MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse, GenerateMCQRequest
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse
 from services.email_service import email_service
+from services.calendar_service import calendar_service
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +288,9 @@ class InterviewService:
                         options=options
                     )
                 )
+            
+            # Shuffle the questions to randomize their order
+            random.shuffle(questions_list)
             
             return MCQQuestionsResponse(
                 success=True,
@@ -1333,9 +1338,9 @@ class InterviewService:
                 candidate_id, candidate, request.scheduled_date
             )
             
-            # Send test invitation email AUTOMATICALLY after questions are generated and assigned
+            # Send test invitation email and calendar invites AUTOMATICALLY after questions are generated and assigned
             try:
-                # Get job information for email
+                # Get job information and recruiter details
                 assignment = self.db.query(RecruiterAdminCandidate).filter(
                     RecruiterAdminCandidate.candidate_id == candidate_id
                 ).first()
@@ -1344,33 +1349,101 @@ class InterviewService:
                     job = self.db.query(Job).filter(Job.job_id == assignment.job_id).first()
                     job_role = job.job_role if job else "Technical Interview"
                     
-                    # Send test invitation email (async, non-blocking)
+                    # Get recruiter details
+                    from models.recruiter_admin import RecruiterAdmin
+                    recruiter = self.db.query(RecruiterAdmin).filter(
+                        RecruiterAdmin.email_id == assignment.recruiter_admin_email
+                    ).first()
+                    
+                    # Generate test link for candidate
+                    from core.config import settings
+                    test_link = f"{settings.FRONTEND_URL}/test/scheduled?candidate_id={candidate_id}"
+                    
+                    # Send notifications (async, non-blocking)
                     # Use threading to run async function in background
                     import threading
                     
-                    def send_email_async():
-                        """Helper function to run async email sending in background thread."""
+                    def send_notifications_async():
+                        """Helper function to run async notifications in background thread."""
                         try:
-                            asyncio.run(
-                                email_service.send_test_invitation_email(
-                                    candidate_email=candidate.email_id,
-                                    candidate_name=candidate.name,
-                                    candidate_id=candidate_id,
-                                    job_role=job_role,
-                                    scheduled_date=request.scheduled_date
-                                )
-                            )
+                            # Create new database session for background thread
+                            # (SQLAlchemy sessions are not thread-safe)
+                            from core.database import SessionLocal
+                            db_session = SessionLocal()
+                            
+                            try:
+                                # Run all notifications in parallel
+                                async def send_all_notifications():
+                                    # 1. Send candidate email
+                                    email_task = email_service.send_test_invitation_email(
+                                        candidate_email=candidate.email_id,
+                                        candidate_name=candidate.name,
+                                        candidate_id=candidate_id,
+                                        job_role=job_role,
+                                        scheduled_date=request.scheduled_date
+                                    )
+                                    
+                                    # 2. Send candidate calendar invite (requires db session for OAuth token lookup)
+                                    calendar_task = calendar_service.create_candidate_calendar_event(
+                                        candidate_email=candidate.email_id,
+                                        candidate_name=candidate.name,
+                                        job_role=job_role,
+                                        test_link=test_link,
+                                        scheduled_date=request.scheduled_date,
+                                        db=db_session  # Pass database session for OAuth token lookup
+                                    )
+                                    
+                                    # 3. Send recruiter email (if recruiter exists)
+                                    recruiter_email_task = None
+                                    recruiter_calendar_task = None
+                                    
+                                    if recruiter:
+                                        recruiter_email_task = email_service.send_recruiter_test_notification_email(
+                                            recruiter_email=recruiter.email_id,
+                                            recruiter_name=recruiter.name,
+                                            candidate_name=candidate.name,
+                                            candidate_email=candidate.email_id,
+                                            candidate_reference_number=candidate.candidate_reference_number,
+                                            job_role=job_role,
+                                            scheduled_date=request.scheduled_date
+                                        )
+                                        
+                                        # 4. Send recruiter calendar invite (requires db session)
+                                        recruiter_calendar_task = calendar_service.create_recruiter_calendar_event(
+                                            recruiter_email=recruiter.email_id,
+                                            recruiter_name=recruiter.name,
+                                            candidate_name=candidate.name,
+                                            candidate_email=candidate.email_id,
+                                            candidate_reference_number=candidate.candidate_reference_number,
+                                            job_role=job_role,
+                                            scheduled_date=request.scheduled_date,
+                                            db=db_session  # Pass database session for OAuth token lookup
+                                        )
+                                    
+                                    # Wait for all tasks to complete
+                                    tasks = [email_task, calendar_task]
+                                    if recruiter_email_task:
+                                        tasks.append(recruiter_email_task)
+                                    if recruiter_calendar_task:
+                                        tasks.append(recruiter_calendar_task)
+                                    
+                                    await asyncio.gather(*tasks, return_exceptions=True)
+                                
+                                asyncio.run(send_all_notifications())
+                            finally:
+                                # Close database session
+                                db_session.close()
                         except Exception as e:
-                            logger.error(f"Error in background email thread: {str(e)}")
+                            logger.error(f"Error in background notification thread: {str(e)}")
                     
-                    # Start email sending in background thread
-                    email_thread = threading.Thread(target=send_email_async, daemon=True)
-                    email_thread.start()
+                    # Start notification sending in background thread
+                    notification_thread = threading.Thread(target=send_notifications_async, daemon=True)
+                    notification_thread.start()
                     
-                    logger.info(f"Test invitation email queued for candidate {candidate_id} after questions were assigned")
+                    logger.info(f"Test invitation notifications (email + calendar) queued for candidate {candidate_id} and recruiter after questions were assigned")
             except Exception as e:
-                # Don't fail scheduling if email fails
-                logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
+                # Don't fail scheduling if notifications fail
+                logger.error(f"Failed to queue test invitation notifications: {str(e)}")
             
             # Build response message - format stored IST datetime with IST timezone for display
             ist_timezone = timezone(timedelta(hours=5, minutes=30))
@@ -1444,9 +1517,9 @@ class InterviewService:
                 candidate_id, candidate, request.scheduled_date
             )
             
-            # Send test invitation email AUTOMATICALLY after questions are generated and assigned
+            # Send test invitation email and calendar invites AUTOMATICALLY after questions are generated and assigned
             try:
-                # Get job information for email
+                # Get job information and recruiter details
                 assignment = self.db.query(RecruiterAdminCandidate).filter(
                     RecruiterAdminCandidate.candidate_id == candidate_id
                 ).first()
@@ -1455,33 +1528,101 @@ class InterviewService:
                     job = self.db.query(Job).filter(Job.job_id == assignment.job_id).first()
                     job_role = job.job_role if job else "Technical Interview"
                     
-                    # Send test invitation email (async, non-blocking)
+                    # Get recruiter details
+                    from models.recruiter_admin import RecruiterAdmin
+                    recruiter = self.db.query(RecruiterAdmin).filter(
+                        RecruiterAdmin.email_id == assignment.recruiter_admin_email
+                    ).first()
+                    
+                    # Generate test link for candidate
+                    from core.config import settings
+                    test_link = f"{settings.FRONTEND_URL}/test/scheduled?candidate_id={candidate_id}"
+                    
+                    # Send notifications (async, non-blocking)
                     # Use threading to run async function in background
                     import threading
                     
-                    def send_email_async():
-                        """Helper function to run async email sending in background thread."""
+                    def send_notifications_async():
+                        """Helper function to run async notifications in background thread."""
                         try:
-                            asyncio.run(
-                                email_service.send_test_invitation_email(
-                                    candidate_email=candidate.email_id,
-                                    candidate_name=candidate.name,
-                                    candidate_id=candidate_id,
-                                    job_role=job_role,
-                                    scheduled_date=request.scheduled_date
-                                )
-                            )
+                            # Create new database session for background thread
+                            # (SQLAlchemy sessions are not thread-safe)
+                            from core.database import SessionLocal
+                            db_session = SessionLocal()
+                            
+                            try:
+                                # Run all notifications in parallel
+                                async def send_all_notifications():
+                                    # 1. Send candidate email
+                                    email_task = email_service.send_test_invitation_email(
+                                        candidate_email=candidate.email_id,
+                                        candidate_name=candidate.name,
+                                        candidate_id=candidate_id,
+                                        job_role=job_role,
+                                        scheduled_date=request.scheduled_date
+                                    )
+                                    
+                                    # 2. Send candidate calendar invite (requires db session for OAuth token lookup)
+                                    calendar_task = calendar_service.create_candidate_calendar_event(
+                                        candidate_email=candidate.email_id,
+                                        candidate_name=candidate.name,
+                                        job_role=job_role,
+                                        test_link=test_link,
+                                        scheduled_date=request.scheduled_date,
+                                        db=db_session  # Pass database session for OAuth token lookup
+                                    )
+                                    
+                                    # 3. Send recruiter email (if recruiter exists)
+                                    recruiter_email_task = None
+                                    recruiter_calendar_task = None
+                                    
+                                    if recruiter:
+                                        recruiter_email_task = email_service.send_recruiter_test_notification_email(
+                                            recruiter_email=recruiter.email_id,
+                                            recruiter_name=recruiter.name,
+                                            candidate_name=candidate.name,
+                                            candidate_email=candidate.email_id,
+                                            candidate_reference_number=candidate.candidate_reference_number,
+                                            job_role=job_role,
+                                            scheduled_date=request.scheduled_date
+                                        )
+                                        
+                                        # 4. Send recruiter calendar invite (requires db session)
+                                        recruiter_calendar_task = calendar_service.create_recruiter_calendar_event(
+                                            recruiter_email=recruiter.email_id,
+                                            recruiter_name=recruiter.name,
+                                            candidate_name=candidate.name,
+                                            candidate_email=candidate.email_id,
+                                            candidate_reference_number=candidate.candidate_reference_number,
+                                            job_role=job_role,
+                                            scheduled_date=request.scheduled_date,
+                                            db=db_session  # Pass database session for OAuth token lookup
+                                        )
+                                    
+                                    # Wait for all tasks to complete
+                                    tasks = [email_task, calendar_task]
+                                    if recruiter_email_task:
+                                        tasks.append(recruiter_email_task)
+                                    if recruiter_calendar_task:
+                                        tasks.append(recruiter_calendar_task)
+                                    
+                                    await asyncio.gather(*tasks, return_exceptions=True)
+                                
+                                asyncio.run(send_all_notifications())
+                            finally:
+                                # Close database session
+                                db_session.close()
                         except Exception as e:
-                            logger.error(f"Error in background email thread: {str(e)}")
+                            logger.error(f"Error in background notification thread: {str(e)}")
                     
-                    # Start email sending in background thread
-                    email_thread = threading.Thread(target=send_email_async, daemon=True)
-                    email_thread.start()
+                    # Start notification sending in background thread
+                    notification_thread = threading.Thread(target=send_notifications_async, daemon=True)
+                    notification_thread.start()
                     
-                    logger.info(f"Test invitation email queued for candidate {candidate_id} after questions were assigned")
+                    logger.info(f"Test invitation notifications (email + calendar) queued for candidate {candidate_id} and recruiter after questions were assigned")
             except Exception as e:
-                # Don't fail scheduling if email fails
-                logger.error(f"Failed to queue test invitation email to {candidate.email_id}: {str(e)}")
+                # Don't fail scheduling if notifications fail
+                logger.error(f"Failed to queue test invitation notifications: {str(e)}")
             
             # Build response message
             base_message = f"Test scheduled successfully (scheduled_date will be set when test starts)"

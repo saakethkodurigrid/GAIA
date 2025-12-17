@@ -667,6 +667,234 @@ This is an automated email. Please do not reply to this message.
                 # Re-raise if it's not a connection/auth error
                 raise
     
+    def _create_recruiter_test_notification_email_html(
+        self,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        scheduled_date: datetime
+    ) -> str:
+        """
+        Create HTML email template for recruiter test notification (no test link).
+        
+        Args:
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            scheduled_date: Scheduled test date/time
+            
+        Returns:
+            HTML email content
+        """
+        # Format scheduled date
+        formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
+        ref_display = f" ({candidate_reference_number})" if candidate_reference_number else ""
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #FFF7E5 0%, #F5FCFF 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h1 style="color: #0069B4; margin: 0; font-size: 28px;">TechInterview Platform</h1>
+                </div>
+            </div>
+            
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <h2 style="color: #0069B4; margin-top: 0;">Interview Scheduled - Notification</h2>
+                
+                <p>Dear {recruiter_name},</p>
+                
+                <p>This is to notify you that a technical interview has been successfully scheduled for the following candidate:</p>
+                
+                <div style="margin: 20px 0; padding: 20px; background-color: #f8f9fa; border-left: 4px solid #0069B4; border-radius: 4px;">
+                    <p style="margin: 8px 0;"><strong style="color: #0069B4;">Candidate Name:</strong> {candidate_name}{ref_display}</p>
+                    <p style="margin: 8px 0;"><strong style="color: #0069B4;">Candidate Email:</strong> {candidate_email}</p>
+                    <p style="margin: 8px 0;"><strong style="color: #0069B4;">Job Role:</strong> {job_role}</p>
+                    <p style="margin: 8px 0;"><strong style="color: #0069B4;">Scheduled Date & Time:</strong> {formatted_date} (IST)</p>
+                    <p style="margin: 8px 0;"><strong style="color: #0069B4;">Duration:</strong> 3 hours</p>
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e5e5;">
+                    <p style="margin: 0; color: #666; font-size: 14px;"><strong>Assessment Details:</strong></p>
+                    <ul style="color: #666; font-size: 14px; margin: 10px 0;">
+                        <li>The candidate has been sent a test invitation email with the assessment link</li>
+                        <li>A calendar invite has been sent to the candidate</li>
+                        <li>The assessment includes multiple choice questions, Coding, and System Design evaluations</li>
+                        <li>You will be notified once the candidate completes the assessment</li>
+                    </ul>
+                </div>
+                
+                <p style="margin-top: 30px;">This is an automated notification from the TechInterview Platform.</p>
+                
+                <p>Best regards,<br>
+                <strong>TechInterview Platform Team</strong></p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+                <p>This is an automated email. Please do not reply to this message.</p>
+            </div>
+        </body>
+        </html>
+        """
+        return html_content
+    
+    def _create_recruiter_test_notification_email_text(
+        self,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        scheduled_date: datetime
+    ) -> str:
+        """
+        Create plain text email template for recruiter test notification.
+        
+        Args:
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            scheduled_date: Scheduled test date/time
+            
+        Returns:
+            Plain text email content
+        """
+        formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
+        ref_display = f" ({candidate_reference_number})" if candidate_reference_number else ""
+        
+        text_content = f"""
+Interview Scheduled - Notification - TechInterview Platform
+
+Dear {recruiter_name},
+
+This is to notify you that a technical interview has been successfully scheduled for the following candidate:
+
+Candidate Details:
+- Candidate Name: {candidate_name}{ref_display}
+- Candidate Email: {candidate_email}
+- Job Role: {job_role}
+- Scheduled Date & Time: {formatted_date} (IST)
+- Duration: 3 hours
+
+Assessment Details:
+- The candidate has been sent a test invitation email with the assessment link
+- A calendar invite has been sent to the candidate
+- The assessment includes multiple choice questions, Coding, and System Design evaluations
+- You will be notified once the candidate completes the assessment
+
+This is an automated notification from the TechInterview Platform.
+
+Best regards,
+TechInterview Platform Team
+
+---
+This is an automated email. Please do not reply to this message.
+        """
+        return text_content.strip()
+    
+    async def send_recruiter_test_notification_email(
+        self,
+        recruiter_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        scheduled_date: datetime
+    ) -> bool:
+        """
+        Send test notification email to recruiter (no test link).
+        Sent when test is scheduled to notify the recruiter.
+        
+        Args:
+            recruiter_email: Recruiter's email address
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            scheduled_date: Scheduled test date/time
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        # Check if email is enabled
+        if not self.enabled:
+            logger.info(f"Email sending is disabled. Skipping recruiter notification email to {recruiter_email}")
+            return False
+        
+        # Validate email
+        if not self._is_valid_email(recruiter_email):
+            logger.warning(f"Invalid or placeholder email address: {recruiter_email}. Skipping email.")
+            return False
+        
+        # Check if email configuration is set
+        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
+            logger.warning("Email configuration is incomplete. Skipping email.")
+            return False
+        
+        try:
+            # Ensure email service is initialized
+            self._ensure_initialized()
+            _, MessageSchema, _ = _lazy_import_fastapi_mail()
+            
+            # Create email content
+            html_content = self._create_recruiter_test_notification_email_html(
+                recruiter_name, candidate_name, candidate_email, 
+                candidate_reference_number, job_role, scheduled_date
+            )
+            text_content = self._create_recruiter_test_notification_email_text(
+                recruiter_name, candidate_name, candidate_email, 
+                candidate_reference_number, job_role, scheduled_date
+            )
+            
+            # Create message
+            formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
+            message = MessageSchema(
+                subject=f"Interview Scheduled - {candidate_name} - {job_role}",
+                recipients=[recruiter_email],
+                body=html_content,
+                subtype="html",
+                # Include plain text alternative
+                alternatives=[{"content": text_content, "subtype": "plain"}]
+            )
+            
+            # Send email
+            await self.fastmail.send_message(message)
+            logger.info(f"Successfully sent recruiter notification email to {recruiter_email} for candidate {candidate_name}")
+            return True
+            
+        except Exception as e:
+            # Lazy import errors if needed
+            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
+            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
+                error_msg = str(e)
+                # Check if it's a Google app-specific password error
+                if 'Application-specific password required' in error_msg or '534' in error_msg:
+                    logger.error(
+                        f"Failed to send recruiter notification email to {recruiter_email}: "
+                        "Google requires an application-specific password because 2FA is enabled. "
+                        "Please generate an app-specific password from your Google Account settings "
+                        "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
+                    )
+                else:
+                    logger.error(f"Failed to send recruiter notification email to {recruiter_email}: {error_msg}", exc_info=True)
+                return False
+            else:
+                # Re-raise if it's not a connection/auth error
+                raise
+    
     def _get_system_design_analysis(self, candidate_id: str, db) -> Dict[str, Any]:
         """
         Fetch and format system design analysis from InterviewAnalysisTable.
