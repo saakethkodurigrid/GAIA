@@ -600,7 +600,8 @@ async def add_candidates_batch_stream(
     
     if invalid_files:
         async def error_stream():
-            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Invalid file types: {', '.join(invalid_files)}'}})}\n\n"
+            error_message = f"Invalid file types: {', '.join(invalid_files)}"
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': error_message}})}\n\n"
         return StreamingResponse(
             error_stream(),
             media_type="text/event-stream",
