@@ -909,6 +909,7 @@ async def complete_test(
         else:
             logger.info(f"[COMPLETE TEST] MCQ answers format: {type(request.mcq_answers)}")
     logger.info(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
+    print(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
     
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:

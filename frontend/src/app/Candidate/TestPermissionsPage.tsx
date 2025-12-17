@@ -6,6 +6,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { uploadCandidateImage } from '../../api/candidate.api';
+import { localStorage as storage } from '../../utils/localStorage';
 
 const TestPermissionsPage = () => {
   const { user, logout } = useAuth();
@@ -154,6 +155,14 @@ const TestPermissionsPage = () => {
 
   const handleJoinInterview = () => {
     if (cameraPermission === 'granted' && fullscreenPermission === 'granted' && consentChecked) {
+      // Clear timer before starting tour - timer should only start when user clicks "Start Assessment" on TestReadyPage
+      console.log('Starting tour - clearing any existing timer and removing timer_started flag...');
+      storage.clearTimer();
+      window.localStorage.removeItem('timer_just_initialized');
+      window.localStorage.removeItem('timer_initialized_at');
+      window.localStorage.removeItem('timer_started'); // Remove flag to prevent any timer operations
+      console.log('Timer cleared and timer_started flag removed. Timer will only start when user clicks "Start Assessment".');
+      
       // Navigate to tutorial page after permissions are granted
       navigate('/tutorial/mcq');
     }
@@ -167,6 +176,14 @@ const TestPermissionsPage = () => {
     } catch (error) {
       console.error('Error clearing fullscreen warning state:', error);
     }
+    
+    // Clear timer before skipping tour - timer should only start when user clicks "Start Assessment" on TestReadyPage
+    console.log('Skipping tour - clearing any existing timer and removing timer_started flag...');
+    storage.clearTimer();
+    window.localStorage.removeItem('timer_just_initialized');
+    window.localStorage.removeItem('timer_initialized_at');
+    window.localStorage.removeItem('timer_started'); // Remove flag to prevent any timer operations
+    console.log('Timer cleared and timer_started flag removed. Timer will only start when user clicks "Start Assessment".');
     
     // Navigate directly to test ready page
     navigate('/test/ready');

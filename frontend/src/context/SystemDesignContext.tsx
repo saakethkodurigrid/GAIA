@@ -52,6 +52,13 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       const candidateId = user?.candidateId;
       if (!candidateId) return;
 
+      // CRITICAL: Only allow timer sync if timer_started flag is set (i.e., user clicked "Start Assessment")
+      const timerStarted = localStorage.getItem('timer_started') === 'true';
+      if (!timerStarted) {
+        console.log('[SystemDesignContext] Timer not started yet - skipping timer sync. User must click "Start Assessment" first.');
+        return; // Don't sync timer if flag is not set
+      }
+
       try {
         const status = await getTestStatus(candidateId);
         if (status.success && status.status === 'active' && status.remaining_seconds >= 0) {
@@ -77,6 +84,13 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
         setIsTimerInitialized(true);
       }
     };
+
+    // CRITICAL: Only allow timer operations if timer_started flag is set
+    const timerStarted = localStorage.getItem('timer_started') === 'true';
+    if (!timerStarted) {
+      console.log('[SystemDesignContext] Timer not started yet - skipping localStorage timer check. User must click "Start Assessment" first.');
+      return; // Don't initialize timer if flag is not set
+    }
 
     // First, try to use localStorage immediately for faster UI
     const localTime = storage.getRemainingTime();

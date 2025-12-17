@@ -129,8 +129,15 @@ const TestOverviewPage = () => {
   }, [user?.candidateId]);
 
   // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
-  // BUT only if timer wasn't just initialized by TestReadyPage
+  // BUT only if timer wasn't just initialized by TestReadyPage AND timer_started flag is set
   useEffect(() => {
+    // CRITICAL: Only allow timer operations if timer_started flag is set (i.e., user clicked "Start Assessment")
+    const timerStarted = localStorage.getItem('timer_started') === 'true';
+    if (!timerStarted) {
+      console.log('Timer not started yet - skipping timer initialization. User must click "Start Assessment" first.');
+      return; // Don't initialize timer if flag is not set
+    }
+    
     // Check if timer was just initialized by TestReadyPage
     const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
     const timerInitializedAt = localStorage.getItem('timer_initialized_at');
@@ -185,6 +192,13 @@ const TestOverviewPage = () => {
   useEffect(() => {
     const syncTimer = async () => {
       if (!user?.candidateId) return;
+
+      // CRITICAL: Only allow timer sync if timer_started flag is set (i.e., user clicked "Start Assessment")
+      const timerStarted = localStorage.getItem('timer_started') === 'true';
+      if (!timerStarted) {
+        console.log('Timer not started yet - skipping timer sync. User must click "Start Assessment" first.');
+        return; // Don't sync timer if flag is not set
+      }
 
       try {
         const token = window.localStorage.getItem('auth_token') || window.localStorage.getItem('google_id_token');
@@ -275,6 +289,13 @@ const TestOverviewPage = () => {
     };
 
     // First, try to use localStorage immediately for faster UI
+    // CRITICAL: Only allow timer operations if timer_started flag is set
+    const timerStarted = localStorage.getItem('timer_started') === 'true';
+    if (!timerStarted) {
+      console.log('Timer not started yet - skipping localStorage timer check. User must click "Start Assessment" first.');
+      return; // Don't sync timer if flag is not set
+    }
+    
     // Check if timer was just initialized by TestReadyPage
     const timerJustInitialized = localStorage.getItem('timer_just_initialized') === 'true';
     const timerInitializedAt = localStorage.getItem('timer_initialized_at');

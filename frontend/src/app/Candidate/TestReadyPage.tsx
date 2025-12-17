@@ -5,6 +5,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { localStorage as storage } from '../../utils/localStorage';
 import { clearFullscreenExitCount } from '../../hooks/useFullscreenWarning';
+import { startTest } from '../../api/candidate.api';
 
 const TestReadyPage = () => {
   const { user, logout } = useAuth();
@@ -13,6 +14,16 @@ const TestReadyPage = () => {
   useEffect(() => {
     // Set background color on body
     document.body.style.backgroundColor = '#FFFBF0';
+    
+    // Clear any existing timer when landing on TestReadyPage
+    // Timer should only start when user clicks "Start Assessment"
+    console.log('TestReadyPage mounted - ensuring timer is cleared and timer_started flag is removed...');
+    storage.clearTimer();
+    window.localStorage.removeItem('timer_just_initialized');
+    window.localStorage.removeItem('timer_initialized_at');
+    window.localStorage.removeItem('timer_started'); // Remove flag to prevent any timer operations
+    console.log('Timer cleared and timer_started flag removed. Timer will only start when user clicks "Start Assessment".');
+    
     return () => {
       // Reset on unmount
       document.body.style.backgroundColor = '';
@@ -24,6 +35,22 @@ const TestReadyPage = () => {
   };
 
   const handleStartAssessment = () => {
+    // Get candidate_id and token for backend call (will be used in background)
+    const candidateId = user?.candidateId || localStorage.getItem('current_candidate_id');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+    
+    if (!candidateId) {
+      console.error('Candidate ID not found');
+      alert('Error: Candidate ID not found. Please login again.');
+      return;
+    }
+    
+    if (!token) {
+      console.error('Authentication token not found');
+      alert('Error: Authentication token not found. Please login again.');
+      return;
+    }
+
     // Always reset timer to 180 minutes when user clicks "Start Assessment"
     // Clear any existing timer first
     console.log('User clicked Start Assessment - Initializing fresh timer...');
@@ -34,7 +61,12 @@ const TestReadyPage = () => {
     storage.clearAllSectionTimings();
     console.log('Section timings reset to 0. Starting fresh test session.');
     
-    // Initialize timer to 180 minutes (10800 seconds) - timer starts NOW
+    // Set flag to allow timer initialization/syncing - THIS IS THE ONLY PLACE THIS FLAG IS SET
+    window.localStorage.setItem('timer_started', 'true');
+    console.log('Timer started flag set to true - timer operations are now allowed');
+    
+    // Initialize frontend timer to 180 minutes (10800 seconds) - timer starts NOW
+    // This happens immediately for instant UI response
     console.log('Initializing timer to 180 minutes (10800 seconds) starting now...');
     storage.setTimerEndTime(10800); // 180 minutes = 10800 seconds, timer starts counting down immediately
     console.log('Timer initialized: Starting with 10800 seconds (180 minutes) at', new Date().toISOString());
@@ -50,9 +82,30 @@ const TestReadyPage = () => {
     window.localStorage.setItem('timer_just_initialized', 'true');
     window.localStorage.setItem('timer_initialized_at', Date.now().toString());
     
-    // Navigate to test overview page
-    // Timer is now initialized and counting down
+    // Navigate IMMEDIATELY to test overview page (don't wait for backend)
+    console.log('Navigating to test overview page immediately...');
     navigate('/test-overview');
+    
+    // Start backend test session in the background (fire-and-forget)
+    // This will sync with frontend timer when TestOverviewPage loads
+    console.log('Starting backend test session in background...');
+    startTest(candidateId, token, 180) // 180 minutes (3 hours) total duration
+      .then((startResponse) => {
+        console.log('Backend test session started:', startResponse);
+        
+        // If backend returns remaining_seconds, update localStorage
+        // TestOverviewPage will sync with this when it loads
+        if (startResponse.remaining_seconds !== undefined && startResponse.remaining_seconds > 0) {
+          console.log('Backend timer initialized:', startResponse.remaining_seconds, 'seconds');
+          // Update localStorage - TestOverviewPage will pick this up on sync
+          storage.setTimerEndTime(startResponse.remaining_seconds);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to start backend test session (background):', error);
+        // Frontend timer is already running, so user experience is not affected
+        // TestOverviewPage will continue using frontend timer
+      });
   };
 
   return (

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { startTest, getScheduledDate } from '../../api/candidate.api';
+import { getScheduledDate } from '../../api/candidate.api';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { localStorage as storage } from '../../utils/localStorage';
@@ -248,27 +248,17 @@ const TestScheduledPage = () => {
       return;
     }
 
-    console.log('=== Starting Test ===');
+    console.log('=== Navigating to Instructions ===');
     console.log('Using candidate_id from localStorage:', candidateId);
+    console.log('NOTE: Backend test will NOT start until user clicks "Start Assessment" on TestReadyPage');
     console.log('====================');
 
     setIsStarting(true);
     setStartError(null);
 
-    // Navigate immediately without waiting for test generation
+    // Navigate to instructions page
+    // DO NOT call startTest() here - backend timer should only start when user clicks "Start Assessment" on TestReadyPage
     navigate('/test/instructions');
-
-    // Start test session in the background (fire-and-forget)
-    // This loads questions into Redis but doesn't block navigation
-    startTest(candidateId, token, 180) // 180 minutes (3 hours) total duration
-      .then(() => {
-        console.log('Test started, data loaded to Redis');
-      })
-      .catch((error) => {
-        console.error('Failed to start test in background:', error);
-        // Note: We don't show error to user since they've already navigated
-        // The next page will handle retrying if needed
-      });
   };
 
   return (
