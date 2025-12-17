@@ -6,13 +6,14 @@ import base64
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, File, UploadFile, Form, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from typing import List
 import json
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_admin
 from models.recruiter_admin import RecruiterAdmin
+from models.system_config import SystemConfig
 from services.admin_service import AdminService
 from schemas.admin import (
     AddRecruiterAdminRequest,
@@ -600,7 +601,8 @@ async def add_candidates_batch_stream(
     
     if invalid_files:
         async def error_stream():
-            yield f"data: {json.dumps({'type': 'error', 'data': {'message': f'Invalid file types: {', '.join(invalid_files)}'}})}\n\n"
+            error_message = f"Invalid file types: {', '.join(invalid_files)}"
+            yield f"data: {json.dumps({'type': 'error', 'data': {'message': error_message}})}\n\n"
         return StreamingResponse(
             error_stream(),
             media_type="text/event-stream",
@@ -855,19 +857,32 @@ async def get_completed_interviews(
         Candidate.status.in_(['completed', 'selected', 'not selected'])
     ).order_by(Candidate.resume_score.desc()).all()
     
-    # TODO: Get interview scores from interview_analysis_table if available
-    # For now, using resume_score as placeholder
-    candidate_list = [
-        CompletedInterviewCandidateResponse(
-            candidate_id=c.candidate_reference_number,  # Return reference number only
-            name=c.name,
-            email_id=c.email_id,
-            interview_score=float(c.resume_score) if c.resume_score else None,  # Placeholder - should come from interview analysis
-            status=c.status,
-            report_link=None  # TODO: Generate report link if available
+    # Get interview scores from interview_analysis_table
+    from models.interview_analysis_table import InterviewAnalysisTable
+    
+    candidate_list = []
+    for c in candidates:
+        # Fetch interview analysis for this candidate
+        interview_analysis = db.query(InterviewAnalysisTable).filter(
+            InterviewAnalysisTable.candidate_id == c.candidate_id
+        ).first()
+        
+        # Use overall_percentage from interview_analysis_table as interview_score
+        interview_score = None
+        if interview_analysis and interview_analysis.overall_percentage is not None:
+            interview_score = float(interview_analysis.overall_percentage)
+        
+        candidate_list.append(
+            CompletedInterviewCandidateResponse(
+                candidate_id=c.candidate_reference_number,  # Return reference number only
+                name=c.name,
+                email_id=c.email_id,
+                resume_score=float(c.resume_score) if c.resume_score else None,
+                interview_score=interview_score,
+                status=c.status,
+                report_link=None  # TODO: Generate report link if available
+            )
         )
-        for c in candidates
-    ]
     
     return CompletedInterviewsListResponse(
         success=True,

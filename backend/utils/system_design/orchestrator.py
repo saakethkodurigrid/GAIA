@@ -895,9 +895,12 @@ Respond as the interviewer with balanced guidance:
                     if has_recent_ai_message:
                         # More direct prompt suggesting evaluation
                         system_prompt = """You're a friendly technical interviewer using the Socratic method. The candidate just made some changes to their diagram, probably responding to your last question.
+
 Write a natural, conversational prompt (1-2 sentences) that:
 - Acknowledges what they added in a friendly way
-- Asks them a question about what they added (e.g., "Can you explain how X works?" or "What was your thinking behind adding Y?")
+- Asks them a question about what they added IN THE CONTEXT OF THE SPECIFIC INTERVIEW QUESTION
+- Your question must be directly relevant to solving the interview question provided
+- NEVER ask about unrelated systems, features, or scenarios
 - NEVER give direct answers or explanations
 - Sound like you're genuinely interested in their progress
 
@@ -905,9 +908,13 @@ Write it like you're talking to a colleague, not a robot. Always end with a ques
                     else:
                         # Standard prompt asking for explanation
                         system_prompt = """You're a friendly technical interviewer using the Socratic method. The candidate just added some new components or connections to their diagram.
+
 Write a natural, conversational prompt (1-2 sentences) asking them a question about what they added.
 - Be curious and encouraging, like you're genuinely interested
 - Ask them to explain what they added and why (e.g., "I see you added X - can you walk me through how that works?" or "What was your reasoning for including Y?")
+- CRITICALLY IMPORTANT: Your question must be directly relevant to the specific interview question provided
+- Connect what they added to solving the actual problem they're working on
+- NEVER ask about unrelated systems or scenarios not mentioned in the interview question
 - NEVER provide explanations or answers yourself
 - Sound like a real person having a conversation, not a formal evaluation
 
@@ -915,8 +922,11 @@ Keep it friendly and casual. Always end with a question."""
                 
                 user_prompt = f"""{context}
 
+CRITICAL: The interview question above is "{session.question_text}". 
+All prompts MUST be relevant to THIS specific question ONLY. Do not ask about other systems.
+
 The candidate just added {new_components} new components and {new_connections} new connections to their diagram.
-Generate a friendly prompt asking them to explain these changes."""
+Generate a friendly prompt asking them to explain these changes IN THE CONTEXT OF the specific interview question above."""
                 
                 try:
                     # Apply guardrails to prompts
@@ -997,16 +1007,20 @@ Generate a friendly prompt asking them to explain these changes."""
             if prompt_key not in session.prompt_history:
                 mismatch_text = ", ".join(mismatches)
                 system_prompt = """You're a friendly technical interviewer using the Socratic method. You noticed the candidate mentioned something in their explanation that doesn't show up in their diagram.
+
 Write a natural, curious question (1-2 sentences) asking about this discrepancy.
 - Ask them to clarify or explain the mismatch (e.g., "You mentioned X in your explanation, but I don't see it in your diagram. Can you help me understand - are you planning to add that?")
+- Your question must be relevant to the specific interview question they're solving
 - NEVER provide the answer or explanation yourself
 - Be friendly and non-confrontational, like you're just trying to understand their thinking
 - Always end with a question"""
                 
                 user_prompt = f"""Interview Question: {session.question_text}
-    
-    The candidate mentioned {mismatch_text} in their explanation, but it's not visible in their current diagram.
-    Generate a clarifying question about this."""
+
+IMPORTANT: Keep your question relevant to THIS specific interview question.
+
+The candidate mentioned {mismatch_text} in their explanation, but it's not visible in their current diagram.
+Generate a clarifying question about this discrepancy that's relevant to the interview question."""
                 
                 try:
                     # Apply guardrails to prompts
@@ -1025,6 +1039,40 @@ Write a natural, curious question (1-2 sentences) asking about this discrepancy.
         
         return None
     
+    async def _generate_milestone_prompt(self, session: Session, milestone_topic: str) -> Optional[str]:
+        """Generate a milestone prompt that's specific to the interview question"""
+        system_prompt = f"""You're a friendly technical interviewer using the Socratic method. The candidate has reached a milestone in their system design - they've added components related to {milestone_topic}.
+
+Write a natural, encouraging prompt (2-3 sentences) that:
+- Acknowledges their progress on {milestone_topic} in a positive way
+- Asks a follow-up question that pushes them to think deeper about the SPECIFIC system they're designing
+- Your question MUST be directly relevant to the interview question they're solving
+- NEVER ask about unrelated systems or scenarios
+- Be genuinely curious about their thinking
+- Always end with a question
+
+Keep it conversational and friendly."""
+
+        user_prompt = f"""Interview Question: {session.question_text}
+
+The candidate has just added {milestone_topic} components to their design. Generate an encouraging follow-up question that:
+1. Is SPECIFIC to the interview question above (not generic)
+2. Helps them think deeper about {milestone_topic} in the context of THIS specific system
+3. Encourages them to consider edge cases or next steps relevant to THIS problem"""
+
+        try:
+            # Apply guardrails to prompts
+            sanitized_system, sanitized_user, _ = guardrails.validate_and_sanitize_prompt(system_prompt, user_prompt)
+            response = await self._call_api(sanitized_system, sanitized_user)
+            if response:
+                sanitized_response, _, _ = guardrails.sanitize_input(response)
+                return sanitized_response
+            else:
+                # Fallback to generic prompt if API fails
+                return f"Great work on adding {milestone_topic}! How does this fit into solving the overall problem? What edge cases should we consider?"
+        except:
+            return f"Nice progress on {milestone_topic}! Can you walk me through how this helps solve the problem?"
+    
     async def _check_milestones(self, session: Session) -> Optional[str]:
         """Check if candidate reached a new milestone and should transition topics"""
         if not session.current_canvas:
@@ -1038,17 +1086,17 @@ Write a natural, curious question (1-2 sentences) asking about this discrepancy.
             "scaling_components": {
                 "keywords": ["load balancer", "lb", "horizontal", "scale"],
                 "milestone": "scaling_discussed",
-                "prompt": "Nice! I see you've added load balancing and scaling components. That's a smart move for handling traffic. One thing I'm curious about - how would you handle things if one of your data centers goes down? What's your plan for regional failures?"
+                "topic": "scaling and load balancing"
             },
             "reliability_components": {
                 "keywords": ["replica", "failover", "backup", "redundancy"],
                 "milestone": "reliability_discussed",
-                "prompt": "Great thinking on the redundancy! I can see you've got replicas and failover mechanisms in place. That's really important for a system like this. What about monitoring - how would you know if something's going wrong? Do you have any thoughts on observability?"
+                "topic": "redundancy and reliability"
             },
             "architecture_complete": {
                 "keywords": ["api", "service", "database", "cache"],
                 "milestone": "architecture_complete",
-                "prompt": "Your core architecture is looking really solid! You've got the main pieces in place. Now I'm wondering - what happens in edge cases? Like, what if someone tries to shorten a URL that's already been shortened? Or what if the original URL expires? How would you handle those scenarios?"
+                "topic": "core architecture"
             }
         }
         
@@ -1063,8 +1111,11 @@ Write a natural, curious question (1-2 sentences) asking about this discrepancy.
                     session.milestones[milestone_data["milestone"]] = True
                     prompt_key = f"milestone_{milestone_name}"
                     if prompt_key not in session.prompt_history:
-                        session.prompt_history.append(prompt_key)
-                        return milestone_data["prompt"]
+                        # Generate context-aware prompt using LLM
+                        prompt = await self._generate_milestone_prompt(session, milestone_data["topic"])
+                        if prompt:
+                            session.prompt_history.append(prompt_key)
+                            return prompt
         
         return None
     

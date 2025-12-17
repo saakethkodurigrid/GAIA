@@ -175,6 +175,7 @@ class CompletedInterviewCandidateResponse(BaseModel):
     candidate_id: str
     name: str
     email_id: str
+    resume_score: Optional[float] = None
     interview_score: Optional[float] = None
     status: str  # 'selected' or 'not selected'
     report_link: Optional[str] = None
