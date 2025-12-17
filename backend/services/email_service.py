@@ -939,6 +939,87 @@ This is an automated email. Please do not reply to this message.
                 "improvements": []
             }
     
+    def _format_section_content(self, items, section_type: str, color: str) -> str:
+        """
+        Format section content with proper styling for email compatibility.
+        
+        Args:
+            items: List of items to format or string for summary
+            section_type: 'strengths', 'improvements', or 'summary'
+            color: Color code for the icon/header
+        
+        Returns:
+            Formatted HTML string
+        """
+        if not items:
+            return ""
+        
+        # Icon mapping - using simple text characters instead of emojis for better email client support
+        icons = {
+            'strengths': '✓',
+            'improvements': '!',
+            'summary': '○'
+        }
+        
+        # Title mapping
+        titles = {
+            'strengths': 'Strengths',
+            'improvements': 'Areas for Improvement',
+            'summary': 'Summary'
+        }
+        
+        icon = icons.get(section_type, '●')
+        title = titles.get(section_type, 'Details')
+        
+        # For summary (single text)
+        if section_type == 'summary' and isinstance(items, str):
+            return f'''
+            <div style="margin-bottom: 20px; padding: 15px; background-color: #fefce8; border-left: 4px solid {color}; border-radius: 4px;">
+                <table cellpadding="0" cellspacing="0" width="100%">
+                    <tr>
+                        <td style="width: 30px; vertical-align: top; padding-right: 10px;">
+                            <span style="display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; background-color: {color}; color: white; border-radius: 50%; font-weight: bold; font-size: 14px;">{icon}</span>
+                        </td>
+                        <td style="vertical-align: top;">
+                            <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 8px;">{title}</strong>
+                            <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.6;">{items}</p>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            '''
+        
+        # For lists
+        if not isinstance(items, list) or not items:
+            return ""
+        
+        list_items = "".join([f'<li style="margin-bottom: 6px; color: #666; line-height: 1.6;">{item}</li>' for item in items])
+        
+        bg_colors = {
+            'strengths': '#f0fdf4',
+            'improvements': '#fef2f2'
+        }
+        
+        bg_color = bg_colors.get(section_type, '#f9fafb')
+        
+        return f'''
+        <div style="margin-bottom: 20px; padding: 15px; background-color: {bg_color}; border-left: 4px solid {color}; border-radius: 4px;">
+            <table cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                    <td style="width: 30px; vertical-align: top; padding-right: 10px;">
+                        <span style="display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; background-color: {color}; color: white; border-radius: 50%; font-weight: bold; font-size: 14px;">{icon}</span>
+                    </td>
+                    <td style="vertical-align: top;">
+                        <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 10px;">{title}</strong>
+                        <ul style="margin: 0; padding-left: 20px; list-style-type: disc;">
+                            {list_items}
+                        </ul>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        '''
+    
     def _create_assessment_report_email_html(
         self,
         candidate_name: str,
@@ -963,19 +1044,39 @@ This is an automated email. Please do not reply to this message.
         # Format completion date
         formatted_date = completion_date.strftime("%B %d, %Y at %I:%M %p")
         
-        # Format strengths and improvements lists
-        def format_list(items):
-            if not items:
-                return ""
-            return "".join([f'<li>{item}</li>' for item in items])
+        # Color scheme
+        strength_color = '#10B981'  # Green
+        improvement_color = '#FF6B35'  # Orange
+        summary_color = '#FBBF24'  # Yellow
         
-        mcq_strengths = format_list(mcq_analysis.get("strengths", []))
-        mcq_improvements = format_list(mcq_analysis.get("improvements", []))
-        coding_strengths = format_list(coding_analysis.get("strengths", []))
-        coding_improvements = format_list(coding_analysis.get("improvements", []))
-        sd_summary = system_design_analysis.get("summary", "")
-        sd_strengths = format_list(system_design_analysis.get("strengths", []))
-        sd_improvements = format_list(system_design_analysis.get("improvements", []))
+        # Format sections using helper
+        mcq_strengths_html = self._format_section_content(
+            mcq_analysis.get("strengths", []), 'strengths', strength_color
+        ) if mcq_analysis.get("strengths") else ''
+        
+        mcq_improvements_html = self._format_section_content(
+            mcq_analysis.get("improvements", []), 'improvements', improvement_color
+        ) if mcq_analysis.get("improvements") else ''
+        
+        coding_strengths_html = self._format_section_content(
+            coding_analysis.get("strengths", []), 'strengths', strength_color
+        ) if coding_analysis.get("strengths") else ''
+        
+        coding_improvements_html = self._format_section_content(
+            coding_analysis.get("improvements", []), 'improvements', improvement_color
+        ) if coding_analysis.get("improvements") else ''
+        
+        sd_summary_html = self._format_section_content(
+            system_design_analysis.get("summary", ""), 'summary', summary_color
+        ) if system_design_analysis.get("summary") else ''
+        
+        sd_strengths_html = self._format_section_content(
+            system_design_analysis.get("strengths", []), 'strengths', strength_color
+        ) if system_design_analysis.get("strengths") else ''
+        
+        sd_improvements_html = self._format_section_content(
+            system_design_analysis.get("improvements", []), 'improvements', improvement_color
+        ) if system_design_analysis.get("improvements") else ''
         
         html_content = f"""
         <!DOCTYPE html>
@@ -983,105 +1084,163 @@ This is an automated email. Please do not reply to this message.
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Interview Assessment Report</title>
         </head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+            
             <!-- Header -->
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 24px; color: #FF6B35;">&lt;/&gt;</span>
-                        <span style="font-size: 20px; font-weight: 600; color: #333;">TechInterview</span>
-                    </div>
-                    <div style="font-size: 16px; font-weight: 600; color: #0069B4;">Grid Dynamics</div>
-                </div>
-                
-                <h1 style="color: #333; margin: 20px 0 10px 0; font-size: 28px; font-weight: 600;">Interview Assessment Report</h1>
-                <p style="color: #666; margin: 0; font-size: 14px;">Assessment completed on {formatted_date}</p>
-            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <tr>
+                    <td style="padding: 30px;">
+                        <!-- Logo Section - Using table for better email client support -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                            <tr>
+                                <td style="width: 50%;">
+                                    <table cellpadding="0" cellspacing="0">
+                                        <tr>
+                                            <td style="padding-right: 8px; vertical-align: middle;">
+                                                <span style="font-size: 24px; color: #FF6B35; font-weight: bold;">&lt;/&gt;</span>
+                                            </td>
+                                            <td style="vertical-align: middle;">
+                                                <span style="font-size: 20px; font-weight: 600; color: #333;">TechInterview</span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td style="width: 50%; text-align: right;">
+                                    <span style="font-size: 16px; font-weight: 600; color: #0069B4;">Grid Dynamics</span>
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <!-- Title -->
+                        <h1 style="color: #333; margin: 20px 0 10px 0; font-size: 28px; font-weight: 600;">Interview Assessment Report</h1>
+                        <p style="color: #666; margin: 0; font-size: 14px;">Assessment completed on {formatted_date}</p>
+                    </td>
+                </tr>
+            </table>
             
             <!-- Detailed Feedback by Section -->
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <h2 style="color: #333; margin-top: 0; font-size: 22px; font-weight: 600; margin-bottom: 25px;">Detailed Feedback by Section</h2>
-                
-                <!-- Section 1: Multiple Choice Assessment -->
-                <div style="margin-bottom: 30px; padding-bottom: 25px; border-bottom: 1px solid #e5e5e5;">
-                    <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px; font-weight: 600;">Section 1: Multiple Choice Assessment</h3>
-                    
-                    {f'<div style="margin-bottom: 15px;"><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #10B981; font-size: 18px;">🛡️</span><strong style="color: #333;">Strengths</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{mcq_strengths}</ul></div>' if mcq_strengths else ''}
-                    
-                    {f'<div><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #FF6B35; font-size: 18px;">⚠️</span><strong style="color: #333;">Areas for Improvement</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{mcq_improvements}</ul></div>' if mcq_improvements else ''}
-                </div>
-                
-                <!-- Section 2: Coding Assessment -->
-                <div style="margin-bottom: 30px; padding-bottom: 25px; border-bottom: 1px solid #e5e5e5;">
-                    <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px; font-weight: 600;">Section 2: Coding Assessment</h3>
-                    
-                    {f'<div style="margin-bottom: 15px;"><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #10B981; font-size: 18px;">🛡️</span><strong style="color: #333;">Strengths</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{coding_strengths}</ul></div>' if coding_strengths else ''}
-                    
-                    {f'<div><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #FF6B35; font-size: 18px;">⚠️</span><strong style="color: #333;">Areas for Improvement</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{coding_improvements}</ul></div>' if coding_improvements else ''}
-                </div>
-                
-                <!-- Section 3: System Design Assessment -->
-                <div>
-                    <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px; font-weight: 600;">Section 3: System Design Assessment</h3>
-                    
-                    {f'<div style="margin-bottom: 15px;"><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #FBBF24; font-size: 18px;">⭕</span><strong style="color: #333;">Summary</strong></div><p style="margin: 0; padding-left: 30px; color: #666;">{sd_summary}</p></div>' if sd_summary else ''}
-                    
-                    {f'<div style="margin-bottom: 15px;"><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #10B981; font-size: 18px;">🛡️</span><strong style="color: #333;">Strengths</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{sd_strengths}</ul></div>' if sd_strengths else ''}
-                    
-                    {f'<div><div style="display: flex; align-items: start; gap: 10px; margin-bottom: 8px;"><span style="color: #FF6B35; font-size: 18px;">⚠️</span><strong style="color: #333;">Areas for Improvement</strong></div><ul style="margin: 0; padding-left: 30px; color: #666;">{sd_improvements}</ul></div>' if sd_improvements else ''}
-                </div>
-            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <tr>
+                    <td style="padding: 30px;">
+                        <h2 style="color: #333; margin-top: 0; font-size: 22px; font-weight: 600; margin-bottom: 25px;">Detailed Feedback by Section</h2>
+                        
+                        <!-- Section 1: MCQ -->
+                        <div style="margin-bottom: 30px; padding-bottom: 25px; border-bottom: 2px solid #e5e5e5;">
+                            <h3 style="color: #333; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Section 1: Multiple Choice Assessment</h3>
+                            {mcq_strengths_html}
+                            {mcq_improvements_html}
+                        </div>
+                        
+                        <!-- Section 2: Coding -->
+                        <div style="margin-bottom: 30px; padding-bottom: 25px; border-bottom: 2px solid #e5e5e5;">
+                            <h3 style="color: #333; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Section 2: Coding Assessment</h3>
+                            {coding_strengths_html}
+                            {coding_improvements_html}
+                        </div>
+                        
+                        <!-- Section 3: System Design -->
+                        <div style="margin-bottom: 0;">
+                            <h3 style="color: #333; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Section 3: System Design Assessment</h3>
+                            {sd_summary_html}
+                            {sd_strengths_html}
+                            {sd_improvements_html}
+                        </div>
+                    </td>
+                </tr>
+            </table>
             
             <!-- Next Steps -->
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <p style="color: #666; margin: 0 0 20px 0; font-size: 14px;">Thank you for completing the assessment. Here's what you can expect in the coming days regarding your application status.</p>
-                
-                <h3 style="color: #333; margin: 0 0 20px 0; font-size: 20px; font-weight: 600;">What Happens Next?</h3>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    <!-- Timeline Card -->
-                    <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; border-left: 4px solid #3B82F6;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                            <span style="font-size: 24px;">🕐</span>
-                            <strong style="color: #333; font-size: 16px;">Timeline</strong>
-                        </div>
-                        <p style="margin: 0; color: #666; font-size: 14px;">Expect to hear from us within 3-5 business days</p>
-                    </div>
-                    
-                    <!-- Contact Method Card -->
-                    <div style="background-color: #fdf2f8; padding: 20px; border-radius: 8px; border-left: 4px solid #EC4899;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                            <span style="font-size: 24px;">✉️</span>
-                            <strong style="color: #333; font-size: 16px;">Contact Method</strong>
-                        </div>
-                        <p style="margin: 0; color: #666; font-size: 14px;">Our HR team will email you with next steps</p>
-                    </div>
-                    
-                    <!-- Possible Next Round Card -->
-                    <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; border-left: 4px solid #10B981;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                            <span style="font-size: 24px;">📅</span>
-                            <strong style="color: #333; font-size: 16px;">Possible Next Round</strong>
-                        </div>
-                        <p style="margin: 0; color: #666; font-size: 14px;">You may be invited for a non-technical interview with the hiring manager</p>
-                    </div>
-                    
-                    <!-- Questions Card -->
-                    <div style="background-color: #fff7ed; padding: 20px; border-radius: 8px; border-left: 4px solid #FF6B35;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                            <span style="font-size: 24px;">❓</span>
-                            <strong style="color: #333; font-size: 16px;">Questions?</strong>
-                        </div>
-                        <p style="margin: 0; color: #666; font-size: 14px;">Contact us at hr@griddynamics.com</p>
-                    </div>
-                </div>
-            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <tr>
+                    <td style="padding: 30px;">
+                        <p style="color: #666; margin: 0 0 20px 0; font-size: 14px;">Thank you for completing the assessment. Here's what you can expect in the coming days regarding your application status.</p>
+                        
+                        <h3 style="color: #333; margin: 0 0 20px 0; font-size: 20px; font-weight: 600;">What Happens Next?</h3>
+                        
+                        <!-- Timeline Cards - Using table layout for email compatibility -->
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td style="width: 48%; vertical-align: top; padding-bottom: 15px;">
+                                    <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; border-left: 4px solid #3B82F6;">
+                                        <table cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding-right: 10px; vertical-align: top;">
+                                                    <span style="font-size: 24px;">🕐</span>
+                                                </td>
+                                                <td style="vertical-align: top;">
+                                                    <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 8px;">Timeline</strong>
+                                                    <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.5;">Expect to hear from us within 3-5 business days</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </td>
+                                <td style="width: 4%;"></td>
+                                <td style="width: 48%; vertical-align: top; padding-bottom: 15px;">
+                                    <div style="background-color: #fdf2f8; padding: 20px; border-radius: 8px; border-left: 4px solid #EC4899;">
+                                        <table cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding-right: 10px; vertical-align: top;">
+                                                    <span style="font-size: 24px;">✉️</span>
+                                                </td>
+                                                <td style="vertical-align: top;">
+                                                    <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 8px;">Contact Method</strong>
+                                                    <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.5;">Our HR team will email you with next steps</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="width: 48%; vertical-align: top; padding-bottom: 15px;">
+                                    <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; border-left: 4px solid #10B981;">
+                                        <table cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding-right: 10px; vertical-align: top;">
+                                                    <span style="font-size: 24px;">📅</span>
+                                                </td>
+                                                <td style="vertical-align: top;">
+                                                    <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 8px;">Possible Next Round</strong>
+                                                    <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.5;">You may be invited for a non-technical interview with the hiring manager</p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </td>
+                                <td style="width: 4%;"></td>
+                                <td style="width: 48%; vertical-align: top; padding-bottom: 15px;">
+                                    <div style="background-color: #fff7ed; padding: 20px; border-radius: 8px; border-left: 4px solid #FF6B35;">
+                                        <table cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding-right: 10px; vertical-align: top;">
+                                                    <span style="font-size: 24px;">❓</span>
+                                                </td>
+                                                <td style="vertical-align: top;">
+                                                    <strong style="color: #333; font-size: 16px; display: block; margin-bottom: 8px;">Questions?</strong>
+                                                    <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.5;">Contact us at <a href="mailto:hr@griddynamics.com" style="color: #0069B4; text-decoration: none;">hr@griddynamics.com</a></p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
             
             <!-- Footer -->
-            <div style="text-align: right; color: #999; font-size: 12px; padding: 20px 0;">
-                <p style="margin: 0;">Grid Dynamics © 2006-2025</p>
-            </div>
+            <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td style="text-align: right; color: #999; font-size: 12px; padding: 20px 0;">
+                        <p style="margin: 0;">Grid Dynamics © 2006-2025</p>
+                    </td>
+                </tr>
+            </table>
+            
         </body>
         </html>
         """
