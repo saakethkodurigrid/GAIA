@@ -613,6 +613,7 @@ export interface CompletedInterviewCandidateResponse {
   candidate_id: string;
   name: string;
   email_id: string;
+  resume_score: number | null;
   interview_score: number | null;
   status: string; // 'completed', 'selected', or 'not selected'
   report_link: string | null;
