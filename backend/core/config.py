@@ -71,14 +71,6 @@ class Settings:
     # Resume Score Threshold for Auto-Sending Scheduling Invitations
     RESUME_SCORE_THRESHOLD: float = float(os.getenv('RESUME_SCORE_THRESHOLD', '30.0'))
     
-    # Google Calendar Configuration
-    GOOGLE_CALENDAR_ENABLED: bool = os.getenv('GOOGLE_CALENDAR_ENABLED', 'False').lower() == 'true'
-    GOOGLE_SERVICE_ACCOUNT_FILE: str = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account-calendar.json')
-    GOOGLE_SERVICE_ACCOUNT_JSON: str = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON', '')  # Alternative: store JSON as string
-    CALENDAR_TIMEZONE: str = os.getenv('CALENDAR_TIMEZONE', 'Asia/Kolkata')
-    TEST_DURATION_HOURS: int = int(os.getenv('TEST_DURATION_HOURS', '3'))
-    CALENDAR_REMINDER_MINUTES: int = int(os.getenv('CALENDAR_REMINDER_MINUTES', '30'))
-    
     # Redis Configuration
     # Use connection string if provided, otherwise fall back to individual settings
     REDIS_URL: str = os.getenv('REDIS_URL', '')
@@ -104,13 +96,8 @@ class Settings:
     GOOGLE_SCOPES: list = [
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/userinfo.profile',
-        'openid',
-        'https://www.googleapis.com/auth/calendar',  # Calendar access for sending invites
-        'https://www.googleapis.com/auth/calendar.events'  # Calendar events access
+        'openid'
     ]
-    
-    # Calendar Configuration (optional - for display purposes)
-    CALENDAR_SHARED_ACCOUNT_EMAIL: str = os.getenv('CALENDAR_SHARED_ACCOUNT_EMAIL', '')
 
 
 settings = Settings()
