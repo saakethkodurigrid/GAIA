@@ -1,0 +1,78 @@
+name: Deploy Frontend to Azure
+
+on:
+  push:
+    branches:
+      - dev_v1
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch:
+
+env:
+  AZURE_SUBSCRIPTION_ID: dab771f2-8670-4bf4-8067-ea813decb669
+  AZURE_RESOURCE_GROUP: ai-ta-2
+  STATIC_WEB_APP: gaia-frontend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          cred-type: idtoken
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: eccbc9a0-56ca-4467-bacd-c7b7d36ef395
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get deployment token
+        id: get-token
+        run: |
+          TOKEN=$(az staticwebapp secrets list \
+            --name ${{ env.STATIC_WEB_APP }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "properties.apiKey" -o tsv)
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Azure Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.get-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "frontend"
+          output_location: "dist"
+          skip_app_build: true
+
+      - name: Deployment summary
+        run: |
+          echo "## 🎨 Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Static Web App:** \`${{ env.STATIC_WEB_APP }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** https://purple-stone-099e15c0f.3.azurestaticapps.net" >> $GITHUB_STEP_SUMMARY
+

@@ -1,0 +1,105 @@
+name: Deploy Backend to Azure (Service Principal)
+
+on:
+  push:
+    branches:
+      - dev_v1
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy-sp.yml'
+  workflow_dispatch:
+
+env:
+  AZURE_SUBSCRIPTION_ID: dab771f2-8670-4bf4-8067-ea813decb669
+  AZURE_RESOURCE_GROUP: ai-ta-2
+  CONTAINER_REGISTRY: acrgaia
+  CONTAINER_APP: gaia-backend
+  REGISTRY_LOGIN_SERVER: acrgaia.azurecr.io
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          cred-type: serviceprincipal
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: Set Azure subscription
+        run: |
+          az account set --subscription ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to Azure Container Registry
+        run: |
+          az acr login --name ${{ env.CONTAINER_REGISTRY }}
+
+      - name: Get current version from git
+        id: version
+        run: |
+          VERSION=$(git rev-parse --short HEAD)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY_LOGIN_SERVER }}/gaia-backend:${{ steps.version.outputs.version }}"
+          LATEST_TAG="${{ env.REGISTRY_LOGIN_SERVER }}/gaia-backend:latest"
+          
+          # Build image
+          docker build \
+            --platform linux/amd64 \
+            --file backend/Dockerfile \
+            --tag $IMAGE_TAG \
+            --tag $LATEST_TAG \
+            backend/
+          
+          # Push both tags
+          docker push $IMAGE_TAG
+          docker push $LATEST_TAG
+          
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Deploy to Azure Container App
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.IMAGE_TAG }}
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          sleep 30
+          
+          # Check deployment status
+          az containerapp revision list \
+            --name ${{ env.CONTAINER_APP }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "[?properties.active==\`true\`].{Name:name, Image:properties.template.containers[0].image, Traffic:properties.trafficWeight}" \
+            --output table
+
+      - name: Health check
+        run: |
+          echo "Performing health check..."
+          sleep 10
+          
+          HEALTH_URL="https://gaia-backend.politefield-9abbbc93.eastus.azurecontainerapps.io/health"
+          RESPONSE=$(curl -s $HEALTH_URL)
+          
+          if echo "$RESPONSE" | grep -q "healthy"; then
+            echo "✅ Health check passed: $RESPONSE"
+          else
+            echo "❌ Health check failed: $RESPONSE"
+            exit 1
+          fi
+
