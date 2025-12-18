@@ -33,7 +33,6 @@ jobs:
       - name: Log in to Azure
         uses: azure/login@v1
         with:
-          cred-type: idtoken
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: eccbc9a0-56ca-4467-bacd-c7b7d36ef395
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
@@ -111,4 +110,3 @@ jobs:
           echo "**Status:** ✅ Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Health Check:** https://gaia-backend.politefield-9abbbc93.eastus.azurecontainerapps.io/health" >> $GITHUB_STEP_SUMMARY
-

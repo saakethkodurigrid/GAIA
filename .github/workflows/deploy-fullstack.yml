@@ -1,9 +1,10 @@
 name: Deploy Full Stack (Backend + Frontend)
 
 on:
-  push:
-    branches:
-      - dev_v1
+  # Disabled - using backend-deploy.yml for backend only
+  # push:
+  #   branches:
+  #     - dev_v1
   workflow_dispatch:
 
 env:
@@ -32,7 +33,6 @@ jobs:
       - name: Log in to Azure
         uses: azure/login@v1
         with:
-          cred-type: idtoken
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: eccbc9a0-56ca-4467-bacd-c7b7d36ef395
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
@@ -113,7 +113,6 @@ jobs:
       - name: Log in to Azure
         uses: azure/login@v1
         with:
-          cred-type: idtoken
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: eccbc9a0-56ca-4467-bacd-c7b7d36ef395
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}

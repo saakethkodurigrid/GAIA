@@ -1,13 +1,14 @@
 name: Deploy Frontend to Azure
 
 on:
-  push:
-    branches:
-      - dev_v1
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-deploy.yml'
-  workflow_dispatch:
+  # Disabled - using deploy-fullstack.yml instead
+  # push:
+  #   branches:
+  #     - dev_v1
+  #   paths:
+  #     - 'frontend/**'
+  #     - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch:  # Manual trigger only
 
 env:
   AZURE_SUBSCRIPTION_ID: dab771f2-8670-4bf4-8067-ea813decb669

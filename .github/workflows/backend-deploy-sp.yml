@@ -1,13 +1,14 @@
 name: Deploy Backend to Azure (Service Principal)
 
 on:
-  push:
-    branches:
-      - dev_v1
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-deploy-sp.yml'
-  workflow_dispatch:
+  # Disabled - backup workflow, use deploy-fullstack.yml instead
+  # push:
+  #   branches:
+  #     - dev_v1
+  #   paths:
+  #     - 'backend/**'
+  #     - '.github/workflows/backend-deploy-sp.yml'
+  workflow_dispatch:  # Manual trigger only (backup if OIDC fails)
 
 env:
   AZURE_SUBSCRIPTION_ID: dab771f2-8670-4bf4-8067-ea813decb669
