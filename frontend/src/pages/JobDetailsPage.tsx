@@ -464,7 +464,15 @@ const JobDetailsPage = () => {
           {/* Back Button and Job Title - Outside Card */}
           <div className="mb-6">
             <button
-              onClick={() => navigate('/recruiter')}
+              onClick={() => {
+                // Determine where to navigate back based on where user came from
+                const from = location.state?.from || user?.userType;
+                if (from === 'admin') {
+                  navigate('/admin');
+                } else {
+                  navigate('/recruiter');
+                }
+              }}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

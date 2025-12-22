@@ -306,7 +306,7 @@ const Admin = () => {
                           <td className="py-3 px-4">
                             <button 
                               onClick={() => navigate('/recruiter/job-details', { 
-                                state: { jobId: jd.id, jobTitle: jd.jobTitle, jobDescription: jd.jobDescription } 
+                                state: { jobId: jd.id, jobTitle: jd.jobTitle, jobDescription: jd.jobDescription, from: 'admin' } 
                               })}
                               className="text-blue-600 hover:text-blue-800 text-base font-medium"
                             >
