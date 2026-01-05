@@ -39,7 +39,7 @@ const CodeEditor = () => {
 
   if (!currentProblem) return null;
 
-  const codeKey = `${currentProblem.id}-${selectedLanguage}`;
+  const codeKey = `${currentProblem.question_uuid}-${selectedLanguage}`;
   const currentCode = code[codeKey] || currentProblem.boilerplate[selectedLanguage];
 
   const getLanguageExtension = () => {

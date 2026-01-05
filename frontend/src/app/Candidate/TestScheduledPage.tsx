@@ -21,6 +21,10 @@ const TestScheduledPage = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [isLoadingScheduledDate, setIsLoadingScheduledDate] = useState(true);
+  const [isTimeReached, setIsTimeReached] = useState(false);
+  
+  // Check if debug mode is enabled (allows starting test before scheduled time)
+  const isDebugMode = import.meta.env.VITE_SKIP_TEST_TIMING === 'true';
 
   // Extract and store candidate_id from URL on mount, restore to URL if missing
   useEffect(() => {
@@ -210,6 +214,7 @@ const TestScheduledPage = () => {
 
       if (diff <= 0) {
         setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        setIsTimeReached(true);
         return;
       }
 
@@ -219,6 +224,7 @@ const TestScheduledPage = () => {
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
       setTimeRemaining({ days, hours, minutes, seconds });
+      setIsTimeReached(false);
     };
 
     // Update immediately
@@ -404,15 +410,22 @@ const TestScheduledPage = () => {
         {/* Start Assessment Button */}
         <button
           onClick={handleStartAssessment}
-          disabled={isStarting}
+          disabled={isStarting || (!isDebugMode && !isTimeReached)}
           className={`py-3 px-8 rounded-lg font-semibold text-base transition-colors shadow-md ${
-            isStarting
+            isStarting || (!isDebugMode && !isTimeReached)
               ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
               : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
           }`}
         >
           {isStarting ? 'Starting Test...' : 'Start Assessment'}
         </button>
+        
+        {/* Debug Mode Indicator */}
+        {isDebugMode && (
+          <p className="text-xs text-orange-600 mt-2 font-semibold">
+            Debug Mode: Time restriction disabled
+          </p>
+        )}
       </div>
 
       {/* Footer */}

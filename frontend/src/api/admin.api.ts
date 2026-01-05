@@ -10,6 +10,12 @@ const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
 };
 
+export interface AddJobRequest {
+  job_role: string;
+  job_description: string;
+  grade: string;
+}
+
 // Admin Job Response (includes recruiter_name for admin to see who created the job)
 export interface AdminJobResponse {
   job_id: string;
@@ -20,12 +26,48 @@ export interface AdminJobResponse {
   grade: string;
 }
 
+export interface AddJobResponse {
+  success: boolean;
+  message: string;
+  data: AdminJobResponse | null;
+}
+
 export interface ListJobsResponse {
   success: boolean;
   message: string;
   count: number;
   jobs: AdminJobResponse[];
 }
+
+/**
+ * Add a new job to the system (Admin endpoint)
+ */
+export const addJob = async (request: AddJobRequest): Promise<AddJobResponse> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found. Please login again.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/add-job`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to add job' }));
+    const errorMessage = error.detail || 'Failed to add job';
+    const apiError = new Error(errorMessage) as ApiError;
+    apiError.status = response.status;
+    apiError.detail = error.detail || errorMessage;
+    throw apiError;
+  }
+
+  return response.json();
+};
 
 /**
  * List all jobs in the system (Admin-only - sees all jobs from all recruiters)
