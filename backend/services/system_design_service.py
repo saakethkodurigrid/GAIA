@@ -1205,101 +1205,55 @@ class SystemDesignService:
         final_report: Dict[str, Any],
         evaluation: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Save system design evaluation results to interview_analysis_table."""
+        """
+        Save system design evaluation results to interview_analysis_table.
+        
+        Delegates to standalone analyze_system_design function for background-safe execution.
+        However, since we already have the final_report and evaluation, we use a helper
+        function to persist the data directly.
+        """
+        from services.section_analysis_service import _persist_system_design_analysis
+        
+        _persist_system_design_analysis(
+            candidate_id=candidate_id,
+            final_report=final_report,
+            evaluation=evaluation,
+            db=self.db,
+            extract_strengths_fn=self._extract_strengths_and_improvements_simple
+        )
+        
+        # Try to send assessment report email if all analyses are ready
         try:
-            # Extract data from final_report
-            avg_scores = final_report.get("average_scores", {})
+            import threading
+            import asyncio
+            from services.email_service import email_service
             
-            # Calculate overall score (0-100) from average scores with non-linear conversion
-            if avg_scores:
-                avg_score = sum(avg_scores.values()) / len(avg_scores)
-                # Non-linear conversion: more harsh for incomplete designs, fair for complete ones
-                if avg_score <= 2.5:
-                    # Incomplete designs: harsher conversion (1.8 → 27 instead of 36)
-                    overall_score = int(round(avg_score * 15))
-                elif avg_score <= 3.5:
-                    # Standard conversion for mid-range scores
-                    overall_score = int(round(avg_score * 20))
-                else:
-                    # High scores: slight bonus (4.5 → 99 instead of 90)
-                    overall_score = int(round(avg_score * 22))
-                # Clamp to 0-100 range
-                overall_score = max(0, min(100, overall_score))
-            else:
-                overall_score = None
-            
-            # Extract strengths and improvements
-            feedback = evaluation.get("feedback", "") if evaluation else final_report.get("final_feedback", "")
-            extraction = self._extract_strengths_and_improvements_simple(feedback, avg_scores)
-            
-            # Build system_design_analysis JSONB object
-            system_design_analysis = {
-                "score": overall_score,
-                "key_strengths": extraction["key_strengths"],
-                "things_to_improve": extraction["things_to_improve"],
-                "summary": final_report.get("final_feedback", ""),
-                "average_scores": avg_scores,  # Store detailed scores too
-                "lowest_area": final_report.get("lowest_area"),
-                "suggested_learning": final_report.get("suggested_learning", [])
-            }
-            
-            # Get or create interview_analysis record
-            interview_analysis = self.db.query(InterviewAnalysisTable).filter(
-                InterviewAnalysisTable.candidate_id == candidate_id
-            ).first()
-            
-            if interview_analysis:
-                # Update existing record
-                interview_analysis.system_design_analysis = system_design_analysis
-                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Updated system_design_analysis for candidate {candidate_id}")
-            else:
-                # Create new record
-                interview_analysis = InterviewAnalysisTable(
-                    candidate_id=candidate_id,
-                    system_design_analysis=system_design_analysis
-                )
-                self.db.add(interview_analysis)
-                logger.info(f"[INTERVIEW_ANALYSIS] ✅ Created new interview_analysis record for candidate {candidate_id}")
-            
-            self.db.commit()
-            
-            # Try to send assessment report email if all analyses are ready
-            try:
-                import threading
-                import asyncio
-                from services.email_service import email_service
-                
-                def try_send_email_async():
-                    """Helper function to run async email sending in background thread."""
+            def try_send_email_async():
+                """Helper function to run async email sending in background thread."""
+                try:
+                    # Create a new database session for the email thread
+                    from core.database import get_db
+                    db_gen = get_db()
+                    db_email = next(db_gen)
                     try:
-                        # Create a new database session for the email thread
-                        from core.database import get_db
-                        db_gen = get_db()
-                        db_email = next(db_gen)
-                        try:
-                            asyncio.run(
-                                email_service.try_send_assessment_report_email_if_ready(
-                                    candidate_id=candidate_id,
-                                    db=db_email
-                                )
+                        asyncio.run(
+                            email_service.try_send_assessment_report_email_if_ready(
+                                candidate_id=candidate_id,
+                                db=db_email
                             )
-                        finally:
-                            db_email.close()
-                    except Exception as e:
-                        logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
-                
-                # Start email check in background thread (non-blocking)
-                email_thread = threading.Thread(target=try_send_email_async, daemon=True)
-                email_thread.start()
-                logger.info(f"Triggered email check for candidate {candidate_id} after system design analysis update")
-            except Exception as e:
-                # Don't fail if email trigger fails
-                logger.warning(f"Failed to trigger email check for candidate {candidate_id}: {str(e)}")
+                        )
+                    finally:
+                        db_email.close()
+                except Exception as e:
+                    logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
             
+            # Start email check in background thread (non-blocking)
+            email_thread = threading.Thread(target=try_send_email_async, daemon=True)
+            email_thread.start()
+            logger.info(f"Triggered email check for candidate {candidate_id} after system design analysis update")
         except Exception as e:
-            logger.error(f"[INTERVIEW_ANALYSIS] ❌ Failed to save to interview_analysis_table: {e}")
-            self.db.rollback()
-            # Don't raise - this is non-critical, don't break the report generation
+            # Don't fail if email trigger fails
+            logger.warning(f"Failed to trigger email check for candidate {candidate_id}: {str(e)}")
     
     async def generate_final_report(self, candidate_id: str, question_uuid: str) -> FinalReportResponse:
         """Generate final evaluation report for the session."""
@@ -1338,8 +1292,83 @@ class SystemDesignService:
                     "follow_up": latest_timeline_item.get("follow_up", "")
                 }
         
-        # Save to interview_analysis_table
-        self._save_to_interview_analysis_table(candidate_id, report, latest_evaluation)
+        # Track analysis status: mark as IN_PROGRESS if NOT_STARTED
+        try:
+            from services.analysis_status_service import AnalysisStatusService
+            from schemas.analysis import SectionType, AnalysisStatus as AnalysisStatusEnum
+            
+            status_service = AnalysisStatusService(self.db)
+            current_status = status_service.get_status(candidate_id, SectionType.SYSTEM_DESIGN)
+            
+            if current_status is None or current_status.status == AnalysisStatusEnum.NOT_STARTED.value:
+                status_service.mark_in_progress(candidate_id, SectionType.SYSTEM_DESIGN)
+                logger.info(f"[ANALYSIS_STATUS] System Design analysis transitioned to IN_PROGRESS for candidate {candidate_id}")
+            # If already IN_PROGRESS or COMPLETED, do nothing (idempotent)
+        except Exception as status_error:
+            # Don't fail analysis if status tracking fails
+            logger.warning(f"Failed to update analysis status for System Design: {str(status_error)}")
+        
+        # Enqueue system design analysis to background thread (non-blocking)
+        try:
+            import threading
+            
+            # Capture data needed for background task
+            report_copy = report.copy() if isinstance(report, dict) else report
+            evaluation_copy = latest_evaluation.copy() if isinstance(latest_evaluation, dict) and latest_evaluation else latest_evaluation
+            
+            def run_system_design_analysis_async():
+                """Helper function to run system design analysis in background thread."""
+                try:
+                    # Create new database session for background task
+                    from core.database import SessionLocal
+                    background_db = SessionLocal()
+                    try:
+                        # Use the persistence helper directly since we already have the report
+                        from services.section_analysis_service import _persist_system_design_analysis
+                        _persist_system_design_analysis(
+                            candidate_id=candidate_id,
+                            final_report=report_copy,
+                            evaluation=evaluation_copy,
+                            db=background_db,
+                            extract_strengths_fn=self._extract_strengths_and_improvements_simple
+                        )
+                        
+                        # Mark as completed
+                        from services.analysis_status_service import AnalysisStatusService
+                        from schemas.analysis import SectionType
+                        status_svc = AnalysisStatusService(background_db)
+                        status_svc.mark_completed(candidate_id, SectionType.SYSTEM_DESIGN)
+                        logger.info(f"[ANALYSIS_STATUS] ✅ Marked System Design analysis as COMPLETED for candidate {candidate_id}")
+                        
+                        # Emit completion event
+                        from services.analysis_events import on_section_analysis_completed
+                        on_section_analysis_completed(candidate_id, SectionType.SYSTEM_DESIGN)
+                    finally:
+                        background_db.close()
+                except Exception as e:
+                    logger.error(f"Error in background system design analysis thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+                    # Try to mark as failed
+                    try:
+                        from core.database import SessionLocal
+                        from services.analysis_status_service import AnalysisStatusService
+                        from schemas.analysis import SectionType
+                        fail_db = SessionLocal()
+                        try:
+                            status_svc = AnalysisStatusService(fail_db)
+                            status_svc.mark_failed(candidate_id, SectionType.SYSTEM_DESIGN)
+                        finally:
+                            fail_db.close()
+                    except Exception:
+                        pass
+            
+            # Start system design analysis in background thread
+            analysis_thread = threading.Thread(target=run_system_design_analysis_async, daemon=True)
+            analysis_thread.start()
+            logger.info(f"[BACKGROUND_ANALYSIS] Enqueued system design analysis for candidate {candidate_id}")
+        except Exception as e:
+            logger.warning(f"Failed to enqueue system design analysis for candidate {candidate_id}: {str(e)}")
+            # Fallback: run synchronously if background task fails to start
+            self._save_to_interview_analysis_table(candidate_id, report, latest_evaluation)
         
         return FinalReportResponse(**report)
 

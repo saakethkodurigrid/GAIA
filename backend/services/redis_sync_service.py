@@ -41,8 +41,13 @@ class RedisSyncService:
             data = self.redis_client.get(redis_key)
             
             if data:
-                return json.loads(data)
-            return {}
+                answers_dict = json.loads(data)
+                sections_found = list(answers_dict.keys())
+                logger.info(f"[DATA_SOURCE] ✅ Fetched answers from REDIS for candidate {candidate_id} - Sections: {sections_found}")
+                return answers_dict
+            else:
+                logger.info(f"[DATA_SOURCE] ⚠️ No answers found in REDIS for candidate {candidate_id} - returning empty dict")
+                return {}
             
         except Exception as e:
             logger.error(f"Error getting answers from Redis for candidate {candidate_id}: {str(e)}")
@@ -63,8 +68,12 @@ class RedisSyncService:
             data = self.redis_client.get(redis_key)
             
             if data:
-                return json.loads(data)
-            return {}
+                progress_dict = json.loads(data)
+                logger.info(f"[DATA_SOURCE] ✅ Fetched progress from REDIS for candidate {candidate_id}")
+                return progress_dict
+            else:
+                logger.info(f"[DATA_SOURCE] ⚠️ No progress found in REDIS for candidate {candidate_id} - returning empty dict")
+                return {}
             
         except Exception as e:
             logger.error(f"Error getting progress from Redis for candidate {candidate_id}: {str(e)}")
@@ -425,6 +434,7 @@ class RedisSyncService:
             Dictionary with sync results for all sections
         """
         try:
+            logger.info(f"[DATA_SOURCE] 🔄 Starting sync from REDIS to POSTGRESQL for candidate {candidate_id}")
             answers = self.get_answers_from_redis(candidate_id)
             progress = self.get_progress_from_redis(candidate_id)
             
@@ -437,18 +447,30 @@ class RedisSyncService:
             
             # Sync MCQ answers
             if answers.get("mcq"):
+                logger.info(f"[DATA_SOURCE] 📥 Syncing {len(answers['mcq'])} MCQ answers from REDIS to POSTGRESQL for candidate {candidate_id}")
                 results["mcq"] = self.sync_mcq_answers_to_postgresql(candidate_id, answers["mcq"])
+                if results["mcq"].get("success"):
+                    logger.info(f"[DATA_SOURCE] ✅ Synced {results['mcq'].get('saved_count', 0)} MCQ answers to POSTGRESQL for candidate {candidate_id}")
+                else:
+                    logger.warning(f"[DATA_SOURCE] ❌ Failed to sync MCQ answers to POSTGRESQL for candidate {candidate_id}")
+            else:
+                logger.info(f"[DATA_SOURCE] ℹ️ No MCQ answers in REDIS for candidate {candidate_id} - skipping sync")
             
             # Sync Coding answers
             if answers.get("coding"):
+                logger.info(f"[DATA_SOURCE] 📥 Syncing coding answers from REDIS to POSTGRESQL for candidate {candidate_id}")
                 results["coding"] = self.sync_coding_answers_to_postgresql(candidate_id, answers["coding"])
+            else:
+                logger.info(f"[DATA_SOURCE] ℹ️ No coding answers in REDIS for candidate {candidate_id} - skipping sync")
             
             # Sync System Design data (from Redis session keys, not answers key)
             # System design sessions are stored as: candidate:{candidate_id}:system_design:{question_uuid}:session
+            logger.info(f"[DATA_SOURCE] 📥 Syncing system design data from REDIS to POSTGRESQL for candidate {candidate_id}")
             results["system_design"] = self.sync_system_design_to_postgresql(candidate_id, {})
             
             # Update progress in TestSession table
             if progress:
+                logger.info(f"[DATA_SOURCE] 📥 Syncing progress data from REDIS to POSTGRESQL for candidate {candidate_id}")
                 candidate = self.db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
                 if candidate:
                     # Query test_session directly to avoid relationship issues (InstrumentedList)
@@ -466,6 +488,9 @@ class RedisSyncService:
                         test_session.section_timings = progress["section_timings"]
                     self.db.commit()
                     results["progress"] = {"success": True}
+                    logger.info(f"[DATA_SOURCE] ✅ Synced progress data to POSTGRESQL for candidate {candidate_id}")
+            else:
+                logger.info(f"[DATA_SOURCE] ℹ️ No progress data in REDIS for candidate {candidate_id} - skipping sync")
             
             # Update last_activity
             candidate = self.db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
@@ -478,7 +503,7 @@ class RedisSyncService:
                     test_session.last_activity = datetime.utcnow()
                     self.db.commit()
             
-            logger.info(f"Synced all answers to PostgreSQL for candidate {candidate_id}")
+            logger.info(f"[DATA_SOURCE] ✅ Completed sync from REDIS to POSTGRESQL for candidate {candidate_id}")
             
             return {
                 "success": True,
@@ -487,7 +512,7 @@ class RedisSyncService:
             
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Error syncing all answers to PostgreSQL for candidate {candidate_id}: {str(e)}")
+            logger.error(f"[DATA_SOURCE] ❌ Error syncing all answers to PostgreSQL for candidate {candidate_id}: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)

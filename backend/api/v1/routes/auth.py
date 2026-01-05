@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 import json
+import logging
 import base64
 from urllib.parse import urlencode
 from core.database import get_db
@@ -65,31 +66,14 @@ async def google_callback(
         RedirectResponse to backend callback page with auth data, or JSON if return_json=True
     """
     # Get frontend URL from settings (for redirecting to frontend callback page)
+    # FRONTEND_URL is already validated in config.py to ensure it's set and is a valid absolute URL
     frontend_url = settings.FRONTEND_URL
-    
-    # Remove trailing slash if present
-    if frontend_url and frontend_url.endswith('/'):
-        frontend_url = frontend_url.rstrip('/')
-    
-    # Validate FRONTEND_URL is set
-    if not frontend_url or frontend_url.strip() == '':
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error("FRONTEND_URL is not set! Cannot redirect to frontend.")
-        # Return error as JSON since we can't redirect
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Configuration error: FRONTEND_URL is not set. Please configure FRONTEND_URL environment variable."
-        )
-    
     callback_url = f"{frontend_url}/auth/callback"
     
     # Debug logging
-    import logging
     logger = logging.getLogger(__name__)
     logger.info(f"OAuth callback received - code: {code is not None}, error: {error}, state: {state}, return_json: {return_json}")
-    logger.info(f"FRONTEND_URL from settings: '{settings.FRONTEND_URL}'")
-    logger.info(f"Frontend URL (processed): '{frontend_url}', Callback URL: '{callback_url}'")
+    logger.info(f"Frontend URL: '{frontend_url}', Callback URL: '{callback_url}'")
     
     # Handle OAuth errors from Google
     if error:
@@ -205,23 +189,7 @@ async def google_callback(
     
     # Debug logging
     logger.info(f"Redirecting to frontend: {redirect_url}")
-    logger.info(f"FRONTEND_URL from settings: {settings.FRONTEND_URL}")
     logger.info(f"Auth data: {auth_data}")
-    
-    # Ensure redirect URL is valid
-    if not redirect_url.startswith('http://') and not redirect_url.startswith('https://'):
-        logger.error(f"Invalid redirect URL (not absolute): {redirect_url}")
-        logger.error(f"FRONTEND_URL value: {settings.FRONTEND_URL}")
-        # If FRONTEND_URL is not set correctly, we can't redirect, so return error
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Configuration error: Invalid redirect URL. FRONTEND_URL may not be set correctly.",
-                "frontend_url": settings.FRONTEND_URL,
-                "redirect_url": redirect_url,
-                "auth_data": auth_data  # Include auth data in error for debugging
-            }
-        )
     
     # CRITICAL: Use status_code 302 (Found) for redirect
     # FastAPI RedirectResponse automatically sets Location header

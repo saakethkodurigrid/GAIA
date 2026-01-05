@@ -14,6 +14,10 @@ from core.database import get_db
 from core.dependencies import get_current_admin
 from models.recruiter_admin import RecruiterAdmin
 from models.system_config import SystemConfig
+from models.candidate import Candidate
+from models.recruiter_admin_candidate import RecruiterAdminCandidate
+from models.interview_analysis_table import InterviewAnalysisTable
+from services.candidate_service import CandidateService
 from services.admin_service import AdminService
 from schemas.admin import (
     AddRecruiterAdminRequest,
@@ -62,7 +66,7 @@ async def add_recruiter_admin(
             - role_id: 1 for Recruiter, 2 for Admin
         current_admin: Current admin user (verified by dependency)
         db: Database session
-        
+
     Returns:
         AddRecruiterAdminResponse with success status and created user data
         
@@ -283,210 +287,6 @@ async def list_today_interviews(
     )
     
     if not response.success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=response.message
-        )
-    
-    return response
-
-
-@router.post("/jobs/{job_id}/candidates/batch", response_model=AddCandidatesBatchResponse)
-async def add_candidates_batch(
-    job_id: str = Path(..., description="Job Reference Number (e.g., JD-783901)", pattern=r'^JD-\d{6}$'),
-    request: Request = ...,
-    files: List[UploadFile] = File(..., description="Resume files (PDF or DOCX, max 10 files)"),
-    current_user: RecruiterAdmin = Depends(get_current_recruiter_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Add candidates in batch (up to 10) to a job.
-    Add candidates in batch (up to 10) to a job.
-    
-    This endpoint processes candidate data with resume files:
-    1. Accepts candidate name, email, and resume file for each candidate
-    2. Extracts text from resume files
-    This endpoint processes candidate data with resume files:
-    1. Accepts candidate name, email, and resume file for each candidate
-    2. Extracts text from resume files
-    3. Scrubs PII from resume text (for storage and scoring)
-    4. Calculates resume score using scrubbed resume (NO PII)
-    5. Creates candidate records with provided name/email and scrubbed resume
-    5. Creates candidate records with provided name/email and scrubbed resume
-    6. Assigns candidates to the specified job
-    
-    Request Format:
-    - Form field: candidates_data (JSON string) containing array: [{"name": "...", "email": "..."}, ...]
-    - files: List of resume files matching the order of candidates (files[0] for candidate[0], etc.)
-    
-    Args:
-        job_id: Job reference number (e.g., JD-783901) of the job to assign candidates to
-        request: FastAPI Request object to access form data
-        files: List of resume files (PDF or DOCX, maximum 10 files) matching candidate order
-        current_user: Current recruiter/admin user (verified by dependency)
-        db: Database session
-        
-    Returns:
-        AddCandidatesBatchResponse with processing results
-        
-    Raises:
-        HTTPException: 
-            - 400: If validation fails, too many candidates, or processing errors
-            - 400: If validation fails, too many candidates, or processing errors
-            - 401: If authentication fails
-            - 403: If user is not a recruiter or admin
-            - 404: If job not found
-    """
-    # Parse form data to extract candidate fields
-    form_data = await request.form()
-    
-    # Extract candidates_data from form (frontend sends as JSON string)
-    candidates_data_str = form_data.get('candidates_data')
-    
-    if not candidates_data_str:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing 'candidates_data' field. Please provide candidate information as JSON."
-        )
-    
-    # Parse JSON string to get candidates list
-    try:
-        candidates_list = json.loads(candidates_data_str)
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid JSON format in 'candidates_data': {str(e)}"
-        )
-    
-    # Validate candidates_list is a list
-    if not isinstance(candidates_list, list):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="'candidates_data' must be a JSON array of candidate objects."
-        )
-    
-    # Validate candidate count
-    if len(candidates_list) > 10:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Maximum 10 candidates allowed. Received {len(candidates_list)} candidates."
-        )
-    
-    if len(candidates_list) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one candidate is required in 'candidates_data'."
-        )
-    
-    # Validate files match candidates count
-    # if len(files) != len(candidates_list):
-    # Validate files match candidates count
-    if len(files) != len(candidates_list):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
-        )
-    
-    # Validate and parse candidate data
-    validated_candidates = []
-    for idx, candidate in enumerate(candidates_list):
-        try:
-            validated_candidate = CandidateBatchItemRequest(**candidate)
-            validated_candidates.append(validated_candidate)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid candidate data at index {idx}: {str(e)}"
-            )
-            detail=f"Number of files ({len(files)}) must match number of candidates ({len(candidates_list)})"
-        
-    
-    # Validate and parse candidate data
-    validated_candidates = []
-    for idx, candidate in enumerate(candidates_list):
-        try:
-            validated_candidate = CandidateBatchItemRequest(**candidate)
-            validated_candidates.append(validated_candidate)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid candidate data at index {idx}: {str(e)}"
-            )
-    
-    # Validate file types
-    allowed_extensions = {'pdf', 'docx', 'doc'}
-    invalid_files = []
-    for file in files:
-        if not file.filename:
-            invalid_files.append("Unknown filename")
-            continue
-        extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ""
-        if extension not in allowed_extensions:
-            invalid_files.append(file.filename)
-    
-    if invalid_files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file types. Only PDF and DOCX are allowed. Invalid files: {', '.join(invalid_files)}"
-        )
-    
-    # Get job by reference number (fetches from database)
-    job_service = JobService(db)
-    try:
-        job = job_service.get_job_by_reference_number(job_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    
-    # Prepare candidate data with files
-    candidate_data_list = []
-    for candidate, file in zip(validated_candidates, files):
-        candidate_data_list.append({
-            "name": candidate.name,
-            "email": candidate.email,
-            "file": file
-        })
-    
-    # Prepare candidate data with files
-    candidate_data_list = []
-    for candidate, file in zip(validated_candidates, files):
-        candidate_data_list.append({
-            "name": candidate.name,
-            "email": candidate.email,
-            "file": file
-        })
-    
-    # Process batch
-    batch_service = CandidateBatchService(db)
-    result = await batch_service.process_batch_candidates(
-        job_id=job.job_id,  # Use UUID from fetched job object
-        candidate_data_list=candidate_data_list,
-        recruiter_email=current_user.email_id
-    )
-    
-    # Convert to response schema
-    candidate_responses = [
-        CandidateBatchItemResponse(**candidate) for candidate in result.get("candidates", [])
-    ]
-    
-    failed_file_responses = [
-        FailedFileResponse(**failed) for failed in result.get("failed_files", [])
-    ]
-    
-    response = AddCandidatesBatchResponse(
-        success=result.get("success", False),
-        message=result.get("message", ""),
-        total_files=result.get("total_files", 0),
-        successful=result.get("successful", 0),
-        failed=result.get("failed", 0),
-        candidates=candidate_responses,
-        failed_files=failed_file_responses
-    )
-    
-    # If all failed, return 400
-    if result.get("successful", 0) == 0 and result.get("failed", 0) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=response.message
@@ -726,8 +526,6 @@ async def get_resumes_list(
     
     Returns all candidates for the specified job regardless of status.
     """
-    from models.candidate import Candidate
-    from models.recruiter_admin_candidate import RecruiterAdminCandidate
     
     # Get job by reference number (fetches from database)
     job_service = JobService(db)
@@ -779,9 +577,6 @@ async def get_scheduled_interviews(
     Does not include rejected, shortlisted, or completed candidates.
     These are candidates in the interview pipeline.
     """
-    from models.candidate import Candidate
-    from models.recruiter_admin_candidate import RecruiterAdminCandidate
-    
     # Get job by reference number (fetches from database)
     job_service = JobService(db)
     try:
@@ -835,8 +630,6 @@ async def get_completed_interviews(
     Returns candidates with status 'completed', 'selected' or 'not selected' for the specified job.
     These are candidates who have completed interviews and may or may not have received final decisions.
     """
-    from models.candidate import Candidate
-    from models.recruiter_admin_candidate import RecruiterAdminCandidate
     
     # Get job by reference number (fetches from database)
     job_service = JobService(db)
@@ -848,41 +641,35 @@ async def get_completed_interviews(
             detail=str(e)
         )
     
-    # Get candidates assigned to this job with final statuses
-    candidates = db.query(Candidate).join(
+    # Get candidates assigned to this job with final statuses and their interview analysis
+    # Using LEFT JOIN to fetch all data in a single query (eliminates N+1 problem)
+    candidates_with_analysis = db.query(
+        Candidate,
+        InterviewAnalysisTable.overall_percentage
+    ).join(
         RecruiterAdminCandidate,
         Candidate.candidate_id == RecruiterAdminCandidate.candidate_id
+    ).outerjoin(
+        InterviewAnalysisTable,
+        Candidate.candidate_id == InterviewAnalysisTable.candidate_id
     ).filter(
         RecruiterAdminCandidate.job_id == job.job_id,  # Use UUID from fetched job object
         Candidate.status.in_(['completed', 'selected', 'not selected'])
     ).order_by(Candidate.resume_score.desc()).all()
     
-    # Get interview scores from interview_analysis_table
-    from models.interview_analysis_table import InterviewAnalysisTable
-    
-    candidate_list = []
-    for c in candidates:
-        # Fetch interview analysis for this candidate
-        interview_analysis = db.query(InterviewAnalysisTable).filter(
-            InterviewAnalysisTable.candidate_id == c.candidate_id
-        ).first()
-        
-        # Use overall_percentage from interview_analysis_table as interview_score
-        interview_score = None
-        if interview_analysis and interview_analysis.overall_percentage is not None:
-            interview_score = float(interview_analysis.overall_percentage)
-        
-        candidate_list.append(
-            CompletedInterviewCandidateResponse(
-                candidate_id=c.candidate_reference_number,  # Return reference number only
-                name=c.name,
-                email_id=c.email_id,
-                resume_score=float(c.resume_score) if c.resume_score else None,
-                interview_score=interview_score,
-                status=c.status,
-                report_link=None  # TODO: Generate report link if available
-            )
+    # Build response list from joined query results
+    candidate_list = [
+        CompletedInterviewCandidateResponse(
+            candidate_id=c.candidate_reference_number,  # Return reference number only
+            name=c.name,
+            email_id=c.email_id,
+            resume_score=float(c.resume_score) if c.resume_score else None,
+            interview_score=float(overall_percentage) if overall_percentage is not None else None,
+            status=c.status,
+            report_link=None  # TODO: Generate report link if available
         )
+        for c, overall_percentage in candidates_with_analysis
+    ]
     
     return CompletedInterviewsListResponse(
         success=True,
@@ -902,7 +689,7 @@ async def get_candidate_interview_analysis(
     Get interview analysis data for a specific candidate.
     
     Returns all analysis fields from interview_analysis_table:
-    - MCQ analysis (score, time_taken, attempted, correct by difficulty)
+    - MCQ analysis (score, attempted, correct by difficulty)
     - Coding analysis (total_score, time_taken, total_submitted, total_correct, partially_correct)
     - System design analysis (score, summary, key_strengths, areas_of_improvement)
     - Cheat metrics (tab_change, full_screen_exits, multiple_face)
@@ -929,7 +716,6 @@ async def get_candidate_interview_analysis(
     """
     try:
         # Get candidate by reference number
-        from services.candidate_service import CandidateService
         candidate_service = CandidateService(db)
         
         try:
@@ -940,8 +726,6 @@ async def get_candidate_interview_analysis(
                 detail="Candidate not found"
             )
         
-        # Get interview analysis using the candidate's UUID
-        from models.interview_analysis_table import InterviewAnalysisTable
         interview_analysis = db.query(InterviewAnalysisTable).filter(
             InterviewAnalysisTable.candidate_id == candidate.candidate_id
         ).first()

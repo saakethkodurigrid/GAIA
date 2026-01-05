@@ -6,6 +6,8 @@ import logging
 import random
 import time
 import httpx
+import asyncio
+import threading
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -16,7 +18,11 @@ from models.test_session import TestSession
 from models.coding_question_bank import CodingQuestionBank
 from models.interview_coding import InterviewCoding
 from services.interview_service import InterviewService
-from schemas.mcq import MCQQuestionsResponse, SaveMCQAnswerRequest, SaveMCQAnswerResponse
+from services.email_service import email_service
+from schemas.mcq import (
+    MCQQuestionsResponse, MCQQuestionResponse, SaveMCQAnswerRequest, 
+    SaveMCQAnswerResponse, AutosaveMCQAnswerResponse, SubmitMCQAnswerResponse
+)
 from schemas.candidate import ScheduleTestRequest, ScheduleTestResponse, GetScheduledDateResponse, InterviewSummaryResponse
 from schemas.admin import AssignedQuestionResponse
 from schemas.coding import RunCodeRequest, RunCodeResponse, SubmitCodingAnswerRequest, SubmitCodingAnswerResponse, CodingQuestionsResponse, CodingQuestionResponse, FinalizeCodingSectionResponse
@@ -32,8 +38,10 @@ from schemas.test_session import (
 from services.question_assignment_service import QuestionAssignmentService
 from services.test_data_loader_service import TestDataLoaderService
 from services.redis_sync_service import RedisSyncService
+from core.redis_client import get_redis_client
 from datetime import datetime, timedelta, timezone
 from utils.section_timings import start_section_timing, complete_section_timing
+from utils.test_validation import validate_test_in_progress
 from core.scheduler_manager import start_scheduler_jobs, stop_scheduler_jobs_if_no_active_tests
 
 logger = logging.getLogger(__name__)
@@ -76,31 +84,8 @@ async def get_mcq_questions(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. You can only view your own questions."
         )
-    
     # Check if test is in progress (status must be 'in progress')
-    candidate_status = current_candidate.status.lower() if current_candidate.status else None
-    
-    if candidate_status != 'in progress':
-        if candidate_status in ['shortlisted', 'rejected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned questions are only available during the test."
-            )
-        elif candidate_status == 'scheduled':
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned questions are only available during the test."
-            )
-        elif candidate_status in ['completed', 'selected', 'not selected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has been completed. The assigned questions are no longer available."
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test is not in progress. The assigned questions are only available during an active test session."
-            )
+    validate_test_in_progress(current_candidate, resource_name="questions")
     
     # Try to get questions from Redis first
     try:
@@ -109,7 +94,6 @@ async def get_mcq_questions(
         
         if mcq_questions:
             # Convert Redis data to response format
-            from schemas.mcq import MCQQuestionResponse
             questions_list = [
                 MCQQuestionResponse(
                     question_uuid=q.get("uuid"),
@@ -181,29 +165,7 @@ async def get_coding_questions(
         )
     
     # Check if test is in progress (status must be 'in progress')
-    candidate_status = current_candidate.status.lower() if current_candidate.status else None
-    
-    if candidate_status != 'in progress':
-        if candidate_status in ['shortlisted', 'rejected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned questions are only available during the test."
-            )
-        elif candidate_status == 'scheduled':
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned questions are only available during the test."
-            )
-        elif candidate_status in ['completed', 'selected', 'not selected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has been completed. The assigned questions are no longer available."
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test is not in progress. The assigned questions are only available during an active test session."
-            )
+    validate_test_in_progress(current_candidate, resource_name="questions")
     
     # Try to get questions from Redis first
     try:
@@ -233,12 +195,20 @@ async def get_coding_questions(
     
     # Fallback to database
     try:
-        # Get all coding question assignments for this candidate
-        coding_records = db.query(InterviewCoding).filter(
+        # Get coding questions with a JOIN query - only fetch needed columns
+        coding_questions = db.query(
+            InterviewCoding.question_uuid,
+            CodingQuestionBank.question,
+            CodingQuestionBank.sample_test_cases,
+            CodingQuestionBank.boiler_plate
+        ).join(
+            CodingQuestionBank,
+            InterviewCoding.question_uuid == CodingQuestionBank.uuid
+        ).filter(
             InterviewCoding.candidate_id == candidate_id
         ).all()
         
-        if not coding_records:
+        if not coding_questions:
             return CodingQuestionsResponse(
                 success=True,
                 message="No coding questions assigned to this candidate",
@@ -246,26 +216,16 @@ async def get_coding_questions(
                 questions=[]
             )
         
-        # Fetch question details from CodingQuestionBank
-        questions_list = []
-        for coding in coding_records:
-            coding_question = None
-            if hasattr(coding, 'question') and coding.question:
-                coding_question = coding.question
-            elif hasattr(coding, 'question_uuid'):
-                coding_question = db.query(CodingQuestionBank).filter(
-                    CodingQuestionBank.uuid == coding.question_uuid
-                ).first()
-            
-            if coding_question:
-                questions_list.append(
-                    CodingQuestionResponse(
-                        question_uuid=coding.question_uuid,
-                        question=coding_question.question if hasattr(coding_question, 'question') else "",
-                        sample_test_cases=coding_question.sample_test_cases if hasattr(coding_question, 'sample_test_cases') and coding_question.sample_test_cases else [],
-                        boilerplate_code=coding_question.boiler_plate if hasattr(coding_question, 'boiler_plate') else None
-                    )
-                )
+        # Convert to response format
+        questions_list = [
+            CodingQuestionResponse(
+                question_uuid=cq.question_uuid,
+                question=cq.question or "",
+                sample_test_cases=cq.sample_test_cases or [],
+                boilerplate_code=cq.boiler_plate
+            )
+            for cq in coding_questions
+        ]
         
         return CodingQuestionsResponse(
             success=True,
@@ -282,21 +242,29 @@ async def get_coding_questions(
         )
 
 
-@router.post("/{candidate_id}/mcq-questions/save-answers", response_model=SaveMCQAnswerResponse)
-async def save_mcq_answers(
+@router.post("/{candidate_id}/mcq-questions/autosave", response_model=AutosaveMCQAnswerResponse)
+async def autosave_mcq_answers(
     candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
     request: SaveMCQAnswerRequest = ...,
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
     """
-    Save or update candidate's answers for multiple MCQ questions.
+    Autosave candidate's MCQ answers to Redis only (draft storage).
     
-    This endpoint saves all candidate's selected answers for MCQ questions
-    in the interview_mcq table. The answers will be stored in the candidate_answer field.
-    Frontend sends a list of all questions and answers at once.
+    This endpoint is a best-effort, silent draft mechanism that never blocks or errors
+    from the frontend's perspective. It:
+    - Only saves answers to Redis (draft storage)
+    - Does NOT write to PostgreSQL
+    - Does NOT calculate scores
+    - Does NOT update candidate status or test_session
+    - Does NOT track activity
+    - Always returns success=True (fire-and-forget)
+    - Returns saved_count=0 if MCQ already submitted (no-op)
+    - Returns saved_count=0 if Redis fails (silent failure)
     
-    Only the authenticated candidate can save their own answers.
+    Only the authenticated candidate can autosave their own answers.
+    Authentication is guaranteed by the dependency injection.
     
     Args:
         candidate_id: UUID of the candidate
@@ -305,87 +273,90 @@ async def save_mcq_answers(
         db: Database session
         
     Returns:
-        SaveMCQAnswerResponse with success status, counts, and failed questions
+        AutosaveMCQAnswerResponse with success=True always, saved_count indicates actual saves
         
     Raises:
         HTTPException: 
-            - 400: If validation fails or error occurs while saving
+            - 400: If input validation fails (empty answers)
             - 401: If authentication fails
-            - 403: If user is not a candidate or tries to save answers for another candidate
+            - 403: If user is not a candidate or tries to autosave answers for another candidate
     """
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only save your own answers."
+            detail="Access denied. You can only autosave your own answers."
+        )
+    
+    # Validate request has answers
+    if not request.answers or len(request.answers) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No answers provided"
+        )
+    
+    # Autosave to Redis only (best-effort, always succeeds from frontend perspective)
+    interview_service = InterviewService(db)
+    response = interview_service.autosave_mcq_answers(candidate_id, request)
+    
+    # Always return response (service always returns success=True)
+    return response
+
+
+@router.post("/{candidate_id}/mcq-questions/submit", response_model=SubmitMCQAnswerResponse)
+async def submit_mcq_answers(
+    candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+    request: SaveMCQAnswerRequest = ...,
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Final submission of candidate's MCQ answers.
+    
+    This endpoint:
+    - Fetches latest draft answers from Redis (if present)
+    - Merges Redis answers with request payload (request takes precedence)
+    - Persists final answers to PostgreSQL (if any)
+    - Calculates and stores MCQ scores (if any answers)
+    - Marks assessment as submitted (even with zero answers)
+    - Updates last_activity
+    - Clears Redis draft after successful save
+    - Is idempotent (safe to call multiple times; returns existing results if already submitted)
+    - Supports zero-answer submission (valid state transition)
+    
+    Only the authenticated candidate can submit their own answers.
+    
+    Args:
+        candidate_id: UUID of the candidate
+        request: SaveMCQAnswerRequest containing list of question-answer pairs (can be empty)
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        SubmitMCQAnswerResponse with success status, counts, scores, and submission timestamp
+        
+    Raises:
+        HTTPException: 
+            - 400: If validation fails or error occurs while saving (only if answers provided and all failed)
+            - 401: If authentication fails
+            - 403: If user is not a candidate or tries to submit answers for another candidate
+    """
+    # Verify candidate_id matches authenticated user
+    if current_candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only submit your own answers."
         )
     
     # Log the received request
-    print("=== MCQ SUBMISSION REQUEST (BACKEND ROUTE) ===")
-    print(f"Candidate ID: {candidate_id}")
-    print(f"Number of answers received: {len(request.answers)}")
-    print("Request Body:")
-    print(json.dumps({
-        "answers": [
-            {
-                "question_uuid": item.question_uuid,
-                "candidate_answer": item.candidate_answer
-            }
-            for item in request.answers
-        ]
-    }, indent=2))
-    print("==============================================")
+    logger.info(f"MCQ submission request for candidate {candidate_id}: {len(request.answers)} answers")
     
-    # SOFT SAVE: Save to Redis immediately (fast)
-    try:
-        from core.redis_client import get_redis_client
-        from core.config import settings
-        redis_client = get_redis_client()
-        
-        # Get existing answers from Redis (if any)
-        redis_key = f"candidate:{candidate_id}:answers"
-        existing_answers = redis_client.get(redis_key)
-        answers_dict = json.loads(existing_answers) if existing_answers else {}
-        
-        # Update MCQ answers
-        mcq_answers = [
-            {
-                "question_uuid": item.question_uuid,
-                "candidate_answer": item.candidate_answer,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            for item in request.answers
-        ]
-        answers_dict["mcq"] = mcq_answers
-        
-        # Save to Redis with TTL
-        redis_client.setex(
-            redis_key,
-            settings.REDIS_TTL_SECONDS,
-            json.dumps(answers_dict)
-        )
-        
-        logger.info(f"Soft save to Redis successful for candidate {candidate_id}: {len(mcq_answers)} answers")
-        
-    except Exception as e:
-        logger.warning(f"Soft save to Redis failed for candidate {candidate_id}: {str(e)}, continuing with hard save")
-        # Continue with hard save even if Redis fails
-    
-    # HARD SAVE: Save to PostgreSQL (permanent storage)
+    # Submit to PostgreSQL (with Redis merge and scoring)
     interview_service = InterviewService(db)
-    response = interview_service.save_mcq_answers(candidate_id, request)
-    
-    # Update last_activity
-    try:
-        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
-        if candidate and candidate.test_session:
-            candidate.test_session.last_activity = datetime.utcnow()
-            db.commit()
-    except Exception as e:
-        logger.warning(f"Failed to update last_activity: {str(e)}")
+    response = interview_service.submit_mcq_answers(candidate_id, request)
     
     # Return response even if some failed, but raise exception if all failed
-    if response.failed_count == len(request.answers):
+    if response.failed_count == len(request.answers) and len(request.answers) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=response.message
@@ -404,19 +375,24 @@ async def schedule_test(
     """
     Schedule a test for the authenticated candidate.
     
-    This endpoint:
-    1. Saves the scheduled date and time for the candidate
-    2. Updates the candidate's status to 'scheduled'
-    3. Automatically assigns a system design question to the candidate
+    This endpoint uses SCHEDULE-BASED FLOW (scheduled_date set during scheduling):
+    1. Updates the candidate's scheduled_date and status to 'scheduled'
+    2. Assigns a system design question to the candidate (parallel)
+    3. Assigns coding questions to the candidate (parallel)
+    4. Generates MCQ questions using RAG based on candidate's resume and job description (parallel)
+    5. Sends test invitation email automatically AFTER questions are generated and assigned
+    
+    The scheduled_date is converted to IST timezone and stored as a naive datetime.
+    All question assignment and MCQ generation happens in parallel for efficiency.
     
     Args:
         candidate_id: Candidate UUID from invitation link (REQUIRED)
-        request: ScheduleTestRequest with scheduled_date (datetime)
+        request: ScheduleTestRequest with scheduled_date (datetime in IST format)
         current_candidate: Authenticated candidate (from dependency)
         db: Database session
         
     Returns:
-        ScheduleTestResponse with success status and scheduled_date
+        ScheduleTestResponse with success status and scheduled_date (ISO format with IST timezone)
         
     Raises:
         HTTPException: 
@@ -536,8 +512,8 @@ async def get_scheduled_date(
         )
 
 
-@router.get("/{candidate_id}/assigned-question", response_model=AssignedQuestionResponse)
-async def get_assigned_question(
+@router.get("/{candidate_id}/system-design-questions", response_model=AssignedQuestionResponse)
+async def get_system_design_questions(
     candidate_id: str = Path(..., description="Candidate UUID", pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
     current_candidate: Candidate = Depends(get_current_candidate),
     db: Session = Depends(get_db)
@@ -573,29 +549,7 @@ async def get_assigned_question(
         )
     
     # Check if test is in progress (status must be 'in progress')
-    candidate_status = current_candidate.status.lower() if current_candidate.status else None
-    
-    if candidate_status != 'in progress':
-        if candidate_status in ['shortlisted', 'rejected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned question is only available during the test."
-            )
-        elif candidate_status == 'scheduled':
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has not started yet. The assigned question is only available during the test."
-            )
-        elif candidate_status in ['completed', 'selected', 'not selected']:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test has been completed. The assigned question is no longer available."
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Test is not in progress. The assigned question is only available during an active test session."
-            )
+    validate_test_in_progress(current_candidate, resource_name="question")
     
     # Try to get question from Redis first
     try:
@@ -816,8 +770,6 @@ async def update_heartbeat(
         
         # SOFT SAVE: Update Redis heartbeat (fast)
         try:
-            from core.redis_client import get_redis_client
-            from core.config import settings
             redis_client = get_redis_client()
             
             redis_key = f"candidate:{candidate_id}:heartbeat"
@@ -905,15 +857,6 @@ async def complete_test(
     logger.info(f"[COMPLETE TEST] Completion method: {request.completion_method}")
     logger.info(f"[COMPLETE TEST] Section timings in request: {request.section_timings}")
     logger.info(f"[COMPLETE TEST] Sections completed: {request.sections_completed}")
-    if request.mcq_answers:
-        if isinstance(request.mcq_answers, list):
-            logger.info(f"[COMPLETE TEST] MCQ answers count (simplified format): {len(request.mcq_answers)}")
-        elif hasattr(request.mcq_answers, 'answers'):
-            logger.info(f"[COMPLETE TEST] MCQ answers count: {len(request.mcq_answers.answers)}")
-        else:
-            logger.info(f"[COMPLETE TEST] MCQ answers format: {type(request.mcq_answers)}")
-    logger.info(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
-    print(f"[COMPLETE TEST] Integrity metrics: {request.integrity}")
     
     # Verify candidate_id matches authenticated user
     if current_candidate.candidate_id != candidate_id:
@@ -951,106 +894,33 @@ async def complete_test(
                 completed_at=completed_at
             )
         
-        # Handle MCQ answers - support both full and simplified formats
-        mcq_request = None
-        if request.mcq_answers:
-            # Check if it's simplified format (List[Dict])
-            if isinstance(request.mcq_answers, list):
-                # Convert simplified format to SaveMCQAnswerRequest
-                from schemas.mcq import MCQAnswerItem
-                mcq_items = [
-                    MCQAnswerItem(
-                        question_uuid=item.get("question_uuid", ""),
-                        candidate_answer=item.get("candidate_answer", "")
-                    )
-                    for item in request.mcq_answers
-                    if isinstance(item, dict) and item.get("question_uuid") and item.get("candidate_answer")
-                ]
-                if mcq_items:
-                    mcq_request = SaveMCQAnswerRequest(answers=mcq_items)
-            # Check if it's dict format (serialized SaveMCQAnswerRequest)
-            elif isinstance(request.mcq_answers, dict):
-                if "answers" in request.mcq_answers:
-                    # Handle dict format that might be serialized SaveMCQAnswerRequest
-                    from schemas.mcq import MCQAnswerItem
-                    mcq_items = [
-                        MCQAnswerItem(**item) if isinstance(item, dict) else item
-                        for item in request.mcq_answers.get("answers", [])
-                    ]
-                    if mcq_items:
-                        mcq_request = SaveMCQAnswerRequest(answers=mcq_items)
-                else:
-                    # Single dict item, convert to list format
-                    from schemas.mcq import MCQAnswerItem
-                    if request.mcq_answers.get("question_uuid") and request.mcq_answers.get("candidate_answer"):
-                        mcq_request = SaveMCQAnswerRequest(answers=[MCQAnswerItem(**request.mcq_answers)])
-            else:
-                # Assume it's already SaveMCQAnswerRequest object (Pydantic model)
-                # Check if it has answers attribute
-                if hasattr(request.mcq_answers, 'answers'):
-                    mcq_request = request.mcq_answers
-                else:
-                    logger.warning(f"Unknown MCQ answers format: {type(request.mcq_answers)}")
-        
-        # Get all answers from Redis first (source of truth)
+        # Get progress from Redis for later use
+        logger.info(f"[DATA_SOURCE] 📥 Fetching progress data from REDIS for candidate {candidate_id}")
         sync_service = RedisSyncService(db)
-        redis_answers = sync_service.get_answers_from_redis(candidate_id)
         redis_progress = sync_service.get_progress_from_redis(candidate_id)
         
         # ============================================================================
-        # SAVE ANY PENDING MCQ ANSWERS (if provided in request)
+        # SYNC ALL DATA FROM REDIS TO POSTGRESQL (before analysis)
         # ============================================================================
-        # Save to Redis and PostgreSQL, but don't analyze yet
-        # The ensure_all_analyses_complete() method will handle analysis
-        if mcq_request and mcq_request.answers:
-            logger.info(f"[TEST_COMPLETION] Saving pending MCQ answers for candidate {candidate_id}")
-            # Save to Redis first (soft save)
-            try:
-                from core.redis_client import get_redis_client
-                from core.config import settings
-                redis_client = get_redis_client()
-                
-                redis_key = f"candidate:{candidate_id}:answers"
-                existing_answers = redis_client.get(redis_key)
-                answers_dict = json.loads(existing_answers) if existing_answers else {}
-                
-                mcq_answers = [
-                    {
-                        "question_uuid": item.question_uuid,
-                        "candidate_answer": item.candidate_answer,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    for item in mcq_request.answers
-                ]
-                answers_dict["mcq"] = mcq_answers
-                
-                redis_client.setex(
-                    redis_key,
-                    settings.REDIS_TTL_SECONDS,
-                    json.dumps(answers_dict)
-                )
-            except Exception as e:
-                logger.warning(f"Failed to save MCQ answers to Redis: {str(e)}")
-            
-            # Save to PostgreSQL (hard save) - analysis will be handled separately
-            interview_service = InterviewService(db)
-            # Temporarily disable analysis in save_mcq_answers by catching any errors
-            try:
-                mcq_response = interview_service.save_mcq_answers(candidate_id, mcq_request)
-                if not mcq_response.success:
-                    logger.warning(f"Some MCQ answers failed to save: {mcq_response.message}")
-            except Exception as e:
-                logger.warning(f"Failed to save MCQ answers to PostgreSQL: {str(e)}")
+        # Sync any answers/submissions from Redis to PostgreSQL before analysis runs
+        # Analysis functions read from PostgreSQL, so data must be synced first
+        logger.info(f"[DATA_SOURCE] 🔄 Syncing all data from REDIS to POSTGRESQL before analysis for candidate {candidate_id}")
+        sync_result = sync_service.sync_all_answers_to_postgresql(candidate_id)
+        if not sync_result.get("success"):
+            logger.warning(f"[DATA_SOURCE] ⚠️ Some data failed to sync from Redis: {sync_result.get('error')}")
+        else:
+            logger.info(f"[DATA_SOURCE] ✅ Successfully synced data from REDIS to POSTGRESQL for candidate {candidate_id}")
         
         # ============================================================================
         # ENSURE ALL SECTION ANALYSES ARE COMPLETE
         # ============================================================================
-        # This intelligently checks each section and only analyzes if needed
-        # Prevents duplicate analysis and ensures all data is ready for email
+        # Call exactly once - orchestrator handles all section analysis logic
+        # Analysis functions will read from POSTGRESQL (data already synced above)
         logger.info(f"[TEST_COMPLETION] Ensuring all analyses are complete for candidate {candidate_id}")
+        logger.info(f"[DATA_SOURCE] 📊 Analysis functions will read from POSTGRESQL (data synced from REDIS)")
         
         interview_service = InterviewService(db)
-        analysis_result = interview_service.ensure_all_analyses_complete(candidate_id)
+        analysis_result = await interview_service.ensure_all_analyses_complete(candidate_id)
         
         if analysis_result["completed_analyses"]:
             logger.info(f"[TEST_COMPLETION] ✅ Completed analyses: {', '.join(analysis_result['completed_analyses'])}")
@@ -1058,14 +928,6 @@ async def complete_test(
             logger.info(f"[TEST_COMPLETION] ⏭️  Skipped analyses (already done): {', '.join(analysis_result['skipped_analyses'])}")
         if analysis_result["failed_analyses"]:
             logger.warning(f"[TEST_COMPLETION] ❌ Failed analyses: {analysis_result['failed_analyses']}")
-        
-        # ============================================================================
-        # SYNC ALL REMAINING DATA FROM REDIS TO POSTGRESQL
-        # ============================================================================
-        # Final hard save of any remaining data
-        sync_result = sync_service.sync_all_answers_to_postgresql(candidate_id)
-        if not sync_result.get("success"):
-            logger.warning(f"Some data failed to sync from Redis: {sync_result.get('error')}")
         
         # Update candidate test completion
         now = datetime.utcnow()
@@ -1137,76 +999,9 @@ async def complete_test(
         except Exception as e:
             logger.warning(f"Failed to clear Redis keys for candidate {candidate_id}: {str(e)}")
         
-        # Send assessment report email asynchronously (non-blocking)
-        try:
-            import threading
-            import asyncio
-            from services.email_service import email_service
-            
-            def send_email_async():
-                """Helper function to run async email sending in background thread."""
-                try:
-                    # Create a new database session for the email thread
-                    db_gen = get_db()
-                    db_email = next(db_gen)
-                    try:
-                        asyncio.run(
-                            email_service.send_assessment_report_email(
-                                candidate_id=candidate_id,
-                                candidate_email=candidate.email_id,
-                                candidate_name=candidate.name,
-                                completion_date=now,
-                                db=db_email
-                            )
-                        )
-                    finally:
-                        db_email.close()
-                except Exception as e:
-                    logger.error(f"Error in background email thread for candidate {candidate_id}: {str(e)}", exc_info=True)
-            
-            # Start email sending in background thread
-            email_thread = threading.Thread(target=send_email_async, daemon=True)
-            email_thread.start()
-            
-            logger.info(f"Assessment report email queued for candidate {candidate_id}")
-        except Exception as e:
-            # Don't fail test completion if email fails
-            logger.error(f"Failed to queue assessment report email for candidate {candidate_id}: {str(e)}", exc_info=True)
-        
-        # Generate interview summary asynchronously (non-blocking)
-        # Run in background thread to avoid blocking test completion
-        try:
-            import threading
-            import asyncio
-            
-            def generate_summary_async():
-                """Helper function to run async summary generation in background thread."""
-                try:
-                    # Create new event loop for this thread
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    # Create new database session for background task
-                    from core.database import SessionLocal
-                    background_db = SessionLocal()
-                    try:
-                        background_interview_service = InterviewService(background_db)
-                        loop.run_until_complete(
-                            background_interview_service.generate_and_save_interview_summary(candidate_id)
-                        )
-                    finally:
-                        background_db.close()
-                        loop.close()
-                except Exception as e:
-                    logger.error(f"Error in background summary generation thread: {str(e)}")
-            
-            # Start summary generation in background thread
-            summary_thread = threading.Thread(target=generate_summary_async, daemon=True)
-            summary_thread.start()
-            logger.info(f"Started background summary generation for candidate {candidate_id}")
-        except Exception as e:
-            logger.warning(f"Failed to start summary generation for candidate {candidate_id}: {str(e)}")
-            # Continue - summary generation is non-critical
+        # Note: Summary generation and email sending are now handled by analyze_final()
+        # which is triggered automatically via event system when all section analyses complete.
+        # This ensures emails are sent only after all analyses are complete with correct data.
         
         return CompleteTestResponse(
             success=True,
@@ -1927,9 +1722,45 @@ async def finalize_coding_section(
             sections_completed["coding"] = True
             candidate.test_session.sections_completed = sections_completed
         
-        # Calculate and save coding analysis
-        interview_service = InterviewService(db)
-        interview_service._update_coding_analysis(candidate_id)
+        # Track analysis status: mark as IN_PROGRESS if NOT_STARTED
+        try:
+            from services.analysis_status_service import AnalysisStatusService
+            from schemas.analysis import SectionType, AnalysisStatus as AnalysisStatusEnum
+            
+            status_service = AnalysisStatusService(db)
+            current_status = status_service.get_status(candidate_id, SectionType.CODING)
+            
+            if current_status is None or current_status.status == AnalysisStatusEnum.NOT_STARTED.value:
+                status_service.mark_in_progress(candidate_id, SectionType.CODING)
+                logger.info(f"[ANALYSIS_STATUS] Coding analysis transitioned to IN_PROGRESS for candidate {candidate_id}")
+            # If already IN_PROGRESS or COMPLETED, do nothing (idempotent)
+        except Exception as status_error:
+            # Don't fail analysis if status tracking fails
+            logger.warning(f"Failed to update analysis status for Coding: {str(status_error)}")
+        
+        # Enqueue coding analysis to background thread (non-blocking)
+        try:
+            def run_coding_analysis_async():
+                """Helper function to run coding analysis in background thread."""
+                try:
+                    # Create new database session for background task
+                    from core.database import SessionLocal
+                    background_db = SessionLocal()
+                    try:
+                        from services.section_analysis_service import analyze_coding
+                        analyze_coding(candidate_id, background_db)
+                    finally:
+                        background_db.close()
+                except Exception as e:
+                    logger.error(f"Error in background coding analysis thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+            
+            # Start coding analysis in background thread
+            analysis_thread = threading.Thread(target=run_coding_analysis_async, daemon=True)
+            analysis_thread.start()
+            logger.info(f"[BACKGROUND_ANALYSIS] Enqueued coding analysis for candidate {candidate_id}")
+        except Exception as e:
+            logger.warning(f"Failed to enqueue coding analysis for candidate {candidate_id}: {str(e)}")
+            # Don't fail finalization if background task fails to start
         
         # Commit all changes
         db.commit()

@@ -22,7 +22,6 @@ async def generate_interview_summary(
     Args:
         mcq_metadata: Dictionary containing:
             - score (float): MCQ score out of 100
-            - time_taken (int/str): Time taken in seconds or formatted string
             - attempted (dict): {"easy": int, "medium": int, "hard": int}
             - correct (dict): {"easy": int, "medium": int, "hard": int}
         
@@ -125,15 +124,13 @@ def _build_summary_prompt(
     """
     # Format MCQ section
     mcq_score = mcq_metadata.get("score", 0)
-    mcq_time = mcq_metadata.get("time_taken", "N/A")
     mcq_attempted = mcq_metadata.get("attempted", {})
     mcq_correct = mcq_metadata.get("correct", {})
     
     mcq_section = f"""MCQ Section:
-- Score: {mcq_score}/100
-- Time Taken: {mcq_time}
-- Attempted: Easy={mcq_attempted.get('easy', 0)}, Medium={mcq_attempted.get('medium', 0)}, Hard={mcq_attempted.get('hard', 0)}
-- Correct: Easy={mcq_correct.get('easy', 0)}, Medium={mcq_correct.get('medium', 0)}, Hard={mcq_correct.get('hard', 0)}"""
+    - Score: {mcq_score}/100
+    - Attempted: Easy={mcq_attempted.get('easy', 0)}, Medium={mcq_attempted.get('medium', 0)}, Hard={mcq_attempted.get('hard', 0)}
+    - Correct: Easy={mcq_correct.get('easy', 0)}, Medium={mcq_correct.get('medium', 0)}, Hard={mcq_correct.get('hard', 0)}"""
     
     # Format Coding section
     coding_score = coding_metadata.get("total_score", 0)

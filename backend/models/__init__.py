@@ -13,6 +13,8 @@ from models.interview_coding import InterviewCoding
 from models.interview_system_design import InterviewSystemDesign
 from models.interview_analysis_table import InterviewAnalysisTable
 from models.test_session import TestSession
+from models.system_config import SystemConfig
+from models.analysis_status import AnalysisStatusRecord
 
 __all__ = [
     'Role',
@@ -26,7 +28,9 @@ __all__ = [
     'InterviewCoding',
     'InterviewSystemDesign',
     'InterviewAnalysisTable',
-    'TestSession'
+    'TestSession',
+    'SystemConfig',
+    'AnalysisStatusRecord'
 ]
 
 

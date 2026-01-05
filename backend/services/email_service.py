@@ -2,9 +2,12 @@
 Email service for sending invitation emails to candidates.
 """
 import logging
-from typing import Optional, Dict, Any
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
+import boto3
+from botocore.exceptions import ClientError
+from services.mcq_analysis_service import generate_mcq_analysis
+from services.coding_analysis_service import generate_coding_analysis
 # Import pydantic first to ensure SecretStr is available for fastapi_mail
 try:
     from pydantic import SecretStr  # noqa: F401
@@ -20,8 +23,6 @@ def _lazy_import_errors():
     global _ConnectionErrors, _SMTPAuthenticationError
     if _ConnectionErrors is None:
         try:
-            # Import pydantic SecretStr first to ensure it's available
-            from pydantic import SecretStr  # noqa: F401
             from fastapi_mail.errors import ConnectionErrors as _ConnErr
             from aiosmtplib.errors import SMTPAuthenticationError as _SMTPErr
             _ConnectionErrors = _ConnErr
@@ -124,6 +125,90 @@ class EmailService:
             return False
         
         return True
+    
+    async def send_email_ses(
+        self,
+        to_addresses: List[str],
+        subject: str,
+        html_body: str,
+        text_body: Optional[str] = None
+    ) -> bool:
+        """
+        Send email using AWS SES.
+        
+        Args:
+            to_addresses: List of recipient email addresses
+            subject: Email subject
+            html_body: HTML email body
+            text_body: Plain text email body (optional)
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        # Check if email is enabled
+        if not self.enabled:
+            logger.info(f"Email sending is disabled. Skipping email to {to_addresses}")
+            return False
+        
+        # Validate email configuration
+        if not settings.AWS_SES_REGION or not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY or not settings.AWS_SES_SOURCE_EMAIL:
+            logger.warning("AWS SES configuration is incomplete. Skipping email.")
+            return False
+        
+        # Validate recipient emails
+        valid_recipients = [email for email in to_addresses if self._is_valid_email(email)]
+        if not valid_recipients:
+            logger.warning(f"No valid email addresses in recipients: {to_addresses}. Skipping email.")
+            return False
+        
+        try:
+            # Create SES client
+            ses_client = boto3.client(
+                'ses',
+                region_name=settings.AWS_SES_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            
+            # Prepare message body
+            message_body = {
+                'Html': {
+                    'Data': html_body,
+                    'Charset': 'UTF-8'
+                }
+            }
+            
+            # Add text body if provided
+            if text_body:
+                message_body['Text'] = {
+                    'Data': text_body,
+                    'Charset': 'UTF-8'
+                }
+            
+            # Send email
+            response = ses_client.send_email(
+                Source=settings.AWS_SES_SOURCE_EMAIL,
+                Destination={'ToAddresses': valid_recipients},
+                Message={
+                    'Subject': {
+                        'Data': subject,
+                        'Charset': 'UTF-8'
+                    },
+                    'Body': message_body
+                }
+            )
+            
+            logger.info(f"Successfully sent email via SES to {valid_recipients}. MessageId: {response.get('MessageId')}")
+            return True
+            
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(f"Failed to send email via SES to {to_addresses}: {error_code} - {error_message}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending email via SES to {to_addresses}: {str(e)}", exc_info=True)
+            return False
     
     def _generate_invitation_link(self, candidate_id: str, link_type: str = "scheduling") -> str:
         """
@@ -310,16 +395,7 @@ This is an automated email. Please do not reply to this message.
             logger.warning(f"Invalid or placeholder email address: {candidate_email}. Skipping email.")
             return False
         
-        # Check if email configuration is set
-        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
-            logger.warning("Email configuration is incomplete. Skipping email.")
-            return False
-        
         try:
-            # Ensure email service is initialized
-            self._ensure_initialized()
-            _, MessageSchema, _ = _lazy_import_fastapi_mail()
-            
             # Generate invitation link
             invitation_link = self._generate_invitation_link(candidate_id)
             
@@ -331,40 +407,17 @@ This is an automated email. Please do not reply to this message.
                 candidate_name, job_role, resume_score, invitation_link
             )
             
-            # Create message
-            message = MessageSchema(
+            # Send email using SES
+            return self.send_email_ses(
+                to_addresses=[candidate_email],
                 subject=f"Interview Invitation - {job_role}",
-                recipients=[candidate_email],
-                body=html_content,
-                subtype="html",
-                # Include plain text alternative
-                alternatives=[{"content": text_content, "subtype": "plain"}]
+                html_body=html_content,
+                text_body=text_content
             )
             
-            # Send email
-            await self.fastmail.send_message(message)
-            logger.info(f"Successfully sent invitation email to {candidate_email} for candidate {candidate_id}")
-            return True
-            
         except Exception as e:
-            # Lazy import errors if needed
-            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
-            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
-                error_msg = str(e)
-                # Check if it's a Google app-specific password error
-                if 'Application-specific password required' in error_msg or '534' in error_msg:
-                    logger.error(
-                        f"Failed to send invitation email to {candidate_email}: "
-                        "Google requires an application-specific password because 2FA is enabled. "
-                        "Please generate an app-specific password from your Google Account settings "
-                        "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
-                    )
-                else:
-                    logger.error(f"Failed to send invitation email to {candidate_email}: {error_msg}", exc_info=True)
-                return False
-            else:
-                # Re-raise if it's not a connection/auth error
-                raise
+            logger.error(f"Error sending invitation email to {candidate_email}: {str(e)}", exc_info=True)
+            return False
     
     def _create_test_invitation_email_html(
         self,
@@ -548,16 +601,7 @@ This is an automated email. Please do not reply to this message.
             logger.warning(f"Invalid or placeholder email address: {candidate_email}. Skipping email.")
             return False
         
-        # Check if email configuration is set
-        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
-            logger.warning("Email configuration is incomplete. Skipping email.")
-            return False
-        
         try:
-            # Ensure email service is initialized
-            self._ensure_initialized()
-            _, MessageSchema, _ = _lazy_import_fastapi_mail()
-            
             # Generate scheduling invitation link
             invitation_link = self._generate_invitation_link(candidate_id, link_type="scheduling")
             
@@ -569,40 +613,17 @@ This is an automated email. Please do not reply to this message.
                 candidate_name, job_role, None, invitation_link
             )
             
-            # Create message
-            message = MessageSchema(
+            # Send email using SES
+            return await self.send_email_ses(
+                to_addresses=[candidate_email],
                 subject=f"Interview Invitation - {job_role}",
-                recipients=[candidate_email],
-                body=html_content,
-                subtype="html",
-                # Include plain text alternative
-                alternatives=[{"content": text_content, "subtype": "plain"}]
+                html_body=html_content,
+                text_body=text_content
             )
             
-            # Send email
-            await self.fastmail.send_message(message)
-            logger.info(f"Successfully sent scheduling invitation email to {candidate_email} for candidate {candidate_id}")
-            return True
-            
         except Exception as e:
-            # Lazy import errors if needed
-            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
-            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
-                error_msg = str(e)
-                # Check if it's a Google app-specific password error
-                if 'Application-specific password required' in error_msg or '534' in error_msg:
-                    logger.error(
-                        f"Failed to send scheduling invitation email to {candidate_email}: "
-                        "Google requires an application-specific password because 2FA is enabled. "
-                        "Please generate an app-specific password from your Google Account settings "
-                        "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
-                    )
-                else:
-                    logger.error(f"Failed to send scheduling invitation email to {candidate_email}: {error_msg}", exc_info=True)
-                return False
-            else:
-                # Re-raise if it's not a connection/auth error
-                raise
+            logger.error(f"Error sending scheduling invitation email to {candidate_email}: {str(e)}", exc_info=True)
+            return False
     
     async def send_test_invitation_email(
         self,
@@ -636,16 +657,7 @@ This is an automated email. Please do not reply to this message.
             logger.warning(f"Invalid or placeholder email address: {candidate_email}. Skipping email.")
             return False
         
-        # Check if email configuration is set
-        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
-            logger.warning("Email configuration is incomplete. Skipping email.")
-            return False
-        
         try:
-            # Ensure email service is initialized
-            self._ensure_initialized()
-            _, MessageSchema, _ = _lazy_import_fastapi_mail()
-            
             # Generate test invitation link
             invitation_link = self._generate_invitation_link(candidate_id, link_type="test")
             
@@ -657,41 +669,21 @@ This is an automated email. Please do not reply to this message.
                 candidate_name, job_role, scheduled_date, invitation_link
             )
             
-            # Create message
+            # Create subject
             formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
-            message = MessageSchema(
-                subject=f"Test Scheduled - {job_role} - {formatted_date}",
-                recipients=[candidate_email],
-                body=html_content,
-                subtype="html",
-                # Include plain text alternative
-                alternatives=[{"content": text_content, "subtype": "plain"}]
+            subject = f"Test Scheduled - {job_role} - {formatted_date}"
+            
+            # Send email using SES
+            return await self.send_email_ses(
+                to_addresses=[candidate_email],
+                subject=subject,
+                html_body=html_content,
+                text_body=text_content
             )
             
-            # Send email
-            await self.fastmail.send_message(message)
-            logger.info(f"Successfully sent test invitation email to {candidate_email} for candidate {candidate_id}")
-            return True
-            
         except Exception as e:
-            # Lazy import errors if needed
-            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
-            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
-                error_msg = str(e)
-                # Check if it's a Google app-specific password error
-                if 'Application-specific password required' in error_msg or '534' in error_msg:
-                    logger.error(
-                        f"Failed to send test invitation email to {candidate_email}: "
-                        "Google requires an application-specific password because 2FA is enabled. "
-                        "Please generate an app-specific password from your Google Account settings "
-                        "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
-                    )
-                else:
-                    logger.error(f"Failed to send test invitation email to {candidate_email}: {error_msg}", exc_info=True)
-                return False
-            else:
-                # Re-raise if it's not a connection/auth error
-                raise
+            logger.error(f"Error sending test invitation email to {candidate_email}: {str(e)}", exc_info=True)
+            return False
     
     def _create_recruiter_test_notification_email_html(
         self,
@@ -878,16 +870,7 @@ This is an automated email. Please do not reply to this message.
             logger.warning(f"Invalid or placeholder email address: {recruiter_email}. Skipping email.")
             return False
         
-        # Check if email configuration is set
-        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
-            logger.warning("Email configuration is incomplete. Skipping email.")
-            return False
-        
         try:
-            # Ensure email service is initialized
-            self._ensure_initialized()
-            _, MessageSchema, _ = _lazy_import_fastapi_mail()
-            
             # Create email content
             html_content = self._create_recruiter_test_notification_email_html(
                 recruiter_name, candidate_name, candidate_email, 
@@ -898,41 +881,286 @@ This is an automated email. Please do not reply to this message.
                 candidate_reference_number, job_role, scheduled_date
             )
             
-            # Create message
-            formatted_date = scheduled_date.strftime("%B %d, %Y at %I:%M %p")
-            message = MessageSchema(
-                subject=f"Interview Scheduled - {candidate_name} - {job_role}",
-                recipients=[recruiter_email],
-                body=html_content,
-                subtype="html",
-                # Include plain text alternative
-                alternatives=[{"content": text_content, "subtype": "plain"}]
+            # Create subject
+            subject = f"Interview Scheduled - {candidate_name} - {job_role}"
+            
+            # Send email using SES
+            return await self.send_email_ses(
+                to_addresses=[recruiter_email],
+                subject=subject,
+                html_body=html_content,
+                text_body=text_content
             )
             
-            # Send email
-            await self.fastmail.send_message(message)
-            logger.info(f"Successfully sent recruiter notification email to {recruiter_email} for candidate {candidate_name}")
-            return True
+        except Exception as e:
+            logger.error(f"Error sending recruiter notification email to {recruiter_email}: {str(e)}", exc_info=True)
+            return False
+    
+    def _create_recruiter_test_completion_email_html(
+        self,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        completion_date: datetime,
+        overall_score: Optional[int],
+        analysis_report_url: str
+    ) -> str:
+        """
+        Create HTML email template for recruiter test completion notification.
+        
+        Args:
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            completion_date: Test completion date/time
+            overall_score: Overall test score (optional)
+            analysis_report_url: Full URL to analysis report
+            
+        Returns:
+            HTML email content
+        """
+        formatted_date = completion_date.strftime("%B %d, %Y at %I:%M %p")
+        ref_display = f" ({candidate_reference_number})" if candidate_reference_number else ""
+        
+        # Score section (conditional)
+        score_section = ""
+        if overall_score is not None:
+            score_section = f"""
+            <tr>
+                <td style="padding: 8px 0; font-size: 14px; color: #4B5563;">
+                    <strong style="color: #1F2937;">Overall Score:</strong> {overall_score}/100
+                </td>
+            </tr>
+            """
+        
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Completed - {candidate_name}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F3F4F6;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #FFFFFF; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%); padding: 40px 40px 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                            <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">Test Completed</h1>
+                            <p style="color: #E0E7FF; margin: 10px 0 0; font-size: 16px;">Technical Assessment Notification</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <p style="margin: 0 0 20px; font-size: 16px; color: #1F2937;">Dear {recruiter_name},</p>
+                            
+                            <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #4B5563;">
+                                The candidate has successfully completed their technical assessment. You can now review the detailed analysis report.
+                            </p>
+                            
+                            <!-- Candidate Details Card -->
+                            <div style="background-color: #F9FAFB; border-left: 4px solid #667EEA; border-radius: 6px; padding: 24px; margin-bottom: 30px;">
+                                <h2 style="margin: 0 0 16px; font-size: 18px; color: #1F2937; font-weight: 600;">Candidate Details</h2>
+                                <table role="presentation" style="width: 100%;">
+                                    <tr>
+                                        <td style="padding: 8px 0; font-size: 14px; color: #4B5563;">
+                                            <strong style="color: #1F2937;">Candidate Name:</strong> {candidate_name}{ref_display}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px 0; font-size: 14px; color: #4B5563;">
+                                            <strong style="color: #1F2937;">Candidate Email:</strong> {candidate_email}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px 0; font-size: 14px; color: #4B5563;">
+                                            <strong style="color: #1F2937;">Job Role:</strong> {job_role}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px 0; font-size: 14px; color: #4B5563;">
+                                            <strong style="color: #1F2937;">Completion Date:</strong> {formatted_date} (IST)
+                                        </td>
+                                    </tr>
+                                    {score_section}
+                                </table>
+                            </div>
+                            
+                            <!-- CTA Button -->
+                            <table role="presentation" style="margin: 30px 0;">
+                                <tr>
+                                    <td style="text-align: center;">
+                                        <a href="{analysis_report_url}" 
+                                           style="display: inline-block; background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%); color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);">
+                                            View Analysis Report
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 30px 0 0; font-size: 14px; color: #6B7280; text-align: center;">
+                                Or copy this link: <a href="{analysis_report_url}" style="color: #667EEA; text-decoration: none;">{analysis_report_url}</a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #F9FAFB; padding: 30px 40px; text-align: center; border-radius: 0 0 12px 12px; border-top: 1px solid #E5E7EB;">
+                            <p style="margin: 0; font-size: 14px; color: #6B7280;">
+                                This is an automated email from the TechInterview Platform.
+                            </p>
+                            <p style="margin: 10px 0 0; font-size: 12px; color: #9CA3AF;">
+                                Please do not reply to this message.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+        """
+        return html_content
+    
+    def _create_recruiter_test_completion_email_text(
+        self,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        completion_date: datetime,
+        overall_score: Optional[int],
+        analysis_report_url: str
+    ) -> str:
+        """
+        Create plain text email template for recruiter test completion notification.
+        
+        Args:
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            completion_date: Test completion date/time
+            overall_score: Overall test score (optional)
+            analysis_report_url: Full URL to analysis report
+            
+        Returns:
+            Plain text email content
+        """
+        formatted_date = completion_date.strftime("%B %d, %Y at %I:%M %p")
+        ref_display = f" ({candidate_reference_number})" if candidate_reference_number else ""
+        
+        # Score section (conditional)
+        score_line = ""
+        if overall_score is not None:
+            score_line = f"\n- Overall Score: {overall_score}/100"
+        
+        text_content = f"""
+Test Completed - Technical Assessment Notification - TechInterview Platform
+
+Dear {recruiter_name},
+
+The candidate has successfully completed their technical assessment. You can now review the detailed analysis report.
+
+Candidate Details:
+- Candidate Name: {candidate_name}{ref_display}
+- Candidate Email: {candidate_email}
+- Job Role: {job_role}
+- Completion Date: {formatted_date} (IST){score_line}
+
+View Analysis Report:
+{analysis_report_url}
+
+This is an automated email from the TechInterview Platform.
+
+Best regards,
+TechInterview Platform Team
+
+---
+This is an automated email. Please do not reply to this message.
+        """
+        return text_content.strip()
+    
+    async def send_recruiter_test_completion_email(
+        self,
+        recruiter_email: str,
+        recruiter_name: str,
+        candidate_name: str,
+        candidate_email: str,
+        candidate_reference_number: Optional[str],
+        job_role: str,
+        completion_date: datetime,
+        overall_score: Optional[int],
+        analysis_report_url: str
+    ) -> bool:
+        """
+        Send test completion notification email to recruiter.
+        Sent when candidate completes the test.
+        
+        Args:
+            recruiter_email: Recruiter's email address
+            recruiter_name: Recruiter's name
+            candidate_name: Candidate's name
+            candidate_email: Candidate's email address
+            candidate_reference_number: Candidate reference (e.g., CI-123456)
+            job_role: Job role/title
+            completion_date: Test completion date/time
+            overall_score: Overall test score (optional)
+            analysis_report_url: Full URL to analysis report
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        # Check if email is enabled
+        if not self.enabled:
+            logger.info(f"Email sending is disabled. Skipping recruiter completion email to {recruiter_email}")
+            return False
+        
+        # Validate email
+        if not self._is_valid_email(recruiter_email):
+            logger.warning(f"Invalid or placeholder email address: {recruiter_email}. Skipping email.")
+            return False
+        
+        try:
+            # Create email content
+            html_content = self._create_recruiter_test_completion_email_html(
+                recruiter_name, candidate_name, candidate_email, 
+                candidate_reference_number, job_role, completion_date,
+                overall_score, analysis_report_url
+            )
+            text_content = self._create_recruiter_test_completion_email_text(
+                recruiter_name, candidate_name, candidate_email, 
+                candidate_reference_number, job_role, completion_date,
+                overall_score, analysis_report_url
+            )
+            
+            # Create subject
+            subject = f"Test Completed - {candidate_name} - {job_role}"
+            
+            # Send email using SES
+            return await self.send_email_ses(
+                to_addresses=[recruiter_email],
+                subject=subject,
+                html_body=html_content,
+                text_body=text_content
+            )
             
         except Exception as e:
-            # Lazy import errors if needed
-            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
-            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
-                error_msg = str(e)
-                # Check if it's a Google app-specific password error
-                if 'Application-specific password required' in error_msg or '534' in error_msg:
-                    logger.error(
-                        f"Failed to send recruiter notification email to {recruiter_email}: "
-                        "Google requires an application-specific password because 2FA is enabled. "
-                        "Please generate an app-specific password from your Google Account settings "
-                        "(https://myaccount.google.com/apppasswords) and use it as MAIL_PASSWORD in your environment variables."
-                    )
-                else:
-                    logger.error(f"Failed to send recruiter notification email to {recruiter_email}: {error_msg}", exc_info=True)
-                return False
-            else:
-                # Re-raise if it's not a connection/auth error
-                raise
+            logger.error(f"Error sending recruiter completion email to {recruiter_email}: {str(e)}", exc_info=True)
+            return False
     
     def _get_system_design_analysis(self, candidate_id: str, db) -> Dict[str, Any]:
         """
@@ -1452,11 +1680,6 @@ Grid Dynamics © 2006-2025
             logger.warning(f"Invalid or placeholder email address: {candidate_email}. Skipping email.")
             return False
         
-        # Check if email configuration is set
-        if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.MAIL_FROM:
-            logger.warning("Email configuration is incomplete. Skipping email.")
-            return False
-        
         # Check if all analyses are ready before proceeding
         if not self._are_all_analyses_ready(candidate_id, db):
             logger.warning(f"Not all analyses are ready for candidate {candidate_id}. Email will not be sent. Analyses must be completed first.")
@@ -1467,20 +1690,20 @@ Grid Dynamics © 2006-2025
             from services.mcq_analysis_service import generate_mcq_analysis
             from services.coding_analysis_service import generate_coding_analysis
             
-            logger.info(f"Generating analyses for candidate {candidate_id}")
+            logger.info(f"[DATA_SOURCE] 📊 Fetching analysis data from POSTGRESQL (InterviewAnalysisTable) for candidate {candidate_id}")
+            logger.info(f"[DATA_SOURCE] 🔄 Generating analyses for candidate {candidate_id} (using data from POSTGRESQL)")
             
-            # Generate MCQ analysis
+            # Generate MCQ analysis (reads from InterviewAnalysisTable.mcq_analysis)
+            logger.info(f"[DATA_SOURCE] 📥 Generating MCQ analysis from POSTGRESQL data for candidate {candidate_id}")
             mcq_analysis = await generate_mcq_analysis(candidate_id, db)
             
-            # Generate Coding analysis
+            # Generate Coding analysis (reads from InterviewAnalysisTable.coding_analysis)
+            logger.info(f"[DATA_SOURCE] 📥 Generating coding analysis from POSTGRESQL data for candidate {candidate_id}")
             coding_analysis = await generate_coding_analysis(candidate_id, db)
             
-            # Fetch System Design analysis
+            # Fetch System Design analysis (reads from InterviewAnalysisTable.system_design_analysis)
+            logger.info(f"[DATA_SOURCE] 📥 Fetching system design analysis from POSTGRESQL for candidate {candidate_id}")
             system_design_analysis = self._get_system_design_analysis(candidate_id, db)
-            
-            # Ensure email service is initialized
-            self._ensure_initialized()
-            _, MessageSchema, _ = _lazy_import_fastapi_mail()
             
             # Create email content
             html_content = self._create_assessment_report_email_html(
@@ -1490,31 +1713,17 @@ Grid Dynamics © 2006-2025
                 candidate_name, completion_date, mcq_analysis, coding_analysis, system_design_analysis
             )
             
-            # Create message
-            message = MessageSchema(
-                subject="Interview Assessment Report - GAIA",
-                recipients=[candidate_email],
-                body=html_content,
-                subtype="html",
-                # Include plain text alternative
-                alternatives=[{"content": text_content, "subtype": "plain"}]
+            # Send email using SES
+            return await self.send_email_ses(
+                to_addresses=[candidate_email],
+                subject="Interview Assessment Report - TechInterview Platform",
+                html_body=html_content,
+                text_body=text_content
             )
             
-            # Send email
-            await self.fastmail.send_message(message)
-            logger.info(f"Successfully sent assessment report email to {candidate_email} for candidate {candidate_id}")
-            return True
-            
         except Exception as e:
-            # Lazy import errors if needed
-            ConnectionErrors, SMTPAuthenticationError = _lazy_import_errors()
-            if isinstance(e, (ConnectionErrors, SMTPAuthenticationError)):
-                error_msg = str(e)
-                logger.error(f"Failed to send assessment report email to {candidate_email}: {error_msg}", exc_info=True)
-                return False
-            else:
-                logger.error(f"Error sending assessment report email to {candidate_email}: {str(e)}", exc_info=True)
-                return False
+            logger.error(f"Error sending assessment report email to {candidate_email}: {str(e)}", exc_info=True)
+            return False
     
     async def try_send_assessment_report_email_if_ready(
         self,

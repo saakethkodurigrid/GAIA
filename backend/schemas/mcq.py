@@ -85,3 +85,25 @@ class InitializeRAGResponse(BaseModel):
     success: bool = Field(..., description="Whether initialization was successful")
     message: str = Field(..., description="Response message")
 
+
+class AutosaveMCQAnswerResponse(BaseModel):
+    """Response schema for autosaving MCQ answers (Redis only)."""
+    success: bool
+    message: str
+    saved_count: int = Field(..., description="Number of answers successfully saved to Redis")
+    last_updated_at: str = Field(..., description="ISO timestamp of last update")
+
+
+class SubmitMCQAnswerResponse(BaseModel):
+    """Response schema for final submission of MCQ answers (PostgreSQL)."""
+    success: bool
+    message: str
+    saved_count: int = Field(..., description="Number of answers successfully saved")
+    failed_count: int = Field(..., description="Number of answers that failed to save")
+    failed_questions: List[str] = Field(default_factory=list, description="List of question UUIDs that failed to save")
+    total_score: int = Field(default=0, description="Total score")
+    total_questions: int = Field(default=0, description="Total number of questions answered")
+    correct_answers: int = Field(default=0, description="Number of correct answers")
+    incorrect_answers: int = Field(default=0, description="Number of incorrect answers")
+    submitted_at: str = Field(..., description="ISO timestamp of submission")
+

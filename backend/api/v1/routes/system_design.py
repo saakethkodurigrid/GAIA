@@ -15,6 +15,9 @@ from schemas.system_design import (
 )
 import asyncio
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/system-design", tags=["System Design"])
 
@@ -204,7 +207,7 @@ async def get_chat_history(
         )
 
 
-@router.post("/{candidate_id}/sessions/{question_uuid}/end", response_model=FinalReportResponse)
+@router.post("/{candidate_id}/sessions/{question_uuid}/end")
 async def end_session(
     candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
@@ -212,7 +215,11 @@ async def end_session(
     db: Session = Depends(get_db)
 ):
     """
-    End session and generate final report.
+    End session with immediate canvas evaluation, then enqueue full analysis to background.
+    
+    This endpoint:
+    1. Performs immediate canvas evaluation (if canvas exists) - returns quickly
+    2. Enqueues full section analysis in background thread (non-blocking)
     
     Args:
         candidate_id: Candidate UUID (from path)
@@ -221,7 +228,7 @@ async def end_session(
         db: Database session
         
     Returns:
-        FinalReportResponse with evaluation report
+        Response with immediate evaluation (if available) and status
     """
     try:
         service = SystemDesignService(db)
@@ -234,7 +241,140 @@ async def end_session(
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.generate_final_report(current_candidate.candidate_id, question_uuid)
+        # === STEP 1: Immediate Canvas Evaluation (if canvas exists) ===
+        immediate_evaluation = None
+        if session.current_canvas:
+            try:
+                logger.info(f"[END_SESSION] Performing immediate canvas evaluation for candidate {candidate_id}")
+                
+                # Get canvas data
+                canvas_json = session.current_canvas
+                
+                # Get chat context (last 30 messages)
+                chat_text = ""
+                if session.chat_history:
+                    if len(session.chat_history) <= 30:
+                        latest_chat = session.chat_history
+                    else:
+                        latest_chat = session.chat_history[-30:]
+                    chat_lines = []
+                    for msg in latest_chat:
+                        role_label = "Candidate" if msg.role == "user" else "Interviewer"
+                        chat_lines.append(f"{role_label}: {msg.content}")
+                    chat_text = "\n".join(chat_lines)
+                
+                # Fetch evaluation criteria
+                evaluation_criteria = None
+                evaluation_context = None
+                if session.question_id:
+                    question_metadata = service._get_question_metadata(session.question_id)
+                    if question_metadata:
+                        evaluation_criteria = question_metadata.get("evaluation_criteria")
+                        evaluation_context = question_metadata.get("evaluation_context")
+                
+                # Perform evaluation
+                evaluation = await service.evaluator.evaluate(
+                    canvas_json=canvas_json,
+                    chat_text=chat_text,
+                    question_text=session.question_text,
+                    evaluation_criteria=evaluation_criteria,
+                    evaluation_context=evaluation_context
+                )
+                
+                # Save evaluation to session
+                from utils.system_design.models import Evaluation as EvaluationModel
+                eval_obj = EvaluationModel(
+                    version=len(session.canvas_versions) + 1,
+                    scores=evaluation["scores"],
+                    feedback=evaluation["feedback"],
+                    follow_up=evaluation.get("follow_up")
+                )
+                session.evaluations.append(eval_obj)
+                
+                # Save to Redis (immediate)
+                service._save_session_to_redis(candidate_id, question_uuid, session)
+                
+                # Save to PostgreSQL
+                from models.interview_system_design import InterviewSystemDesign
+                interview_record = db.query(InterviewSystemDesign).filter(
+                    InterviewSystemDesign.candidate_id == candidate_id,
+                    InterviewSystemDesign.question_uuid == question_uuid
+                ).first()
+                
+                if interview_record:
+                    avg_score = sum(evaluation["scores"].values()) / len(evaluation["scores"]) if evaluation["scores"] else 0
+                    if avg_score <= 2.5:
+                        final_score = int(round(avg_score * 15))
+                    elif avg_score <= 3.5:
+                        final_score = int(round(avg_score * 20))
+                    else:
+                        final_score = int(round(avg_score * 20))
+                    
+                    interview_record.final_diagram = canvas_json
+                    interview_record.final_score = final_score
+                    db.commit()
+                
+                immediate_evaluation = {
+                    "scores": evaluation.get("scores", {}),
+                    "feedback": evaluation.get("feedback", ""),
+                    "follow_up": evaluation.get("follow_up", "")
+                }
+                
+                logger.info(f"[END_SESSION] ✅ Immediate canvas evaluation completed for candidate {candidate_id}")
+                
+            except Exception as eval_error:
+                logger.warning(f"[END_SESSION] Failed immediate canvas evaluation: {str(eval_error)}")
+                # Continue - immediate evaluation is nice-to-have, not critical
+        
+        # === STEP 2: Track Analysis Status ===
+        try:
+            from services.analysis_status_service import AnalysisStatusService
+            from schemas.analysis import SectionType, AnalysisStatus as AnalysisStatusEnum
+            
+            status_service = AnalysisStatusService(db)
+            current_status = status_service.get_status(candidate_id, SectionType.SYSTEM_DESIGN)
+            
+            if current_status is None or current_status.status == AnalysisStatusEnum.NOT_STARTED.value:
+                status_service.mark_in_progress(candidate_id, SectionType.SYSTEM_DESIGN)
+                logger.info(f"[ANALYSIS_STATUS] System Design analysis transitioned to IN_PROGRESS for candidate {candidate_id}")
+        except Exception as status_error:
+            logger.warning(f"Failed to update analysis status for System Design: {str(status_error)}")
+        
+        # === STEP 3: Enqueue Full Analysis to Background ===
+        import threading
+        
+        def run_system_design_analysis_async():
+            """Helper function to run System Design analysis in background thread."""
+            try:
+                from core.database import SessionLocal
+                background_db = SessionLocal()
+                try:
+                    from services.section_analysis_service import analyze_system_design
+                    analyze_system_design(candidate_id, background_db)
+                finally:
+                    background_db.close()
+            except Exception as e:
+                logger.error(f"Error in background System Design analysis thread for candidate {candidate_id}: {str(e)}", exc_info=True)
+        
+        try:
+            analysis_thread = threading.Thread(target=run_system_design_analysis_async, daemon=True)
+            analysis_thread.start()
+            logger.info(f"[BACKGROUND_ANALYSIS] Enqueued System Design analysis for candidate {candidate_id}")
+        except Exception as e:
+            logger.warning(f"Failed to enqueue System Design analysis for candidate {candidate_id}: {str(e)}")
+        
+        # Return response with immediate evaluation (if available)
+        response = {
+            "success": True,
+            "message": "Session ended successfully.",
+            "status": "completed"
+        }
+        
+        if immediate_evaluation:
+            response["evaluation"] = immediate_evaluation
+        
+        return response
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -244,7 +384,7 @@ async def end_session(
         )
 
 
-@router.get("/{candidate_id}/sessions/{question_uuid}/report", response_model=FinalReportResponse)
+@router.get("/{candidate_id}/sessions/{question_uuid}/report")
 async def get_report(
     candidate_id: str = Path(..., description="Candidate UUID"),
     question_uuid: str = Path(..., description="Question UUID"),
@@ -252,7 +392,9 @@ async def get_report(
     db: Session = Depends(get_db)
 ):
     """
-    Get final evaluation report.
+    Get final evaluation report or analysis status.
+    
+    Returns the report if analysis is completed, or status if still in progress.
     
     Args:
         candidate_id: Candidate UUID (from path)
@@ -261,7 +403,7 @@ async def get_report(
         db: Database session
         
     Returns:
-        FinalReportResponse with evaluation report
+        Report if completed, or status information if in progress/not started
     """
     try:
         service = SystemDesignService(db)
@@ -274,7 +416,55 @@ async def get_report(
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.generate_final_report(current_candidate.candidate_id, question_uuid)
+        # Check analysis status
+        try:
+            from services.analysis_status_service import AnalysisStatusService
+            from schemas.analysis import SectionType, AnalysisStatus as AnalysisStatusEnum
+            from models.interview_analysis_table import InterviewAnalysisTable
+            
+            status_service = AnalysisStatusService(db)
+            current_status = status_service.get_status(candidate_id, SectionType.SYSTEM_DESIGN)
+            
+            # If COMPLETED, return the analysis from interview_analysis_table
+            if current_status and current_status.status == AnalysisStatusEnum.COMPLETED.value:
+                # Fetch the analysis from interview_analysis_table
+                interview_analysis = db.query(InterviewAnalysisTable).filter(
+                    InterviewAnalysisTable.candidate_id == candidate_id
+                ).first()
+                
+                if interview_analysis and interview_analysis.system_design_analysis:
+                    analysis = interview_analysis.system_design_analysis
+                    return {
+                        "success": True,
+                        "status": "completed",
+                        "score": analysis.get("score", 0),
+                        "summary": analysis.get("summary", ""),
+                        "key_strengths": analysis.get("key_strengths", []),
+                        "things_to_improve": analysis.get("things_to_improve", []),
+                        "areas_covered": analysis.get("areas_covered", []),
+                        "areas_missed": analysis.get("areas_missed", [])
+                    }
+            
+            # If IN_PROGRESS, return status
+            if current_status and current_status.status == AnalysisStatusEnum.IN_PROGRESS.value:
+                return {
+                    "success": True,
+                    "status": "in_progress",
+                    "message": "Analysis is being generated. Please check back in a few seconds."
+                }
+            
+            # If NOT_STARTED or FAILED, trigger analysis and return status
+            return {
+                "success": True,
+                "status": "not_started",
+                "message": "Analysis has not been started yet. Please end the session first."
+            }
+            
+        except Exception as status_error:
+            logger.error(f"Error checking System Design analysis status: {str(status_error)}", exc_info=True)
+            # Fallback: try to generate report synchronously
+            return await service.generate_final_report(current_candidate.candidate_id, question_uuid)
+            
     except HTTPException:
         raise
     except Exception as e:

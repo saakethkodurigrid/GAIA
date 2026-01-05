@@ -8,6 +8,7 @@ This script deletes a candidate_id and all related records from:
 - InterviewSystemDesign
 - InterviewAnalysisTable
 - RecruiterAdminCandidate
+- AnalysisStatus
 - Candidate
 
 Note: Test session data is now stored in a separate test_session table.
@@ -29,6 +30,7 @@ from models.interview_coding import InterviewCoding
 from models.interview_system_design import InterviewSystemDesign
 from models.interview_analysis_table import InterviewAnalysisTable
 from models.recruiter_admin_candidate import RecruiterAdminCandidate
+from models.analysis_status import AnalysisStatusRecord
 
 # Try to import TestSession, but handle if table doesn't exist
 try:
@@ -136,7 +138,15 @@ def delete_candidate_and_related_data(db: Session, candidate_id: str) -> dict:
         for assignment in assignment_records:
             db.delete(assignment)
         
-        # 6. Finally, delete the Candidate record
+        # 6. Delete AnalysisStatusRecord records (foreign key to candidate)
+        analysis_status_records = db.query(AnalysisStatusRecord).filter(
+            AnalysisStatusRecord.candidate_id == candidate_id
+        ).all()
+        deleted_counts['analysis_status'] = len(analysis_status_records)
+        for status_record in analysis_status_records:
+            db.delete(status_record)
+        
+        # 7. Finally, delete the Candidate record
         # Use raw SQL if candidate is not a proper ORM object (test_session table missing)
         if not hasattr(candidate, '__table__'):
             # It's a simple object, delete by ID using raw SQL

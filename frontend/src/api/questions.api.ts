@@ -104,7 +104,14 @@ interface MCQAnswerItem {
   candidate_answer: string; // Option number as string (e.g., "1", "2", "3", "4")
 }
 
-interface SaveMCQAnswerResponse {
+interface AutosaveMCQAnswerResponse {
+  success: boolean;
+  message: string;
+  saved_count: number;
+  last_updated_at: string;
+}
+
+interface SubmitMCQAnswerResponse {
   success: boolean;
   message: string;
   saved_count: number;
@@ -114,13 +121,82 @@ interface SaveMCQAnswerResponse {
   total_questions: number;
   correct_answers: number;
   incorrect_answers: number;
+  submitted_at: string;
 }
+
+export const autosaveAssessment = async (
+  answers: Record<number, number>,
+  questions: Question[],
+  candidateId?: string
+): Promise<AutosaveMCQAnswerResponse> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication token not found');
+  }
+
+  // Convert frontend answers format to backend format
+  const answerItems: MCQAnswerItem[] = questions
+    .filter((q) => {
+      // Only include questions that have an answer and a question_uuid
+      const answer = answers[q.id];
+      return answer !== undefined && answer !== null && q.question_uuid;
+    })
+    .map((q) => {
+      const answer = answers[q.id];
+      // Convert 0-based index to 1-based option number (frontend stores 0,1,2,3 but backend expects 1,2,3,4)
+      return {
+        question_uuid: q.question_uuid!,
+        candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based
+      };
+    });
+
+  const requestBody = {
+    answers: answerItems,
+  };
+
+  // Fire-and-forget: don't block UI, don't await response
+  fetch(
+    `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/autosave`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    }
+  )
+    .then((response) => {
+      if (!response.ok) {
+        console.warn('Autosave failed:', response.status);
+      } else {
+        console.log('Autosave successful');
+      }
+    })
+    .catch((error) => {
+      console.warn('Autosave error (non-blocking):', error);
+    });
+
+  // Return immediately with success (fire-and-forget)
+  return {
+    success: true,
+    message: 'Autosave initiated',
+    saved_count: answerItems.length,
+    last_updated_at: new Date().toISOString(),
+  };
+};
 
 export const submitAssessment = async (
   answers: Record<number, number>,
   questions: Question[],
   candidateId?: string
-): Promise<SaveMCQAnswerResponse> => {
+): Promise<SubmitMCQAnswerResponse> => {
   // Use provided candidateId or get from localStorage
   const finalCandidateId = candidateId || getCandidateId();
   if (!finalCandidateId) {
@@ -155,13 +231,13 @@ export const submitAssessment = async (
   // Log request body being sent to backend
   console.log('=== MCQ SUBMISSION REQUEST (FRONTEND) ===');
   console.log('Using candidate_id:', finalCandidateId);
-  console.log('URL:', `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/save-answers`);
+  console.log('URL:', `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/submit`);
   console.log('Request Body:', JSON.stringify(requestBody, null, 2));
   console.log('Number of answers:', answerItems.length);
   console.log('==========================================');
 
   const response = await fetch(
-    `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/save-answers`,
+    `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/submit`,
     {
       method: 'POST',
       headers: {
@@ -177,7 +253,7 @@ export const submitAssessment = async (
     throw new Error(error.detail || 'Failed to submit answers');
   }
 
-  const data: SaveMCQAnswerResponse = await response.json();
+  const data: SubmitMCQAnswerResponse = await response.json();
   return data;
 };
 

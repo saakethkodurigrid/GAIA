@@ -384,8 +384,25 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
 
       try {
         setIsLoading(true);
-        // Fetch from backend
-        const backendQuestions = await fetchCodingQuestionsFromBackend(user.candidateId);
+        
+        // Check cache first for instant loading
+        const cachedQuestions = sessionStorage.getItem(`coding_questions_${user.candidateId}`);
+        let backendQuestions: any[];
+        
+        if (cachedQuestions) {
+          console.log('[CODING] Loading from cache for instant rendering...');
+          backendQuestions = JSON.parse(cachedQuestions);
+          setIsLoading(false);
+          console.log('[CODING] ✅ Loaded instantly from cache');
+        } else {
+          // Cache miss - fetch from backend
+          console.log('[CODING] Cache miss - fetching from backend...');
+          backendQuestions = await fetchCodingQuestionsFromBackend(user.candidateId);
+          
+          // Cache for future use
+          sessionStorage.setItem(`coding_questions_${user.candidateId}`, JSON.stringify(backendQuestions));
+          setIsLoading(false);
+        }
         
         // Transform backend format to frontend format
         const transformedProblems: CodingProblem[] = backendQuestions.map((q, index) => {
@@ -425,7 +442,6 @@ export const CodingProvider = ({ children }: CodingProviderProps) => {
           }
         });
         setCode(initialCode);
-        setIsLoading(false);
       } catch (error) {
         console.error('Error loading coding problems:', error);
         setIsLoading(false);

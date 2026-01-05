@@ -72,39 +72,52 @@ class TestDataLoaderService:
                     "tags": mcq.tags
                 })
             
-            # Load Coding questions
+            # Load Coding questions - optimized batch fetch
             coding_records = self.db.query(InterviewCoding).filter(
                 InterviewCoding.candidate_id == candidate_id
             ).all()
             
-            # Prepare individual coding question data for pipeline
+            # Collect all question UUIDs for batch fetch
+            question_uuids = [coding.question_uuid for coding in coding_records if coding.question_uuid]
+            
+            # Batch fetch all CodingQuestionBank records in a single query
+            coding_question_map = {}
+            if question_uuids:
+                from models.coding_question_bank import CodingQuestionBank
+                coding_questions_db = self.db.query(CodingQuestionBank).filter(
+                    CodingQuestionBank.uuid.in_(question_uuids)
+                ).all()
+                
+                # Build lookup map
+                coding_question_map = {q.uuid: q for q in coding_questions_db}
+            
+            # Prepare coding question references for test_data and individual Redis keys
             coding_question_cache = {}
             
             for coding in coding_records:
-                # Get question details from CodingQuestionBank
-                coding_question = None
-                if hasattr(coding, 'question') and coding.question:
-                    coding_question = coding.question
-                elif hasattr(coding, 'question_uuid'):
-                    from models.coding_question_bank import CodingQuestionBank
-                    coding_question = self.db.query(CodingQuestionBank).filter(
-                        CodingQuestionBank.uuid == coding.question_uuid
-                    ).first()
+                if not coding.question_uuid:
+                    continue
+                    
+                coding_question = coding_question_map.get(coding.question_uuid)
                 
-                question_data = {
-                    "question_uuid": coding.question_uuid if hasattr(coding, 'question_uuid') else None,
-                    "question": coding_question.question if coding_question and hasattr(coding_question, 'question') else None,
-                    "sample_test_cases": coding_question.sample_test_cases if coding_question and hasattr(coding_question, 'sample_test_cases') else None,
-                    # NOTE: test_cases NOT cached in Redis (too large - causes timeouts)
-                    # They are fetched from database on-demand when code is executed
-                    "boilerplate_code": coding_question.boiler_plate if coding_question and hasattr(coding_question, 'boiler_plate') else None,
-                    "difficulty": coding.difficulty if hasattr(coding, 'difficulty') else None,
-                    "tags": coding_question.tags if coding_question and hasattr(coding_question, 'tags') else None
-                }
-                test_data["coding_questions"].append(question_data)
+                # Store reference in test_data (only uuid + difficulty)
+                test_data["coding_questions"].append({
+                    "question_uuid": coding.question_uuid,
+                    "difficulty": coding.difficulty if hasattr(coding, 'difficulty') else None
+                })
                 
-                # Store for pipeline write
-                if coding.question_uuid:
+                # Prepare full question data for individual Redis key (only cache required fields)
+                if coding_question:
+                    question_data = {
+                        "question_uuid": coding.question_uuid,
+                        "question": coding_question.question if hasattr(coding_question, 'question') else None,
+                        "boilerplate_code": coding_question.boiler_plate if hasattr(coding_question, 'boiler_plate') else None,
+                        "sample_test_cases": coding_question.sample_test_cases if hasattr(coding_question, 'sample_test_cases') else None,
+                        # NOTE: test_cases NOT cached in Redis (too large - causes timeouts)
+                        # They are fetched from database on-demand when code is executed
+                        "difficulty": coding.difficulty if hasattr(coding, 'difficulty') else None,
+                        "tags": coding_question.tags if hasattr(coding_question, 'tags') else None
+                    }
                     coding_question_cache[coding.question_uuid] = question_data
             
             # Load System Design question
@@ -183,7 +196,10 @@ class TestDataLoaderService:
             data = self.redis_client.get(redis_key)
             
             if data:
+                logger.info(f"[DATA_SOURCE] ✅ Fetched test data from REDIS for candidate {candidate_id}")
                 return json.loads(data)
+            else:
+                logger.info(f"[DATA_SOURCE] ⚠️ No test data found in REDIS for candidate {candidate_id} - returning None")
             return None
             
         except Exception as e:
@@ -209,16 +225,55 @@ class TestDataLoaderService:
         """
         Get Coding questions from Redis.
         
+        Fetches full question data from individual Redis keys using references
+        stored in test_data.
+        
         Args:
             candidate_id: UUID of the candidate
             
         Returns:
-            List of Coding questions
+            List of Coding questions with full data
         """
-        test_data = self.get_test_data_from_redis(candidate_id)
-        if test_data:
-            return test_data.get("coding_questions", [])
-        return []
+        try:
+            # Get coding question references from test_data
+            test_data = self.get_test_data_from_redis(candidate_id)
+            if not test_data:
+                return []
+            
+            coding_references = test_data.get("coding_questions", [])
+            if not coding_references:
+                return []
+            
+            # Fetch full question data from individual Redis keys
+            logger.info(f"[DATA_SOURCE] 📥 Fetching {len(coding_references)} coding questions from REDIS (individual keys) for candidate {candidate_id}")
+            coding_questions = []
+            found_from_redis = 0
+            found_from_reference = 0
+            
+            for ref in coding_references:
+                question_uuid = ref.get("question_uuid")
+                if not question_uuid:
+                    continue
+                
+                redis_key = f"candidate:{candidate_id}:coding_question:{question_uuid}"
+                data = self.redis_client.get(redis_key)
+                
+                if data:
+                    question_data = json.loads(data)
+                    coding_questions.append(question_data)
+                    found_from_redis += 1
+                else:
+                    # If individual key not found, include reference with available data
+                    logger.warning(f"[DATA_SOURCE] ⚠️ Individual coding question key not found in REDIS for {question_uuid}, using reference data")
+                    coding_questions.append(ref)
+                    found_from_reference += 1
+            
+            logger.info(f"[DATA_SOURCE] ✅ Fetched coding questions from REDIS for candidate {candidate_id} - {found_from_redis} from individual keys, {found_from_reference} from references")
+            return coding_questions
+            
+        except Exception as e:
+            logger.error(f"Error getting coding questions from Redis for candidate {candidate_id}: {str(e)}")
+            return []
     
     def get_coding_question_from_redis(self, candidate_id: str, question_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -237,18 +292,25 @@ class TestDataLoaderService:
         try:
             # Try individual question key first (optimized path)
             redis_key = f"candidate:{candidate_id}:coding_question:{question_id}"
+            logger.info(f"[DATA_SOURCE] 📥 Fetching coding question {question_id} from REDIS (individual key) for candidate {candidate_id}")
             data = self.redis_client.get(redis_key)
             
             if data:
+                logger.info(f"[DATA_SOURCE] ✅ Found coding question {question_id} in REDIS (individual key) for candidate {candidate_id}")
                 return json.loads(data)
             
-            # Fallback to full test data if individual key not found
+            # Fallback: check if reference exists in test_data and try to fetch individual key again
+            # (handles race condition where test_data was written but individual key not yet available)
+            logger.info(f"[DATA_SOURCE] ⚠️ Coding question {question_id} not found in REDIS individual key, checking test_data for candidate {candidate_id}")
             test_data = self.get_test_data_from_redis(candidate_id)
             if test_data:
-                for q in test_data.get("coding_questions", []):
-                    if q.get("question_uuid") == question_id:
-                        return q
+                for ref in test_data.get("coding_questions", []):
+                    if ref.get("question_uuid") == question_id:
+                        # Reference found, but individual key missing - return reference data
+                        logger.warning(f"[DATA_SOURCE] ⚠️ Found coding question reference for {question_id} but individual key missing - using reference data")
+                        return ref
             
+            logger.info(f"[DATA_SOURCE] ❌ Coding question {question_id} not found in REDIS for candidate {candidate_id}")
             return None
             
         except Exception as e:

@@ -5,7 +5,7 @@ import { QUESTION_STATUS, TIMER_DURATION } from '../utils/constants';
 import type { MCQContextType, Question } from '../types';
 import { useAuth } from './AuthContext';
 import { sendHeartbeat, getTestStatus } from '../api/candidate.api';
-import { submitAssessment } from '../api/questions.api';
+import { autosaveAssessment } from '../api/questions.api';
 import { localStorage as storage } from '../utils/localStorage';
 
 const MCQContext = createContext<MCQContextType | undefined>(undefined);
@@ -133,8 +133,25 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
         const candidateId = user?.candidateId;
         if (!candidateId) return;
 
-        // Fetch questions (will come from Redis if test was started, otherwise from DB)
-        const data = await fetchQuestions(candidateId);
+        // Check cache first for instant loading
+        const cachedQuestions = sessionStorage.getItem(`mcq_questions_${candidateId}`);
+        let data: Question[];
+        
+        if (cachedQuestions) {
+          console.log('[MCQ] Loading from cache for instant rendering...');
+          data = JSON.parse(cachedQuestions);
+          setIsLoading(false);
+          console.log('[MCQ] ✅ Loaded instantly from cache');
+        } else {
+          // Cache miss - fetch from backend
+          console.log('[MCQ] Cache miss - fetching from backend...');
+          data = await fetchQuestions(candidateId);
+          
+          // Cache for future use
+          sessionStorage.setItem(`mcq_questions_${candidateId}`, JSON.stringify(data));
+          setIsLoading(false);
+        }
+        
         setQuestions(data);
         
         // Load saved answers from localStorage
@@ -154,7 +171,6 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
         
         setSavedAnswers(loadedSavedAnswers);
         setQuestionStatuses(initialStatuses);
-        setIsLoading(false);
       } catch (error) {
         console.error('Error loading questions:', error);
         setIsLoading(false);
@@ -242,21 +258,9 @@ export const MCQProvider = ({ children }: MCQProviderProps) => {
         try {
           const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
           if (token && candidateId) {
-            // Convert to backend format
-            const answerItems = questions
-              .filter((q) => {
-                const answer = answers[q.id];
-                return answer !== undefined && answer !== null && q.question_uuid;
-              })
-              .map((q) => ({
-                question_uuid: q.question_uuid!,
-                candidate_answer: String(answers[q.id] + 1), // Add 1 to convert from 0-based to 1-based
-              }));
-
-            if (answerItems.length > 0) {
-              await submitAssessment(answers, questions, candidateId);
-              console.log('Auto-saved answers to Redis');
-            }
+            // Use autosave API (fire-and-forget, Redis only)
+            await autosaveAssessment(answers, questions, candidateId);
+            console.log('Auto-saved answers to Redis');
           }
         } catch (error) {
           console.error('Auto-save failed:', error);

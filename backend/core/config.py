@@ -68,6 +68,12 @@ class Settings:
     MAIL_VALIDATE_CERTS: bool = os.getenv('MAIL_VALIDATE_CERTS', 'True').lower() == 'true'
     EMAIL_ENABLED: bool = os.getenv('EMAIL_ENABLED', 'False').lower() == 'true'
     
+    # AWS SES Configuration
+    AWS_SES_REGION: str = os.getenv('AWS_SES_REGION', 'us-east-1')
+    AWS_ACCESS_KEY_ID: str = os.getenv('AWS_ACCESS_KEY_ID', '')
+    AWS_SECRET_ACCESS_KEY: str = os.getenv('AWS_SECRET_ACCESS_KEY', '')
+    AWS_SES_SOURCE_EMAIL: str = os.getenv('AWS_SES_SOURCE_EMAIL', '')
+    
     # Resume Score Threshold for Auto-Sending Scheduling Invitations
     RESUME_SCORE_THRESHOLD: float = float(os.getenv('RESUME_SCORE_THRESHOLD', '30.0'))
     

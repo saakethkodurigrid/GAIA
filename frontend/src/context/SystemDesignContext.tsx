@@ -124,22 +124,40 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
       setIsLoading(true);
 
       try {
-        // Step 1: Fetch assigned question (if test is in progress)
+        // Check cache first for instant loading
+        const cachedSession = sessionStorage.getItem(`system_design_session_${user.candidateId}`);
+        let sessionResponse: any;
         let assignedQuestion = null;
-        try {
-          console.log('Fetching assigned question...');
-          assignedQuestion = await getAssignedQuestion(user.candidateId);
-          console.log('Assigned question fetched:', assignedQuestion);
-        } catch (error: any) {
-          // If test is not in progress, this will fail - that's okay, we'll create session without it
-          console.log('No assigned question found or test not in progress:', error.message);
-        }
+        
+        if (cachedSession) {
+          console.log('[SYSTEM DESIGN] Loading from cache for instant rendering...');
+          sessionResponse = JSON.parse(cachedSession);
+          setIsLoading(false);
+          console.log('[SYSTEM DESIGN] ✅ Loaded instantly from cache');
+        } else {
+          // Cache miss - create session
+          console.log('[SYSTEM DESIGN] Cache miss - creating session...');
+          
+          // Step 1: Fetch assigned question (if test is in progress)
+          try {
+            console.log('Fetching assigned question...');
+            assignedQuestion = await getAssignedQuestion(user.candidateId);
+            console.log('Assigned question fetched:', assignedQuestion);
+          } catch (error: any) {
+            // If test is not in progress, this will fail - that's okay, we'll create session without it
+            console.log('No assigned question found or test not in progress:', error.message);
+          }
 
-        // Step 2: Create session with assigned question UUID (if available)
-        console.log('Creating session...');
-        const sessionResponse = await createSession({
-          question_uuid: assignedQuestion?.question_uuid || undefined,
-        }, user.candidateId);
+          // Step 2: Create session with assigned question UUID (if available)
+          console.log('Creating session...');
+          sessionResponse = await createSession({
+            question_uuid: assignedQuestion?.question_uuid || undefined,
+          }, user.candidateId);
+          
+          // Cache for future use
+          sessionStorage.setItem(`system_design_session_${user.candidateId}`, JSON.stringify(sessionResponse));
+          setIsLoading(false);
+        }
 
         console.log('Session created:', sessionResponse);
         

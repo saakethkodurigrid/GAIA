@@ -66,6 +66,9 @@ export const createSession = async (request?: Partial<SessionCreateRequest>, can
   return data;
 };
 
+// Alias for backward compatibility
+export const createSystemDesignSession = createSession;
+
 // Removed getQuestionByUuid - endpoint does not exist in backend
 // Use question_text from createSession response instead
 
@@ -420,7 +423,7 @@ export const getAssignedQuestion = async (candidateId?: string): Promise<Assigne
 
   console.log('[getAssignedQuestion] Using candidate_id:', finalCandidateId);
 
-  const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/assigned-question`, {
+  const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/system-design-questions`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${getAuthToken() || ''}`,

@@ -10,6 +10,8 @@ import { useFullscreenWarning, getFullscreenExitCount, clearFullscreenExitCount 
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 import { completeTest, getTestStatus } from '../../api/candidate.api';
 import { fetchQuestions } from '../../api/questions.api';
+import { fetchCodingQuestionsFromBackend } from '../../api/coding.api';
+import { createSystemDesignSession } from '../../api/systemDesign.api';
 import { localStorage as storage } from '../../utils/localStorage';
 
 // Helper functions for localStorage
@@ -403,6 +405,69 @@ const TestOverviewPage = () => {
       clearInterval(interval);
     };
   }, [cheatingDetectionContext]);
+
+  // Prefetch all section questions in the background for instant navigation
+  useEffect(() => {
+    const prefetchSectionData = async () => {
+      if (!user?.candidateId) return;
+
+      const candidateId = user.candidateId;
+      
+      // Check which sections haven't been submitted yet
+      const submitted = getSubmittedSections();
+
+      try {
+        // Prefetch MCQ questions if not submitted
+        if (!submitted.mcq) {
+          const cachedMCQ = sessionStorage.getItem(`mcq_questions_${candidateId}`);
+          if (!cachedMCQ) {
+            console.log('[PREFETCH] Loading MCQ questions in background...');
+            const mcqQuestions = await fetchQuestions(candidateId);
+            sessionStorage.setItem(`mcq_questions_${candidateId}`, JSON.stringify(mcqQuestions));
+            console.log('[PREFETCH] ✅ MCQ questions cached');
+          } else {
+            console.log('[PREFETCH] MCQ questions already cached');
+          }
+        }
+
+        // Prefetch Coding questions if not submitted
+        if (!submitted.coding) {
+          const cachedCoding = sessionStorage.getItem(`coding_questions_${candidateId}`);
+          if (!cachedCoding) {
+            console.log('[PREFETCH] Loading Coding questions in background...');
+            const codingQuestions = await fetchCodingQuestionsFromBackend(candidateId);
+            sessionStorage.setItem(`coding_questions_${candidateId}`, JSON.stringify(codingQuestions));
+            console.log('[PREFETCH] ✅ Coding questions cached');
+          } else {
+            console.log('[PREFETCH] Coding questions already cached');
+          }
+        }
+
+        // Prefetch System Design session if not submitted
+        if (!submitted.systemDesign) {
+          const cachedSystemDesign = sessionStorage.getItem(`system_design_session_${candidateId}`);
+          if (!cachedSystemDesign) {
+            console.log('[PREFETCH] Creating System Design session in background...');
+            const session = await createSystemDesignSession(candidateId);
+            sessionStorage.setItem(`system_design_session_${candidateId}`, JSON.stringify(session));
+            console.log('[PREFETCH] ✅ System Design session cached');
+          } else {
+            console.log('[PREFETCH] System Design session already cached');
+          }
+        }
+
+        console.log('[PREFETCH] All sections prefetched successfully');
+      } catch (error) {
+        console.error('[PREFETCH] Error prefetching section data:', error);
+        // Don't block user experience if prefetch fails - sections will load normally
+      }
+    };
+
+    // Start prefetching after a short delay to not interfere with initial page load
+    const prefetchTimer = setTimeout(prefetchSectionData, 500);
+
+    return () => clearTimeout(prefetchTimer);
+  }, [user?.candidateId, submittedSections]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
