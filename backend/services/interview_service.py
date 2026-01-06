@@ -1110,9 +1110,13 @@ class InterviewService:
         """
         Ensure all section analyses are complete before test completion.
         
-        Pure orchestrator function that:
-        - Checks if analysis JSON exists AND main score field is NOT None → skip
-        - Otherwise → call section-specific analysis function
+        Pure orchestrator function that checks analysis status for each section:
+        - If status is COMPLETED → skip (already done)
+        - If status is IN_PROGRESS → skip (already running)
+        - If status is NOT_STARTED or missing → mark as IN_PROGRESS and start analysis
+        
+        This ensures all sections get analyzed even if they were never submitted.
+        Zero-score analysis will be generated for unsubmitted sections.
         
         Does NOT check Redis, submissions, or question existence here.
         Those checks are handled by the analysis functions themselves.
@@ -1158,34 +1162,62 @@ class InterviewService:
         # 1. MCQ Analysis
         # ============================================================================
         logger.info(f"[DATA_SOURCE] 🔍 Checking MCQ analysis in POSTGRESQL for candidate {candidate_id}")
-        if not interview_analysis.mcq_analysis or interview_analysis.mcq_analysis.get("score") is None:
+        
+        # Check analysis status first (like System Design)
+        mcq_status = status_service.get_status(candidate_id, SectionType.MCQ)
+        
+        if mcq_status and mcq_status.status == AnalysisStatusEnum.COMPLETED.value:
+            # Analysis already completed
+            skipped.append("mcq")
+            logger.info(f"[ENSURE_ANALYSIS] ⏭️  MCQ analysis already completed for {candidate_id}")
+        elif mcq_status and mcq_status.status == AnalysisStatusEnum.IN_PROGRESS.value:
+            # Analysis in progress - skip (already running)
+            skipped.append("mcq")
+            logger.info(f"[ENSURE_ANALYSIS] ⏳ MCQ analysis in progress for {candidate_id}, skipping")
+        else:
+            # Analysis not started or missing - mark IN_PROGRESS and start analysis
             try:
+                # Mark as IN_PROGRESS before calling analysis
+                status_service.mark_in_progress(candidate_id, SectionType.MCQ)
+                logger.info(f"[ANALYSIS_STATUS] MCQ analysis transitioned to IN_PROGRESS for candidate {candidate_id}")
+                
                 self._update_mcq_analysis(candidate_id)
                 completed.append("mcq")
                 logger.info(f"[ENSURE_ANALYSIS] ✅ Completed MCQ analysis for {candidate_id}")
             except Exception as e:
                 failed.append(("mcq", str(e)))
                 logger.error(f"[ENSURE_ANALYSIS] ❌ Failed MCQ analysis: {e}")
-        else:
-            skipped.append("mcq")
-            logger.info(f"[ENSURE_ANALYSIS] ⏭️  MCQ analysis already exists for {candidate_id}")
         
         # ============================================================================
         # 2. Coding Analysis
         # ============================================================================
         self.db.refresh(interview_analysis)
         logger.info(f"[DATA_SOURCE] 🔍 Checking coding analysis in POSTGRESQL for candidate {candidate_id}")
-        if not interview_analysis.coding_analysis or interview_analysis.coding_analysis.get("total_score") is None:
+        
+        # Check analysis status first (like System Design)
+        coding_status = status_service.get_status(candidate_id, SectionType.CODING)
+        
+        if coding_status and coding_status.status == AnalysisStatusEnum.COMPLETED.value:
+            # Analysis already completed
+            skipped.append("coding")
+            logger.info(f"[ENSURE_ANALYSIS] ⏭️  Coding analysis already completed for {candidate_id}")
+        elif coding_status and coding_status.status == AnalysisStatusEnum.IN_PROGRESS.value:
+            # Analysis in progress - skip (already running)
+            skipped.append("coding")
+            logger.info(f"[ENSURE_ANALYSIS] ⏳ Coding analysis in progress for {candidate_id}, skipping")
+        else:
+            # Analysis not started or missing - mark IN_PROGRESS and start analysis
             try:
+                # Mark as IN_PROGRESS before calling analysis
+                status_service.mark_in_progress(candidate_id, SectionType.CODING)
+                logger.info(f"[ANALYSIS_STATUS] Coding analysis transitioned to IN_PROGRESS for candidate {candidate_id}")
+                
                 self._update_coding_analysis(candidate_id)
                 completed.append("coding")
                 logger.info(f"[ENSURE_ANALYSIS] ✅ Completed Coding analysis for {candidate_id}")
             except Exception as e:
                 failed.append(("coding", str(e)))
                 logger.error(f"[ENSURE_ANALYSIS] ❌ Failed Coding analysis: {e}")
-        else:
-            skipped.append("coding")
-            logger.info(f"[ENSURE_ANALYSIS] ⏭️  Coding analysis already exists for {candidate_id}")
         
         # ============================================================================
         # 3. System Design Analysis (Background - Non-Blocking)
