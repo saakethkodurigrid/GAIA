@@ -2,6 +2,7 @@
 Interview Coding model for INTERVIEW_CODING table.
 """
 from sqlalchemy import Column, String, Integer, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from core.database import Base
 
@@ -16,6 +17,7 @@ class InterviewCoding(Base):
     score = Column(Integer, nullable=True)
     test_cases_passed = Column(Integer, nullable=True)
     difficulty = Column(String(50), nullable=True)
+    submission_json = Column(JSONB, nullable=True)  # Stores detailed submission data; NULL = not submitted
     
     # Relationships
     candidate = relationship('Candidate', backref='interview_codings')

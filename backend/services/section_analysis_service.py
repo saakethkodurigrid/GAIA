@@ -328,24 +328,44 @@ def analyze_coding(candidate_id: str, db: Session) -> None:
             # No questions assigned - write ZERO analysis JSON
             coding_analysis = {
                 "total_questions": 0,
-                "attempted": 0,
-                "passed": 0,
-                "total_score": 0
+                "submitted_questions": 0,
+                "attempted_questions": 0,
+                "unattempted_questions": 0,
+                "passed_questions": 0,
+                "failed_questions": 0,
+                "correct_answers": 0,
+                "partially_correct_answers": 0,
+                "incorrect_answers": 0,
+                "total_score": 0.0,
+                "max_score": 0,
+                "power_coder": "No",
+                "questions_analysis": [],
+                "created_at": datetime.utcnow().isoformat() + "Z"
             }
         else:
-            # Step b: Check if any submissions exist (score is not None)
-            has_submissions = any(record.score is not None for record in all_coding_records)
+            # Step b: Check if any submissions exist (submission_json is not None)
+            has_submissions = any(record.submission_json is not None for record in all_coding_records)
             
             if not has_submissions:
-                # No submissions - write ZERO analysis JSON
+                # No submissions - write ZERO analysis JSON with question placeholders
                 coding_analysis = {
                     "total_questions": len(all_coding_records),
-                    "attempted": 0,
-                    "passed": 0,
-                    "total_score": 0
+                    "submitted_questions": 0,
+                    "attempted_questions": 0,
+                    "unattempted_questions": len(all_coding_records),
+                    "passed_questions": 0,
+                    "failed_questions": 0,
+                    "correct_answers": 0,
+                    "partially_correct_answers": 0,
+                    "incorrect_answers": 0,
+                    "total_score": 0.0,
+                    "max_score": 0,
+                    "power_coder": "No",
+                    "questions_analysis": [],
+                    "created_at": datetime.utcnow().isoformat() + "Z"
                 }
             else:
-                # Step c: Compute score and build analysis JSON
+                # Step c: Compute score and build detailed analysis JSON using submission_json
                 # Define difficulty scoring weights
                 DIFFICULTY_SCORES = {
                     "hard": 3,
@@ -353,49 +373,88 @@ def analyze_coding(candidate_id: str, db: Session) -> None:
                     "easy": 1
                 }
                 
-                total_attempted = 0
-                total_passed = 0
+                total_questions = len(all_coding_records)
+                submitted_questions = 0
+                correct_answers = 0
+                partially_correct_answers = 0
+                incorrect_answers = 0
+                
                 total_weighted_actual_score = 0
                 total_weighted_max_score = 0
                 
+                questions_analysis = []
+                
                 # Process all assigned questions
                 for coding_record in all_coding_records:
-                    # Get question details from CodingQuestionBank
-                    question = db.query(CodingQuestionBank).filter(
-                        CodingQuestionBank.uuid == coding_record.question_uuid
-                    ).first()
-                    
-                    if not question:
-                        logger.warning(f"Question {coding_record.question_uuid} not found in CodingQuestionBank")
+                    # Check if question was submitted
+                    if coding_record.submission_json is None:
+                        # Question not submitted - add minimal data (no test results/errors/execution)
+                        # Get question details for max_score calculation
+                        question = db.query(CodingQuestionBank).filter(
+                            CodingQuestionBank.uuid == coding_record.question_uuid
+                        ).first()
+                        
+                        if question:
+                            difficulty = (question.difficulty or "medium").lower()
+                            difficulty_weight = DIFFICULTY_SCORES.get(difficulty, 2)
+                            
+                            num_sample = len(question.sample_test_cases) if isinstance(question.sample_test_cases, list) else 0
+                            num_hidden = len(question.test_cases) if isinstance(question.test_cases, list) else 0
+                            max_base_score = (num_sample * 5) + (num_hidden * 10)
+                            
+                            # Add to total weighted max score (denominator for final percentage)
+                            total_weighted_max_score += max_base_score * difficulty_weight
+                            
+                            # Only include essential fields for unsubmitted questions
+                            questions_analysis.append({
+                                "question_uuid": coding_record.question_uuid,
+                                "submitted": False,
+                                "attempted": False,
+                                "score": 0,
+                                "max_score": max_base_score,
+                                "difficulty": difficulty,
+                                "difficulty_weight": difficulty_weight
+                            })
                         continue
                     
-                    # Get difficulty
-                    difficulty = (question.difficulty or coding_record.difficulty or "medium").lower()
-                    difficulty_weight = DIFFICULTY_SCORES.get(difficulty, 1)
+                    # Question was submitted - extract from submission_json
+                    submission = coding_record.submission_json
+                    submitted_questions += 1
                     
-                    # Calculate max possible score for this question
-                    sample_test_cases = question.sample_test_cases
-                    test_cases = question.test_cases
+                    # Extract data from submission JSON
+                    score = submission.get("score", 0)
+                    max_score = submission.get("max_score", 0)
+                    difficulty_weight = submission.get("difficulty_weight", 2)
                     
-                    num_sample = len(sample_test_cases) if isinstance(sample_test_cases, list) else 0
-                    num_hidden = len(test_cases) if isinstance(test_cases, list) else 0
+                    # Calculate weighted scores for normalization
+                    weighted_score = score * difficulty_weight
+                    weighted_max_score = max_score * difficulty_weight
                     
-                    max_base_score = (num_sample * 5) + (num_hidden * 10)
-                    max_weighted_score = max_base_score * difficulty_weight
-                    total_weighted_max_score += max_weighted_score
+                    total_weighted_actual_score += weighted_score
+                    total_weighted_max_score += weighted_max_score
                     
-                    # Process actual scores for submitted questions
-                    if coding_record.score is not None:
-                        total_attempted += 1
-                        actual_score = coding_record.score or 0
-                        actual_weighted_score = actual_score * difficulty_weight
-                        total_weighted_actual_score += actual_weighted_score
-                        
-                        # Check if all test cases passed
-                        total_test_cases = num_sample + num_hidden
-                        test_cases_passed = coding_record.test_cases_passed or 0
-                        if test_cases_passed == total_test_cases and total_test_cases > 0:
-                            total_passed += 1
+                    # Classify answer as correct/partially correct/incorrect
+                    if score == max_score and max_score > 0:
+                        correct_answers += 1
+                    elif score > 0:
+                        partially_correct_answers += 1
+                    else:
+                        incorrect_answers += 1
+                    
+                    # Add to questions_analysis with complete data
+                    questions_analysis.append({
+                        "question_uuid": submission.get("question_uuid"),
+                        "submitted": submission.get("submitted", True),
+                        "attempted": submission.get("attempted", True),
+                        "submitted_at": submission.get("submitted_at"),
+                        "score": score,
+                        "max_score": max_score,
+                        "difficulty": submission.get("difficulty", "medium"),
+                        "difficulty_weight": difficulty_weight,
+                        "test_case_summary": submission.get("test_case_summary", {}),
+                        "errors": submission.get("errors", []),
+                        "execution": submission.get("execution", {})
+                    })
                 
                 # Calculate normalized score (0-100)
                 if total_weighted_max_score > 0:
@@ -403,12 +462,30 @@ def analyze_coding(candidate_id: str, db: Session) -> None:
                 else:
                     normalized_score = 0.0
                 
-                # Build coding analysis JSON
+                # Determine power_coder status
+                power_coder = "Yes" if normalized_score > 70 else "No"
+                
+                # Calculate derived metrics
+                unattempted_questions = total_questions - submitted_questions
+                passed_questions = correct_answers
+                failed_questions = partially_correct_answers + incorrect_answers
+                
+                # Build comprehensive coding analysis JSON
                 coding_analysis = {
-                    "total_questions": len(all_coding_records),
-                    "attempted": total_attempted,
-                    "passed": total_passed,
-                    "total_score": float(normalized_score)
+                    "total_questions": total_questions,
+                    "submitted_questions": submitted_questions,
+                    "attempted_questions": submitted_questions,  # Same as submitted for coding
+                    "unattempted_questions": unattempted_questions,
+                    "passed_questions": passed_questions,
+                    "failed_questions": failed_questions,
+                    "correct_answers": correct_answers,
+                    "partially_correct_answers": partially_correct_answers,
+                    "incorrect_answers": incorrect_answers,
+                    "total_score": float(normalized_score),
+                    "max_score": int(total_weighted_max_score),
+                    "power_coder": power_coder,
+                    "questions_analysis": questions_analysis,
+                    "created_at": datetime.utcnow().isoformat() + "Z"
                 }
         
         # Get or create interview_analysis record

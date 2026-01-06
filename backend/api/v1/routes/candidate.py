@@ -1575,12 +1575,17 @@ async def submit_coding_answer(
         sample_test_cases_passed = 0
         hidden_test_cases_passed = 0
         total_test_cases = len(formatted_test_cases)
+        num_sample = len(sample_test_cases) if sample_test_cases else 0
+        num_hidden = len(test_cases) if test_cases else 0
         
+        # Collect errors from failed test cases
+        errors = []
         test_results = execution_result.get("test_results", [])
         for result in test_results:
             test_case_id = result.get("test_case_id", "")
             passed = result.get("passed", False)
             status_value = result.get("status", "").lower()
+            error_msg = result.get("error")
             
             # Check if test passed
             is_passed = passed or status_value == "passed"
@@ -1599,8 +1604,62 @@ async def submit_coding_answer(
                     # Hidden test case: 10 points
                     total_score += 10
                     hidden_test_cases_passed += 1
+            else:
+                # Collect error messages from failed test cases
+                if error_msg and error_msg not in errors:
+                    errors.append(error_msg)
         
-        # Step 8: Update InterviewCoding table
+        # Add generic error messages if test cases failed
+        if sample_test_cases_passed < num_sample:
+            errors.append("Failed sample test cases")
+        if hidden_test_cases_passed < num_hidden:
+            errors.append("Failed hidden test cases")
+        
+        # Step 8: Build submission JSON
+        # Get difficulty from question
+        difficulty = (coding_question_db.difficulty or "medium").lower()
+        DIFFICULTY_WEIGHTS = {"hard": 3, "medium": 2, "easy": 1}
+        difficulty_weight = DIFFICULTY_WEIGHTS.get(difficulty, 2)
+        
+        # Calculate max possible score (base score before weighting)
+        max_base_score = (num_sample * 5) + (num_hidden * 10)
+        
+        # Extract execution metadata
+        metadata = execution_result.get("metadata", {})
+        execution_time_ms = metadata.get("execution_time_ms", 0)
+        memory_usage_mb = metadata.get("memory_usage_mb", 0)
+        cpu_usage_percent = metadata.get("cpu_usage_percent", 0)
+        
+        # Build submission JSON
+        submission_json = {
+            "question_uuid": request.question_id,
+            "submitted": True,
+            "attempted": True,
+            "submitted_at": datetime.utcnow().isoformat() + "Z",
+            "score": total_score,  # Base score (5 per sample + 10 per hidden)
+            "max_score": max_base_score,  # Max possible base score
+            "difficulty": difficulty,
+            "difficulty_weight": difficulty_weight,
+            "test_case_summary": {
+                "passed": test_cases_passed,
+                "failed": total_test_cases - test_cases_passed,
+                "total": total_test_cases,
+                "sample_passed": sample_test_cases_passed,
+                "hidden_passed": hidden_test_cases_passed,
+                "sample_total": num_sample,
+                "hidden_total": num_hidden
+            },
+            "errors": errors[:10] if errors else [],  # Limit to 10 errors
+            "execution": {
+                "runtime_seconds": round(execution_time_ms / 1000, 2) if execution_time_ms else 0,
+                "memory_mb": round(memory_usage_mb, 2) if memory_usage_mb else 0,
+                "time_limit_seconds": 2,  # Default time limit
+                "memory_limit_mb": 512,  # Default memory limit
+                "cpu_usage_percent": round(cpu_usage_percent, 2) if cpu_usage_percent else 0
+            }
+        }
+        
+        # Step 9: Update InterviewCoding table
         interview_coding = db.query(InterviewCoding).filter(
             InterviewCoding.candidate_id == candidate_id,
             InterviewCoding.question_uuid == request.question_id
@@ -1613,18 +1672,21 @@ async def submit_coding_answer(
                 question_uuid=request.question_id,
                 score=total_score,
                 test_cases_passed=test_cases_passed,
-                difficulty=None  # Can be set from CodingQuestionBank if needed
+                difficulty=difficulty,
+                submission_json=submission_json
             )
             db.add(interview_coding)
         else:
             # Update existing record
             interview_coding.score = total_score
             interview_coding.test_cases_passed = test_cases_passed
+            interview_coding.difficulty = difficulty
+            interview_coding.submission_json = submission_json
         
         # Commit to database
         db.commit()
         
-        # Step 9: Update last_activity
+        # Step 10: Update last_activity
         try:
             candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
             if candidate and candidate.test_session:
@@ -1638,7 +1700,7 @@ async def submit_coding_answer(
             f"Score={total_score}, TestCasesPassed={test_cases_passed}/{total_test_cases}"
         )
         
-        # Step 10: Return response
+        # Step 11: Return response
         return SubmitCodingAnswerResponse(
             success=True,
             message="Coding answer submitted successfully",
