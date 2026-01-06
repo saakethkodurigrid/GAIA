@@ -28,6 +28,12 @@ const SubmitSectionModal = ({ isOpen, onClose, onSubmit }: SubmitSectionModalPro
       return;
     }
 
+    // DEBUG: Log what we're about to pass to submitAssessment
+    console.log('=== Before calling submitAssessment ===');
+    console.log('finalAnswers:', finalAnswers);
+    
+    console.log('======================================');
+    
     // Navigate immediately - don't wait for API call
     onSubmit(finalAnswers);
     

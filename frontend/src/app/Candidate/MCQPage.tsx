@@ -10,6 +10,7 @@ import VideoPreview from '../../components/VideoPreview/VideoPreview';
 import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 import { localStorage as storage } from '../../utils/localStorage';
+import ConnectionStatus from '../../components/ConnectionStatus';
 
 const MCQPageContent = () => {
   const { formatTime, timeRemaining, isLoading, answers, questions, savedAnswers } = useMCQ();
@@ -128,6 +129,9 @@ const MCQPageContent = () => {
 
   return (
     <div className="w-full min-h-screen max-w-full flex flex-col bg-gray-50 overflow-y-auto overflow-x-hidden m-0 p-0">
+      {/* Connection Status Indicator */}
+      <ConnectionStatus />
+      
       {/* Header */}
       <header className="w-full max-w-full flex items-center justify-between px-8 py-3 bg-white border-b border-gray-200 m-0 flex-shrink-0">
         <div className="flex items-center gap-3">

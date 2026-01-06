@@ -82,9 +82,17 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
         correctAnswer: -1, // Backend doesn't provide correct answer
       }));
 
+      console.log('=== SUCCESSFULLY MAPPED QUESTIONS ===');
+      console.log('Mapped questions count:', mappedQuestions.length);
+      console.log('First mapped question:', mappedQuestions[0]);
+      console.log('All have question_uuid?', mappedQuestions.every(q => q.question_uuid));
+      console.log('===================================');
+      
       return mappedQuestions;
     } catch (error) {
-      console.error('Error fetching questions from backend:', error);
+      console.error('❌ ERROR fetching questions from backend:', error);
+      console.warn('⚠️ FALLING BACK TO MOCK_QUESTIONS - THESE WILL NOT HAVE question_uuid!');
+      console.warn('⚠️ SUBMISSION WILL FAIL WITH MOCK DATA!');
       // Fallback to mock data on error
       return MOCK_QUESTIONS;
     }
@@ -140,6 +148,10 @@ export const autosaveAssessment = async (
     throw new Error('Authentication token not found');
   }
 
+  // DEBUG: Log what we received for autosave
+  console.log('[AUTOSAVE] answers object:', Object.keys(answers).length, 'keys');
+  console.log('[AUTOSAVE] questions array:', questions.length, 'questions');
+  
   // Convert frontend answers format to backend format
   const answerItems: MCQAnswerItem[] = questions
     .filter((q) => {
@@ -155,6 +167,8 @@ export const autosaveAssessment = async (
         candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based
       };
     });
+
+  console.log('[AUTOSAVE] Prepared', answerItems.length, 'answers for autosave');
 
   const requestBody = {
     answers: answerItems,
@@ -208,20 +222,47 @@ export const submitAssessment = async (
     throw new Error('Authentication token not found');
   }
 
+  // DEBUG: Log what we received
+  console.log('=== submitAssessment DEBUG ===');
+  console.log('Received answers object:', answers);
+  console.log('Received questions array length:', questions.length);
+  console.log('First question sample:', questions[0]);
+  console.log('============================');
+
+  // CRITICAL CHECK: Verify questions have question_uuid
+  const questionsWithoutUuid = questions.filter(q => !q.question_uuid);
+  if (questionsWithoutUuid.length > 0) {
+    console.error('❌ CRITICAL ERROR: Questions missing question_uuid!');
+    console.error(`${questionsWithoutUuid.length} out of ${questions.length} questions don't have question_uuid`);
+    console.error('First question without UUID:', questionsWithoutUuid[0]);
+    console.error('This means questions were likely loaded from MOCK_QUESTIONS or backend is not returning question_uuid');
+    console.error('SUBMISSION WILL FAIL!');
+  }
+
   // Convert frontend answers format to backend format
   const answerItems: MCQAnswerItem[] = questions
     .filter((q) => {
       // Only include questions that have an answer and a question_uuid
       const answer = answers[q.id];
-      return answer !== undefined && answer !== null && q.question_uuid;
+      const hasAnswer = answer !== undefined && answer !== null;
+      const hasUuid = !!q.question_uuid;
+      
+      // DEBUG: Log filtering decision for each question
+      if (!hasAnswer || !hasUuid) {
+        console.log(`Question ${q.id} filtered out: hasAnswer=${hasAnswer} (value=${answer}), hasUuid=${hasUuid}`);
+      }
+      
+      return hasAnswer && hasUuid;
     })
     .map((q) => {
       const answer = answers[q.id];
       // Convert 0-based index to 1-based option number (frontend stores 0,1,2,3 but backend expects 1,2,3,4)
-      return {
+      const mapped = {
         question_uuid: q.question_uuid!,
         candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based
       };
+      console.log(`Mapping Q${q.id}: answer=${answer} -> candidate_answer=${mapped.candidate_answer}, uuid=${mapped.question_uuid}`);
+      return mapped;
     });
 
   const requestBody = {

@@ -28,7 +28,7 @@ class MCQAnswerItem(BaseModel):
 
 class SaveMCQAnswerRequest(BaseModel):
     """Request schema for saving candidate answers to multiple MCQ questions."""
-    answers: List[MCQAnswerItem] = Field(..., description="List of question-answer pairs", min_items=1)
+    answers: List[MCQAnswerItem] = Field(default_factory=list, description="List of question-answer pairs")
 
 
 class SaveMCQAnswerResponse(BaseModel):

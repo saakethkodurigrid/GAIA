@@ -11,6 +11,7 @@ import { useFullscreenWarning } from '../../hooks/useFullscreenWarning';
 import FullscreenViolationModal from '../../components/FullscreenViolationModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import { localStorage as storage } from '../../utils/localStorage';
+import ConnectionStatus from '../../components/ConnectionStatus';
 const SystemDesignPageContent = () => {
   const { problem, isLoading, submitSolution, timeRemaining } = useSystemDesign();
   const { videoStream, requestVideoStream } = useVideo();
@@ -108,6 +109,9 @@ const SystemDesignPageContent = () => {
   }
   return (
     <div className="w-full h-screen max-w-full flex flex-col bg-gray-50 overflow-hidden m-0 p-0">
+      {/* Connection Status Indicator */}
+      <ConnectionStatus />
+      
       {/* Header */}
       <DesignHeader onSubmit={handleSubmitClick} />
       {/* Main Content */}

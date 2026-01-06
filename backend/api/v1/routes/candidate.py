@@ -85,7 +85,7 @@ async def get_mcq_questions(
             detail="Access denied. You can only view your own questions."
         )
     # Check if test is in progress (status must be 'in progress')
-    validate_test_in_progress(current_candidate, resource_name="questions")
+    # validate_test_in_progress(current_candidate, resource_name="questions")  # COMMENTED OUT FOR DEBUGGING
     
     # Try to get questions from Redis first
     try:

@@ -87,6 +87,25 @@ const AnalysisPage = () => {
     return name.substring(0, 2).toUpperCase();
   };
 
+  // Helper function to parse markdown bold syntax (**text**) and newlines (\n) and render appropriately
+  const parseMarkdownBold = (text: string) => {
+    // First split by newlines
+    const lines = text.split(/\\n/);
+    
+    return lines.map((line, lineIndex) => (
+      <span key={lineIndex}>
+        {line.split(/(\*\*.*?\*\*)/g).map((part, partIndex) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            const boldText = part.slice(2, -2);
+            return <strong key={`${lineIndex}-${partIndex}`}>{boldText}</strong>;
+          }
+          return part;
+        })}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    ));
+  };
+
   // Helper function to determine integrity level
   const getIntegrityLevel = (metrics?: { tab_change?: number; full_screen_exits?: number; multiple_face?: number } | null) => {
     if (!metrics) return 'Unknown';
@@ -100,11 +119,6 @@ const AnalysisPage = () => {
       return 'Low';
     }
     return 'High';
-  };
-
-  // Helper function to determine if candidate is a power coder
-  const isPowerCoder = (codingScore: number | undefined) => {
-    return (codingScore || 0) > 70;
   };
 
   const handleSectionClick = (section: string) => {
@@ -314,15 +328,15 @@ const AnalysisPage = () => {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <span className="text-base font-semibold text-gray-700">Submitted questions: </span>
-                <span className="text-base text-gray-900">{codingData.total_submitted ?? 0}{codingData.total_questions ? `/${codingData.total_questions}` : ''}</span>
+                <span className="text-base text-gray-900">{codingData.submitted_questions ?? 0}{codingData.total_questions ? `/${codingData.total_questions}` : ''}</span>
               </div>
               <div>
                 <span className="text-base font-semibold text-gray-700">Total correct answers: </span>
-                <span className="text-base text-gray-900">{codingData.total_correct ?? 0}</span>
+                <span className="text-base text-gray-900">{codingData.correct_answers ?? 0}</span>
               </div>
               <div>
                 <span className="text-base font-semibold text-gray-700">Partially correct answers: </span>
-                <span className="text-base text-gray-900">{codingData.partially_correct ?? 0}</span>
+                <span className="text-base text-gray-900">{codingData.partially_correct_answers ?? 0}</span>
               </div>
             </div>
           </div>
@@ -365,7 +379,7 @@ const AnalysisPage = () => {
                   </div>
                   <h3 className="text-lg font-bold text-gray-900">Summary</h3>
                 </div>
-                <p className="text-gray-700 leading-relaxed">{sdData.summary}</p>
+                <p className="text-gray-700 leading-relaxed">{parseMarkdownBold(sdData.summary)}</p>
               </div>
             )}
 
@@ -387,7 +401,7 @@ const AnalysisPage = () => {
                         <svg className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        <span className="text-gray-700">{strength}</span>
+                        <span className="text-gray-700">{parseMarkdownBold(strength)}</span>
                       </li>
                     ))}
                   </ul>
@@ -410,7 +424,7 @@ const AnalysisPage = () => {
                         <svg className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span className="text-gray-700">{item}</span>
+                        <span className="text-gray-700">{parseMarkdownBold(item)}</span>
                       </li>
                     ))}
                   </ul>
@@ -504,7 +518,7 @@ const AnalysisPage = () => {
 
   const integrityLevel = getIntegrityLevel(analysisData.cheat_metrics);
   const overallScore = analysisData.overall_percentage ?? 0;
-  const powerCoder = isPowerCoder(analysisData.coding_analysis?.total_score);
+  const powerCoder = analysisData.coding_analysis?.power_coder || 'No';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF7E5] to-[#F5FCFF] flex flex-col">
@@ -555,7 +569,7 @@ const AnalysisPage = () => {
                 <h2 className="text-xl font-bold text-gray-900">Summary</h2>
               </div>
               <p className="text-gray-700 leading-relaxed">
-                {analysisData.overall_summary.replace(/^\*\*Interview Performance Summary:\*\*\s*/i, '')}
+                {parseMarkdownBold(analysisData.overall_summary.replace(/^\*\*Interview Performance Summary:\*\*\s*/i, ''))}
               </p>
             </div>
           )}
@@ -718,8 +732,8 @@ const AnalysisPage = () => {
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-600">Power Coder: </span>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold ${powerCoder ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                {powerCoder ? 'Yes' : 'No'}
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold ${powerCoder === 'Yes' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {powerCoder}
               </span>
             </div>
             <div>

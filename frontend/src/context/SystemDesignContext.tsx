@@ -427,6 +427,97 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
     return () => clearInterval(timer);
   }, [isTimerInitialized, timeRemaining]);
 
+  // Recovery on reconnection - immediately sync data when connection is restored
+  useEffect(() => {
+    const handleOnline = async () => {
+      console.log('🟢 [SystemDesign Recovery] Connection restored - initiating recovery...');
+      
+      const candidateId = user?.candidateId;
+      if (!candidateId || isLoading) {
+        console.log('⚠️ [SystemDesign Recovery] Skipping recovery - no candidate ID or still loading');
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token') || localStorage.getItem('google_id_token');
+        if (!token) {
+          console.log('⚠️ [SystemDesign Recovery] No auth token found');
+          return;
+        }
+
+        // 1. Send heartbeat immediately to reset timeout and get server time
+        console.log('[SystemDesign Recovery] Step 1: Sending heartbeat...');
+        const heartbeatResponse = await sendHeartbeat(candidateId, token);
+        console.log('✅ [SystemDesign Recovery] Heartbeat sent successfully');
+
+        // 2. Sync timer with server if there's a significant difference
+        if (heartbeatResponse.remaining_seconds !== undefined) {
+          const serverTime = heartbeatResponse.remaining_seconds;
+          const localTime = timeRemaining;
+          const timeDiff = Math.abs(serverTime - localTime);
+
+          console.log(`[SystemDesign Recovery] Timer comparison - Local: ${localTime}s, Server: ${serverTime}s, Diff: ${timeDiff}s`);
+
+          // If times differ by more than 5 seconds, sync with server
+          if (timeDiff > 5) {
+            console.log(`⚠️ [SystemDesign Recovery] Timer desync detected (${timeDiff}s difference), syncing with server...`);
+            setTimeRemaining(serverTime);
+            storage.setTimerEndTime(serverTime);
+            console.log(`✅ [SystemDesign Recovery] Timer synced to ${serverTime}s`);
+          } else {
+            console.log('✅ [SystemDesign Recovery] Timer is in sync (difference < 5s)');
+          }
+        }
+
+        // 3. Auto-save canvas data and chat messages
+        console.log('[SystemDesign Recovery] Step 2: Syncing canvas and chat data...');
+        if (questionUuid && excalidrawData) {
+          try {
+            // Save canvas data
+            await updateCanvas({
+              question_uuid: questionUuid,
+              canvas_data: {
+                elements: excalidrawData.elements || [],
+                appState: excalidrawData.appState || {},
+              }
+            }, candidateId);
+            console.log('✅ [SystemDesign Recovery] Canvas data saved');
+          } catch (error) {
+            console.error('⚠️ [SystemDesign Recovery] Failed to save canvas:', error);
+          }
+
+          try {
+            // Save chat messages if any
+            if (chatMessages.length > 0) {
+              await saveChatMessage({
+                question_uuid: questionUuid,
+                messages: chatMessages
+              }, candidateId);
+              console.log('✅ [SystemDesign Recovery] Chat messages saved');
+            }
+          } catch (error) {
+            console.error('⚠️ [SystemDesign Recovery] Failed to save chat:', error);
+          }
+        } else {
+          console.log('⚠️ [SystemDesign Recovery] No canvas data to save');
+        }
+
+        console.log('✅ [SystemDesign Recovery] Full recovery completed successfully!');
+      } catch (error) {
+        console.error('❌ [SystemDesign Recovery] Recovery failed:', error);
+        // Recovery failure shouldn't break the test - user can continue working
+      }
+    };
+
+    // Listen for online event
+    window.addEventListener('online', handleOnline);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [user?.candidateId, timeRemaining, questionUuid, excalidrawData, chatMessages, isLoading]);
+
   const formatTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
