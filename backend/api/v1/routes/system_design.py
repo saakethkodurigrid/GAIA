@@ -97,15 +97,22 @@ async def update_canvas(
                 detail="question_uuid is required"
             )
         
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = request.question_uuid.strip()
+        
+        # DEBUG: Log canvas update details
+        elements_count = len(request.canvas_data.elements) if request.canvas_data else 0
+        logger.info(f"[CANVAS UPDATE] Candidate: {candidate_id[:8]}..., Question: {question_uuid}, Action: {request.action}, Elements: {elements_count}")
+        
         # Verify session exists and belongs to candidate
-        session = service.get_session(current_candidate.candidate_id, request.question_uuid)
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.update_canvas(request, current_candidate.candidate_id, request.question_uuid)
+        return await service.update_canvas(request, current_candidate.candidate_id, question_uuid)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -149,15 +156,18 @@ async def send_message(
                 detail="question_uuid is required"
             )
         
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = request.question_uuid.strip()
+        
         # Verify session exists and belongs to candidate
-        session = service.get_session(current_candidate.candidate_id, request.question_uuid)
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
         if session.candidate_id != current_candidate.candidate_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Session does not belong to this candidate."
             )
         
-        return await service.send_message(request, current_candidate.candidate_id, request.question_uuid)
+        return await service.send_message(request, current_candidate.candidate_id, question_uuid)
     except HTTPException:
         raise
     except Exception as e:
@@ -187,6 +197,8 @@ async def get_chat_history(
         ChatHistoryResponse with list of messages
     """
     try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         service = SystemDesignService(db)
         
         # Verify session exists and belongs to candidate
@@ -204,6 +216,55 @@ async def get_chat_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching chat history: {str(e)}"
+        )
+
+
+@router.get("/{candidate_id}/sessions/{question_uuid}/canvas")
+async def get_canvas_data(
+    candidate_id: str = Path(..., description="Candidate UUID"),
+    question_uuid: str = Path(..., description="Question UUID"),
+    current_candidate: Candidate = Depends(get_current_candidate),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current canvas data for a session (loads from Redis for freshest data).
+    
+    Args:
+        candidate_id: Candidate UUID (from path)
+        question_uuid: Question UUID
+        current_candidate: Authenticated candidate (from dependency)
+        db: Database session
+        
+    Returns:
+        Canvas data with elements, appState, and files
+    """
+    try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
+        service = SystemDesignService(db)
+        
+        # Verify session exists and belongs to candidate
+        session = service.get_session(current_candidate.candidate_id, question_uuid)
+        if session.candidate_id != current_candidate.candidate_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Session does not belong to this candidate."
+            )
+        
+        # Get canvas data from Redis (freshest source)
+        canvas_data = service.get_canvas_data(current_candidate.candidate_id, question_uuid)
+        
+        return {
+            "success": True,
+            "canvas": canvas_data,
+            "question_uuid": question_uuid
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching canvas data: {str(e)}"
         )
 
 
@@ -231,6 +292,8 @@ async def end_session(
         Response with immediate evaluation (if available) and status
     """
     try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         service = SystemDesignService(db)
         
         # Verify session exists and belongs to candidate
@@ -406,6 +469,8 @@ async def get_report(
         Report if completed, or status information if in progress/not started
     """
     try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         service = SystemDesignService(db)
         
         # Verify session exists and belongs to candidate
@@ -495,6 +560,8 @@ async def check_prompts(
         ProactivePromptResponse with prompt if available
     """
     try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         service = SystemDesignService(db)
         
         # Verify session exists and belongs to candidate
@@ -546,6 +613,8 @@ async def prompts_stream(
         data: {"error": "Error message"}  // Error occurred
     """
     try:
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         service = SystemDesignService(db)
         
         # Verify session exists and belongs to candidate

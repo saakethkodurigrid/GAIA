@@ -1074,50 +1074,55 @@ The candidate has just added {milestone_topic} components to their design. Gener
             return f"Nice progress on {milestone_topic}! Can you walk me through how this helps solve the problem?"
     
     async def _check_milestones(self, session: Session) -> Optional[str]:
-        """Check if candidate reached a new milestone and should transition topics"""
-        if not session.current_canvas:
-            return None
-        
-        parsed = self.parser.parse(session.current_canvas)
-        labels = " ".join([label.lower() for label in parsed["labels"].values()])
-        
-        # Check milestones
-        milestones_to_check = {
-            "scaling_components": {
-                "keywords": ["load balancer", "lb", "horizontal", "scale"],
-                "milestone": "scaling_discussed",
-                "topic": "scaling and load balancing"
-            },
-            "reliability_components": {
-                "keywords": ["replica", "failover", "backup", "redundancy"],
-                "milestone": "reliability_discussed",
-                "topic": "redundancy and reliability"
-            },
-            "architecture_complete": {
-                "keywords": ["api", "service", "database", "cache"],
-                "milestone": "architecture_complete",
-                "topic": "core architecture"
-            }
-        }
-        
-        for milestone_name, milestone_data in milestones_to_check.items():
-            if session.milestones.get(milestone_data["milestone"], False):
-                continue  # Already reached this milestone
-            
-            # Check if milestone keywords are present
-            if any(keyword in labels for keyword in milestone_data["keywords"]):
-                # Check if we have enough components (at least 3-4)
-                if parsed["component_count"] >= 3:
-                    session.milestones[milestone_data["milestone"]] = True
-                    prompt_key = f"milestone_{milestone_name}"
-                    if prompt_key not in session.prompt_history:
-                        # Generate context-aware prompt using LLM
-                        prompt = await self._generate_milestone_prompt(session, milestone_data["topic"])
-                        if prompt:
-                            session.prompt_history.append(prompt_key)
-                            return prompt
-        
+        """Check if candidate reached a new milestone (DISABLED)"""
+        # TEMPORARILY DISABLED: Milestone prompts causing spam
+        # TODO: Re-enable with proper rate limiting and deduplication
         return None
+        
+        # Original code below - kept for reference
+        # if not session.current_canvas:
+        #     return None
+        # 
+        # parsed = self.parser.parse(session.current_canvas)
+        # labels = " ".join([label.lower() for label in parsed["labels"].values()])
+        # 
+        # # Check milestones
+        # milestones_to_check = {
+        #     "scaling_components": {
+        #         "keywords": ["load balancer", "lb", "horizontal", "scale"],
+        #         "milestone": "scaling_discussed",
+        #         "topic": "scaling and load balancing"
+        #     },
+        #     "reliability_components": {
+        #         "keywords": ["replica", "failover", "backup", "redundancy"],
+        #         "milestone": "reliability_discussed",
+        #         "topic": "redundancy and reliability"
+        #     },
+        #     "architecture_complete": {
+        #         "keywords": ["api", "service", "database", "cache"],
+        #         "milestone": "architecture_complete",
+        #         "topic": "core architecture"
+        #     }
+        # }
+        # 
+        # for milestone_name, milestone_data in milestones_to_check.items():
+        #     if session.milestones.get(milestone_data["milestone"], False):
+        #         continue  # Already reached this milestone
+        #     
+        #     # Check if milestone keywords are present
+        #     if any(keyword in labels for keyword in milestone_data["keywords"]):
+        #         # Check if we have enough components (at least 3-4)
+        #         if parsed["component_count"] >= 3:
+        #             session.milestones[milestone_data["milestone"]] = True
+        #             prompt_key = f"milestone_{milestone_name}"
+        #             if prompt_key not in session.prompt_history:
+        #                 # Generate context-aware prompt using LLM
+        #                 prompt = await self._generate_milestone_prompt(session, milestone_data["topic"])
+        #                 if prompt:
+        #                     session.prompt_history.append(prompt_key)
+        #                     return prompt
+        # 
+        # return None
     
     async def _call_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """Helper method to call LLM API for prompts"""

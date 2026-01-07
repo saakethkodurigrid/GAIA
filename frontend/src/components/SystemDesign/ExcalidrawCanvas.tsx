@@ -17,16 +17,27 @@ const ExcalidrawCanvas = () => {
 
   // Debounced onChange to prevent infinite loops
   const onChange = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
+    // CRITICAL: Don't send empty canvas updates during initial load
+    // This prevents overwriting stored canvas when component mounts
+    if (!hasLoadedInitialData.current) {
+      if (excalidrawData && excalidrawData.elements && excalidrawData.elements.length > 0) {
+        // We have initial data to load, but onChange fired with potentially empty canvas
+        // Skip this update to prevent overwriting
+        console.log('[ExcalidrawCanvas] Skipping onChange during initial data load (preventing overwrite)');
+        return;
+      }
+    }
+
     // Clear any pending updates
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
 
-    // Debounce the update to avoid excessive state updates
+    // Debounce the update to avoid excessive state updates (100ms for faster response)
     timeoutRef.current = setTimeout(() => {
       updateExcalidrawData({ elements: [...elements], appState, files });
-    }, 300);
-  }, [updateExcalidrawData]);
+    }, 100);
+  }, [updateExcalidrawData, excalidrawData]);
 
   // Prepare initial data for Excalidraw
   // Normalize appState to ensure collaborators is always an array (Excalidraw requirement)
@@ -60,10 +71,17 @@ const ExcalidrawCanvas = () => {
   // Mark as loaded once we've set initial data
   useEffect(() => {
     if (initialData) {
-      hasLoadedInitialData.current = true;
       console.log('Canvas initial data prepared:', initialData);
+      // Set flag after a short delay to ensure Excalidraw has applied the initial data
+      setTimeout(() => {
+        hasLoadedInitialData.current = true;
+        console.log('[ExcalidrawCanvas] Initial data loaded, onChange enabled');
+      }, 500);
+    } else if (excalidrawData === null) {
+      // No initial data to load, enable onChange immediately
+      hasLoadedInitialData.current = true;
     }
-  }, [initialData]);
+  }, [initialData, excalidrawData]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
