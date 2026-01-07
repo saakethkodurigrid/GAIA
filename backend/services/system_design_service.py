@@ -161,6 +161,12 @@ class SystemDesignService:
         try:
             redis_key = self._get_redis_session_key(candidate_id, question_uuid)
             session_dict = session.model_dump()
+            
+            # Log what we're about to save
+            canvas_elements = len(session_dict.get('current_canvas', {}).get('elements', [])) if session_dict.get('current_canvas') else 0
+            logger.info(f"[REDIS SAVE] Saving session to Redis - Canvas has {canvas_elements} elements")
+            logger.info(f"[REDIS SAVE] Redis key: {redis_key}")
+            
             # Convert timestamps to ISO format for JSON serialization
             if session_dict.get('last_activity_time'):
                 session_dict['last_activity_time'] = datetime.fromtimestamp(session_dict['last_activity_time']).isoformat()
@@ -176,7 +182,7 @@ class SystemDesignService:
                 REDIS_SESSION_TTL,
                 json.dumps(session_dict)
             )
-            logger.debug(f"[REDIS] Saved session to Redis: {redis_key}")
+            logger.info(f"[REDIS SAVE] ✅ Successfully saved session to Redis with TTL={REDIS_SESSION_TTL}s")
             return True
         except Exception as e:
             logger.warning(f"[REDIS] Failed to save session to Redis: {e}")
@@ -185,11 +191,14 @@ class SystemDesignService:
     def _load_session_from_redis(self, candidate_id: str, question_uuid: str) -> Optional[SessionModel]:
         """Load session from Redis."""
         if not self.redis_client:
+            logger.debug(f"[REDIS] Redis client not available, skipping Redis load")
             return None
         try:
             redis_key = self._get_redis_session_key(candidate_id, question_uuid)
+            logger.debug(f"[REDIS] Attempting to load session from Redis key: {redis_key}")
             session_data = self.redis_client.get(redis_key)
             if session_data:
+                logger.info(f"[REDIS] ✅ Found session in Redis for candidate {candidate_id[:8]}...")
                 session_dict = json.loads(session_data)
                 # Convert ISO timestamps back to unix timestamps
                 if session_dict.get('last_activity_time'):
@@ -201,7 +210,12 @@ class SystemDesignService:
                 if session_dict.get('last_poll_time'):
                     session_dict['last_poll_time'] = datetime.fromisoformat(session_dict['last_poll_time']).timestamp()
                 
-                return SessionModel(**session_dict)
+                session_model = SessionModel(**session_dict)
+                canvas_elements = len(session_model.current_canvas.get('elements', [])) if session_model.current_canvas else 0
+                logger.info(f"[REDIS] Loaded session from Redis - Canvas has {canvas_elements} elements")
+                return session_model
+            else:
+                logger.info(f"[REDIS] ❌ Session not found in Redis for candidate {candidate_id[:8]}...")
         except Exception as e:
             logger.warning(f"[REDIS] Failed to load session from Redis: {e}")
         return None
@@ -245,6 +259,8 @@ class SystemDesignService:
     
     async def _save_session_to_postgresql(self, candidate_id: str, question_uuid: str, session: SessionModel, retry_count: int = 3) -> bool:
         """Save session to PostgreSQL with retry (hard save)."""
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip() if question_uuid else question_uuid
         for attempt in range(retry_count):
             try:
                 # Convert chat history to JSONB array
@@ -383,6 +399,8 @@ class SystemDesignService:
     def _load_session_from_postgresql(self, candidate_id: str, question_uuid: str) -> Optional[SessionModel]:
         """Load session from PostgreSQL."""
         try:
+            # Normalize UUID by stripping trailing spaces
+            question_uuid = question_uuid.strip() if question_uuid else question_uuid
             db_record = self.db.query(InterviewSystemDesign).filter(
                 InterviewSystemDesign.candidate_id == candidate_id,
                 InterviewSystemDesign.question_uuid == question_uuid
@@ -451,6 +469,7 @@ class SystemDesignService:
         from services.question_assignment_service import QuestionAssignmentService
         assignment_service = QuestionAssignmentService(self.db)
         assigned_question_uuid = assignment_service.get_assigned_question(candidate_id)
+        # Note: assigned_question_uuid is already stripped in QuestionAssignmentService
         
         if assigned_question_uuid:
             # Use pre-assigned question
@@ -460,9 +479,9 @@ class SystemDesignService:
         else:
             # PRIORITY 2: Use explicit question_uuid from request (if no pre-assigned question)
             if request.question_uuid:
-                # Use explicit question UUID
-                logger.info(f"[SESSION CREATION] Using explicit question_uuid from request: {request.question_uuid} for candidate {candidate_id}")
-                question_uuid = request.question_uuid
+                # Use explicit question UUID (strip trailing spaces)
+                question_uuid = request.question_uuid.strip()
+                logger.info(f"[SESSION CREATION] Using explicit question_uuid from request: {question_uuid} for candidate {candidate_id}")
                 logger.info(f"[SESSION CREATION] ✅ Using question UUID: {question_uuid}")
             elif request.tag:
                 # Get random question by tag
@@ -505,14 +524,33 @@ class SystemDesignService:
         # Check if session already exists (load existing session if available)
         existing_session = self.get_session(candidate_id, question_uuid)
         
-        if existing_session and existing_session.current_canvas:
+        # Only return existing session if it has ACTUAL canvas elements (not just empty dict)
+        if existing_session and existing_session.current_canvas and len(existing_session.current_canvas.get('elements', [])) > 0:
             # Session exists with canvas data - return it
             logger.info(f"[SESSION CREATION] ✅ Loaded existing session with canvas for candidate {candidate_id}")
+            logger.info(f"[SESSION CREATION]    Canvas has {len(existing_session.current_canvas.get('elements', []))} elements")
             return SessionResponse(
                 question_text=existing_session.question_text or question_text,
                 question_uuid=question_uuid,
                 current_canvas=existing_session.current_canvas
             )
+        elif existing_session:
+            # Session exists but canvas is None or has 0 elements
+            canvas_elements = len(existing_session.current_canvas.get('elements', [])) if existing_session.current_canvas else 0
+            logger.info(f"[SESSION CREATION] ⚠️ Session exists but current_canvas has {canvas_elements} elements for candidate {candidate_id}")
+            
+            # FORCE a fresh Redis check to get latest canvas data
+            logger.info(f"[SESSION CREATION] 🔄 Force-reloading from Redis to get fresh canvas data...")
+            redis_session = self._load_session_from_redis(candidate_id, question_uuid)
+            if redis_session and redis_session.current_canvas:
+                redis_elements = len(redis_session.current_canvas.get('elements', []))
+                logger.info(f"[SESSION CREATION] ✅ Found canvas in Redis after force-reload: {redis_elements} elements")
+                return SessionResponse(
+                    question_text=redis_session.question_text or question_text,
+                    question_uuid=question_uuid,
+                    current_canvas=redis_session.current_canvas
+                )
+            logger.info(f"[SESSION CREATION] Redis also has no canvas elements, proceeding with empty session")
         
         # Create new session (or use existing empty session)
         if not existing_session:
@@ -549,6 +587,8 @@ class SystemDesignService:
                 session.question_text = question_text
         
         # No need to verify again - we already fetched and validated question_metadata above
+        canvas_elements = len(session.current_canvas.get('elements', [])) if session.current_canvas else 0
+        logger.info(f"[SESSION CREATION] Returning session - Canvas has {canvas_elements} elements")
         return SessionResponse(
             question_text=session.question_text or question_text,
             question_uuid=question_uuid,
@@ -557,19 +597,30 @@ class SystemDesignService:
     
     def get_session(self, candidate_id: str, question_uuid: str) -> SessionModel:
         """Get session by composite key (candidate_id, question_uuid), creating if it doesn't exist."""
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip() if question_uuid else question_uuid
         session_key = (candidate_id, question_uuid)
         
-        # 1. Try in-memory cache first (fastest)
-        if session_key in sessions:
-            return sessions[session_key]
+        logger.info(f"[GET SESSION] Attempting to load session for candidate {candidate_id[:8]}..., question {question_uuid}")
         
-        # 2. Try Redis (fast)
+        # PRIORITY 1: Try Redis first (fresher data than in-memory cache)
+        logger.info(f"[SESSION] Checking Redis first for freshest data...")
         session = self._load_session_from_redis(candidate_id, question_uuid)
         if session:
-            # Warm in-memory cache
+            # Update in-memory cache with Redis data
             sessions[session_key] = session
-            logger.info(f"[SESSION] Loaded from Redis cache")
+            canvas_elements = len(session.current_canvas.get('elements', [])) if session.current_canvas else 0
+            logger.info(f"[SESSION] ✅ Loaded from Redis - Canvas has {canvas_elements} elements")
             return session
+        
+        # PRIORITY 2: Try in-memory cache (fallback)
+        logger.info(f"[SESSION] Not in Redis, checking in-memory cache...")
+        if session_key in sessions:
+            canvas_elements = len(sessions[session_key].current_canvas.get('elements', [])) if sessions[session_key].current_canvas else 0
+            logger.info(f"[SESSION] ✅ Loaded from IN-MEMORY cache - Canvas has {canvas_elements} elements")
+            return sessions[session_key]
+        
+        logger.info(f"[SESSION] Not in memory, checking PostgreSQL...")
         
         # 3. Try PostgreSQL (slower, but complete)
         session = self._load_session_from_postgresql(candidate_id, question_uuid)
@@ -578,7 +629,8 @@ class SystemDesignService:
             self._save_session_to_redis(candidate_id, question_uuid, session)
             # Warm in-memory cache
             sessions[session_key] = session
-            logger.info(f"[SESSION] Loaded from PostgreSQL")
+            canvas_elements = len(session.current_canvas.get('elements', [])) if session.current_canvas else 0
+            logger.info(f"[SESSION] Loaded from PostgreSQL - Canvas has {canvas_elements} elements")
             return session
         
         # 4. Create new session if not found
@@ -691,6 +743,8 @@ class SystemDesignService:
         """Handle canvas updates (save, submit, or update)."""
         if not question_uuid:
             raise ValueError("question_uuid is required")
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         session = self.get_session(candidate_id, question_uuid)
         
         # For "update" action, optimize by checking hash first
@@ -717,6 +771,10 @@ class SystemDesignService:
             session.last_canvas_hash = canvas_hash
             session.current_canvas = canvas_json
             session.last_activity_time = time.time()
+            
+            # DEBUG: Log what's being saved
+            elements = canvas_json.get("elements", [])
+            logger.info(f"[CANVAS SAVE] Saving to Redis: {len(elements)} elements, hash: {canvas_hash}")
             
             # SOFT SAVE: Update Redis (immediate)
             self._save_session_to_redis(candidate_id, question_uuid, session)
@@ -947,6 +1005,8 @@ class SystemDesignService:
         """Send a chat message."""
         if not question_uuid:
             raise ValueError("question_uuid is required")
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip()
         session = self.get_session(candidate_id, question_uuid)
         
         # Sanitize user message
@@ -1072,6 +1132,8 @@ class SystemDesignService:
     
     def get_chat_history(self, candidate_id: str, question_uuid: str) -> ChatHistoryResponse:
         """Get full chat history for a session - Redis first, PostgreSQL fallback."""
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip() if question_uuid else question_uuid
         # 1. Try Redis first (fast - for active sessions)
         try:
             cached_messages = self._load_chat_from_redis(candidate_id, question_uuid)
@@ -1098,8 +1160,56 @@ class SystemDesignService:
         
         return ChatHistoryResponse(messages=messages)
     
+    def get_canvas_data(self, candidate_id: str, question_uuid: str) -> dict:
+        """
+        Get current canvas data for a session - Always loads from Redis for freshest data.
+        
+        Returns canvas with elements, appState, and files or None if no canvas exists.
+        """
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip() if question_uuid else question_uuid
+        
+        logger.info(f"[CANVAS GET] Fetching canvas for candidate {candidate_id[:8]}..., question {question_uuid}")
+        
+        # Always try Redis first (freshest data for active sessions)
+        try:
+            redis_session = self._load_session_from_redis(candidate_id, question_uuid)
+            if redis_session and redis_session.current_canvas:
+                canvas_elements = len(redis_session.current_canvas.get('elements', []))
+                logger.info(f"[CANVAS GET] ✅ Retrieved canvas from Redis: {canvas_elements} elements")
+                return redis_session.current_canvas
+            else:
+                logger.info(f"[CANVAS GET] No canvas found in Redis, checking PostgreSQL...")
+        except Exception as e:
+            logger.warning(f"[CANVAS GET] Redis read failed: {e}, falling back to PostgreSQL")
+        
+        # Fallback to PostgreSQL
+        try:
+            session = self.get_session(candidate_id, question_uuid)
+            if session and session.current_canvas:
+                canvas_elements = len(session.current_canvas.get('elements', []))
+                logger.info(f"[CANVAS GET] Retrieved canvas from PostgreSQL: {canvas_elements} elements")
+                
+                # Warm Redis cache with canvas data
+                if self.redis_client and canvas_elements > 0:
+                    try:
+                        self._save_session_to_redis(candidate_id, question_uuid, session)
+                        logger.info(f"[CANVAS GET] Warmed Redis cache with canvas data")
+                    except Exception as e:
+                        logger.warning(f"[CANVAS GET] Redis cache warm failed: {e}")
+                
+                return session.current_canvas
+            else:
+                logger.info(f"[CANVAS GET] No canvas found in PostgreSQL either")
+                return None
+        except Exception as e:
+            logger.error(f"[CANVAS GET] Error retrieving canvas: {e}")
+            return None
+    
     async def check_proactive_prompts(self, candidate_id: str, question_uuid: str) -> ProactivePromptResponse:
         """Check if any proactive prompts should be triggered for the session."""
+        # Normalize UUID by stripping trailing spaces
+        question_uuid = question_uuid.strip() if question_uuid else question_uuid
         session = self.get_session(candidate_id, question_uuid)
         prompt = await self.orchestrator.check_proactive_prompts(session)
         

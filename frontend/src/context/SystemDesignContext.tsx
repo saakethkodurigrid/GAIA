@@ -7,6 +7,7 @@ import {
   updateCanvas,
   getAssignedQuestion,
   getChatHistory,
+  getCanvasData,
   createProactivePromptsStream,
   endSession
 } from '../api/systemDesign.api';
@@ -232,6 +233,21 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
           } catch (error) {
             console.error('Error loading chat history:', error);
             // Continue without chat history
+          }
+
+          // Step 6: Load canvas data separately from Redis (freshest source)
+          try {
+            console.log('🎨 Fetching canvas data from server...');
+            const canvasData = await getCanvasData(uuidToUse, user.candidateId);
+            if (canvasData && canvasData.elements && canvasData.elements.length > 0) {
+              console.log('✅ Canvas data loaded from server:', canvasData.elements.length, 'elements');
+              setExcalidrawData(canvasData);
+            } else {
+              console.log('ℹ️ No canvas data found on server (empty canvas)');
+            }
+          } catch (error) {
+            console.error('Error loading canvas data:', error);
+            // Continue without canvas data
           }
         }
 
@@ -544,10 +560,14 @@ export const SystemDesignProvider = ({ children }: SystemDesignProviderProps) =>
           action: 'update', // Lightweight sync
         }, user.candidateId);
         console.log('Canvas updated to backend');
+        
+        // Invalidate sessionStorage cache to force fresh load on next page load
+        sessionStorage.removeItem(`system_design_session_${user.candidateId}`);
+        console.log('✅ Session cache invalidated - next refresh will load fresh canvas from server');
       } catch (error) {
         console.error('Failed to update canvas:', error);
       }
-    }, 2000); // Update backend 2 seconds after user stops drawing
+    }, 500); // Update backend 500ms after user stops drawing (fast auto-save!)
 
     return () => {
       clearTimeout(canvasUpdateTimeout);

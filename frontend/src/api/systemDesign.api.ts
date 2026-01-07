@@ -343,6 +343,32 @@ export const getChatHistory = async (questionUuid: string, candidateId?: string)
   return response.json();
 };
 
+/**
+ * Get current canvas data for a session (loads from Redis for freshest data)
+ */
+export const getCanvasData = async (questionUuid: string, candidateId?: string): Promise<any> => {
+  // Use provided candidateId or get from localStorage
+  const finalCandidateId = candidateId || getCandidateId();
+  if (!finalCandidateId) {
+    throw new Error('Candidate ID is required. Please access the page using the invitation link.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/system-design/${finalCandidateId}/sessions/${questionUuid}/canvas`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${getAuthToken() || ''}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch canvas data' }));
+    throw new Error(error.detail || 'Failed to fetch canvas data');
+  }
+
+  const data = await response.json();
+  return data.canvas; // Return just the canvas data
+};
+
 // Final Report Types
 export interface FinalReportResponse {
   question_uuid: string;

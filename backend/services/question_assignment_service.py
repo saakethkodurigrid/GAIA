@@ -39,7 +39,7 @@ class QuestionAssignmentService:
             
             if assignment:
                 logger.info(f"[QUESTION ASSIGNMENT] Found pre-assigned question for candidate {candidate_id}: {assignment.question_uuid}")
-                return assignment.question_uuid
+                return assignment.question_uuid.strip() if assignment.question_uuid else None
             logger.info(f"[QUESTION ASSIGNMENT] No pre-assigned question found for candidate {candidate_id}")
             return None
         except Exception as e:
@@ -312,15 +312,16 @@ class QuestionAssignmentService:
             if not assignment:
                 return None
             
-            # Get question details
-            question = self.question_service.get_question_by_id(assignment.question_uuid)
+            # Get question details (strip trailing spaces from UUID)
+            question_uuid = assignment.question_uuid.strip() if assignment.question_uuid else None
+            question = self.question_service.get_question_by_id(question_uuid)
             
             if not question:
                 return None
             
             return {
                 "candidate_id": candidate_id,
-                "question_uuid": assignment.question_uuid,
+                "question_uuid": question_uuid,
                 "question": question.question
             }
             
