@@ -3,10 +3,11 @@ import { TourProvider, useTour } from '../../context/TourContext';
 import TourOverlay from '../../components/Walkthrough/TourOverlay';
 import { mcqTourSteps } from '../../components/Walkthrough/tourGuideSteps';
 import Footer from '../../components/Footer';
+import { TIMER_DURATION } from '../../utils/constants';
 
 const TourMCQPageContent = () => {
   const { startTour, isRunning, currentStep } = useTour();
-  const [timeRemaining] = useState(10800); // 3 hours (180 minutes)
+  const [timeRemaining] = useState(TIMER_DURATION); // Test duration from env variable
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   useEffect(() => {

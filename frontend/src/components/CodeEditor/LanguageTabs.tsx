@@ -7,7 +7,7 @@ interface LanguageTabsProps {
 }
 
 const LanguageTabs = ({ onSubmitSection }: LanguageTabsProps) => {
-  const { selectedLanguage, setLanguage, resetCode } = useCoding();
+  const { selectedLanguage, setLanguage, resetCode, isSubmitting } = useCoding();
   const { currentProblemIndex, totalProblems } = useCodingSession();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -98,7 +98,8 @@ const LanguageTabs = ({ onSubmitSection }: LanguageTabsProps) => {
         </span>
         <button
           onClick={() => onSubmitSection?.()}
-          className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded transition-colors hover:bg-green-700"
+          disabled={isSubmitting}
+          className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded transition-colors hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Submit Section
         </button>

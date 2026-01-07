@@ -168,26 +168,6 @@ const TestPermissionsPage = () => {
     }
   };
 
-  const handleSkipTour = () => {
-    // Clear any stale fullscreen warning state from localStorage
-    // This prevents automatic redirect to /test/completed when landing on test-overview
-    try {
-      window.localStorage.removeItem('fullscreenWarning');
-    } catch (error) {
-      console.error('Error clearing fullscreen warning state:', error);
-    }
-    
-    // Clear timer before skipping tour - timer should only start when user clicks "Start Assessment" on TestReadyPage
-    console.log('Skipping tour - clearing any existing timer and removing timer_started flag...');
-    storage.clearTimer();
-    window.localStorage.removeItem('timer_just_initialized');
-    window.localStorage.removeItem('timer_initialized_at');
-    window.localStorage.removeItem('timer_started'); // Remove flag to prevent any timer operations
-    console.log('Timer cleared and timer_started flag removed. Timer will only start when user clicks "Start Assessment".');
-    
-    // Navigate directly to test ready page
-    navigate('/test/ready');
-  };
 
   const handleLogout = () => {
     logout();
@@ -317,12 +297,6 @@ const TestPermissionsPage = () => {
               }`}
             >
               Start Tour
-            </button>
-            <button
-              onClick={handleSkipTour}
-              className="px-12 py-4 rounded-lg font-semibold text-lg transition-colors bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Skip Tour
             </button>
           </div>
         </div>

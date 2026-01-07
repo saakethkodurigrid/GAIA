@@ -6,7 +6,21 @@ export const QUESTION_STATUS = {
   MARKED: 'marked'
 } as const;
 
-export const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours) in seconds
+// Get test duration from environment variable, default to 180 minutes
+const TEST_DURATION_MINUTES = import.meta.env.VITE_TEST_DURATION_MINUTES 
+  ? parseInt(import.meta.env.VITE_TEST_DURATION_MINUTES) 
+  : 180;
+
+export const TIMER_DURATION = TEST_DURATION_MINUTES * 60; // Convert minutes to seconds
+export const TEST_DURATION_MINUTES_CONSTANT = TEST_DURATION_MINUTES; // Export minutes for display
+
+// Get fullscreen warning duration from environment variable, default to 5 seconds
+const FULLSCREEN_WARNING_SECONDS = import.meta.env.VITE_FULLSCREEN_WARNING_SECONDS
+  ? parseInt(import.meta.env.VITE_FULLSCREEN_WARNING_SECONDS)
+  : 5;
+
+export const FULLSCREEN_WARNING_DURATION = FULLSCREEN_WARNING_SECONDS * 1000; // Convert seconds to milliseconds
+export const FULLSCREEN_WARNING_SECONDS_CONSTANT = FULLSCREEN_WARNING_SECONDS; // Export seconds for display
 
 export const MOCK_QUESTIONS: Question[] = [
   {

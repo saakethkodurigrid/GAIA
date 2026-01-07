@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FULLSCREEN_WARNING_DURATION, FULLSCREEN_WARNING_SECONDS_CONSTANT } from '../utils/constants';
 
 interface UseFullscreenWarningOptions {
   onFinalAttempt?: () => void;
@@ -7,7 +8,7 @@ interface UseFullscreenWarningOptions {
 
 const WARNING_STORAGE_KEY = 'fullscreenWarning';
 const EXIT_COUNT_STORAGE_KEY = 'fullscreenExitCount';
-const WARNING_DURATION = 5000; // 5 seconds in milliseconds
+const WARNING_DURATION = FULLSCREEN_WARNING_DURATION; // Get duration from environment variable
 
 interface WarningState {
   active: boolean;
@@ -80,7 +81,7 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
   const { onFinalAttempt } = options;
   const navigate = useNavigate();
   const [showViolation, setShowViolation] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(FULLSCREEN_WARNING_SECONDS_CONSTANT);
   const wasFullscreenRef = useRef(false);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const navigateRef = useRef(navigate);
@@ -167,10 +168,10 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
         const exitCount = incrementExitCount();
         console.log(`[Fullscreen Warning] User exited fullscreen. Total exits: ${exitCount}`);
         
-        // Show violation modal with 5 second countdown
+        // Show violation modal with countdown
         const startTime = Date.now();
         setShowViolation(true);
-        setCountdown(5);
+        setCountdown(FULLSCREEN_WARNING_SECONDS_CONSTANT);
         
         // Save warning state to localStorage
         saveWarningState(startTime);
@@ -206,7 +207,7 @@ export const useFullscreenWarning = (options: UseFullscreenWarningOptions = {}) 
         // User returned to fullscreen - close violation modal and reset
         clearWarningStorage();
         setShowViolation(false);
-        setCountdown(5);
+        setCountdown(FULLSCREEN_WARNING_SECONDS_CONSTANT);
         if (countdownIntervalRef.current) {
           clearInterval(countdownIntervalRef.current);
           countdownIntervalRef.current = null;

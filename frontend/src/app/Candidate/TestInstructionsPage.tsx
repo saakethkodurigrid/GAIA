@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import { TEST_DURATION_MINUTES_CONSTANT } from '../../utils/constants';
 
 const TestInstructionsPage = () => {
   const { user, logout } = useAuth();
@@ -39,7 +40,7 @@ const TestInstructionsPage = () => {
             <h2 className="text-2xl font-bold text-gray-900 mb-6">{user?.jobRole || 'Technical'} Interview</h2>
             <div>
               <p className="text-base text-gray-600 mb-1">Test duration</p>
-              <p className="text-lg font-semibold text-gray-900">180 mins</p>
+              <p className="text-lg font-semibold text-gray-900">{TEST_DURATION_MINUTES_CONSTANT} mins</p>
             </div>
           </div>
         </div>
@@ -75,7 +76,7 @@ const TestInstructionsPage = () => {
               <li className="flex gap-3">
                 <span className="font-semibold text-gray-900 min-w-[24px] flex-shrink-0">5.</span>
                 <span className="break-words">
-                  You'll have <strong>180 minutes</strong> in total. Once you submit a section, you won't be able to go back to the section and edit the responses.
+                  You'll have <strong>{TEST_DURATION_MINUTES_CONSTANT} minutes</strong> in total. Once you submit a section, you won't be able to go back to the section and edit the responses.
                 </span>
               </li>
             </ol>

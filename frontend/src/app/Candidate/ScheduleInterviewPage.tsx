@@ -5,6 +5,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { scheduleTest } from '../../api/candidate.api';
 import { localStorage as storage } from '../../utils/localStorage';
+import { TEST_DURATION_MINUTES_CONSTANT } from '../../utils/constants';
 
 const ScheduleInterviewPage = () => {
   const { user, logout } = useAuth();
@@ -453,7 +454,7 @@ const ScheduleInterviewPage = () => {
                     </svg>
                     <span className="text-xs text-gray-600">Duration</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-900">180 minutes</p>
+                  <p className="text-sm font-semibold text-gray-900">{TEST_DURATION_MINUTES_CONSTANT} minutes</p>
                 </div>
               </div>
             </div>

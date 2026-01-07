@@ -6,6 +6,7 @@ import Footer from '../../components/Footer';
 import { localStorage as storage } from '../../utils/localStorage';
 import { clearFullscreenExitCount } from '../../hooks/useFullscreenWarning';
 import { startTest } from '../../api/candidate.api';
+import { TIMER_DURATION, TEST_DURATION_MINUTES_CONSTANT } from '../../utils/constants';
 
 const TestReadyPage = () => {
   const { user, logout } = useAuth();
@@ -51,7 +52,7 @@ const TestReadyPage = () => {
       return;
     }
 
-    // Always reset timer to 180 minutes when user clicks "Start Assessment"
+    // Always reset timer when user clicks "Start Assessment"
     // Clear any existing timer first
     console.log('User clicked Start Assessment - Initializing fresh timer...');
     storage.clearTimer();
@@ -65,11 +66,11 @@ const TestReadyPage = () => {
     window.localStorage.setItem('timer_started', 'true');
     console.log('Timer started flag set to true - timer operations are now allowed');
     
-    // Initialize frontend timer to 180 minutes (10800 seconds) - timer starts NOW
+    // Initialize frontend timer - timer starts NOW
     // This happens immediately for instant UI response
-    console.log('Initializing timer to 180 minutes (10800 seconds) starting now...');
-    storage.setTimerEndTime(10800); // 180 minutes = 10800 seconds, timer starts counting down immediately
-    console.log('Timer initialized: Starting with 10800 seconds (180 minutes) at', new Date().toISOString());
+    console.log(`Initializing timer to ${TEST_DURATION_MINUTES_CONSTANT} minutes (${TIMER_DURATION} seconds) starting now...`);
+    storage.setTimerEndTime(TIMER_DURATION); // Timer starts counting down immediately
+    console.log(`Timer initialized: Starting with ${TIMER_DURATION} seconds (${TEST_DURATION_MINUTES_CONSTANT} minutes) at`, new Date().toISOString());
     
     // Reset violation counts for new test session
     console.log('Resetting violation counts for new test session...');
@@ -89,7 +90,7 @@ const TestReadyPage = () => {
     // Start backend test session in the background (fire-and-forget)
     // This will sync with frontend timer when TestOverviewPage loads
     console.log('Starting backend test session in background...');
-    startTest(candidateId, token, 180) // 180 minutes (3 hours) total duration
+    startTest(candidateId, token, TEST_DURATION_MINUTES_CONSTANT) // Test duration from env variable
       .then((startResponse) => {
         console.log('Backend test session started:', startResponse);
         
@@ -121,7 +122,7 @@ const TestReadyPage = () => {
             <h2 className="text-2xl font-bold text-gray-900 mb-6">{user?.jobRole || 'Technical'} Interview</h2>
             <div>
               <p className="text-lg font-bold text-gray-600 mb-1">Test duration</p>
-              <p className="text-xl font-bold text-gray-900">180 mins</p>
+              <p className="text-xl font-bold text-gray-900">{TEST_DURATION_MINUTES_CONSTANT} mins</p>
             </div>
           </div>
         </div>

@@ -227,7 +227,7 @@ const TestCompletedPage = () => {
         {/* Footer Message */}
         <div className="mt-8 text-center">
           <p className="text-lg text-gray-700">
-            Best of luck! We're excited about the possibility of working together. 🚀
+            Best of luck! We're excited about the possibility of working together.
           </p>
         </div>
       </div>

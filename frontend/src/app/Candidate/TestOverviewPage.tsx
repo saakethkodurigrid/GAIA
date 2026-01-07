@@ -13,6 +13,7 @@ import { fetchQuestions } from '../../api/questions.api';
 import { fetchCodingQuestionsFromBackend } from '../../api/coding.api';
 import { createSystemDesignSession } from '../../api/systemDesign.api';
 import { localStorage as storage } from '../../utils/localStorage';
+import { TIMER_DURATION, TEST_DURATION_MINUTES_CONSTANT } from '../../utils/constants';
 
 // Helper functions for localStorage
 const SUBMITTED_SECTIONS_KEY = 'submitted_sections';
@@ -108,7 +109,7 @@ const TestOverviewPage = () => {
     if (stored !== null && stored > 0) {
       return stored;
     }
-    return 10800; // 180 minutes (3 hours) in seconds
+    return TIMER_DURATION; // Test duration in seconds (from env variable)
   };
 
   const [timeRemaining, setTimeRemaining] = useState(getInitialTime());
@@ -130,7 +131,7 @@ const TestOverviewPage = () => {
     }
   }, [user?.candidateId]);
 
-  // Initialize timer on first visit to test-overview (180 minutes = 10800 seconds)
+  // Initialize timer on first visit to test-overview
   // BUT only if timer wasn't just initialized by TestReadyPage AND timer_started flag is set
   useEffect(() => {
     // CRITICAL: Only allow timer operations if timer_started flag is set (i.e., user clicked "Start Assessment")
@@ -170,12 +171,12 @@ const TestOverviewPage = () => {
       storage.clearAllSectionTimings();
       console.log('Section timings reset to 0. Starting fresh test session.');
       
-      // Reset timer to 180 minutes for new test session
-      console.log('Resetting timer to 180 minutes for new test session...');
-      storage.setTimerEndTime(10800); // 180 minutes = 10800 seconds
-      setTimeRemaining(10800);
+      // Reset timer for new test session
+      console.log(`Resetting timer to ${TEST_DURATION_MINUTES_CONSTANT} minutes for new test session...`);
+      storage.setTimerEndTime(TIMER_DURATION);
+      setTimeRemaining(TIMER_DURATION);
       setIsTimerInitialized(true);
-      console.log('Timer initialized: Starting with 10800 seconds (180 minutes)');
+      console.log(`Timer initialized: Starting with ${TIMER_DURATION} seconds (${TEST_DURATION_MINUTES_CONSTANT} minutes)`);
       
       // Reset violation counts for new test session
       console.log('Resetting violation counts for new test session...');
@@ -257,9 +258,9 @@ const TestOverviewPage = () => {
             }
           } else if (!timerJustInitialized && !wasRecentlyInitialized) {
             // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
-            console.log('No timer found in backend or localStorage, resetting to 180 minutes...');
-            storage.setTimerEndTime(10800);
-            setTimeRemaining(10800);
+            console.log(`No timer found in backend or localStorage, resetting to ${TEST_DURATION_MINUTES_CONSTANT} minutes...`);
+            storage.setTimerEndTime(TIMER_DURATION);
+            setTimeRemaining(TIMER_DURATION);
             storage.clearAllSectionTimings();
           }
           setIsTimerInitialized(true);
@@ -281,9 +282,9 @@ const TestOverviewPage = () => {
           }
         } else if (!timerJustInitialized && !wasRecentlyInitialized) {
           // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
-          console.log('No timer found after sync error, resetting to 180 minutes...');
-          storage.setTimerEndTime(10800);
-          setTimeRemaining(10800);
+          console.log(`No timer found after sync error, resetting to ${TEST_DURATION_MINUTES_CONSTANT} minutes...`);
+          storage.setTimerEndTime(TIMER_DURATION);
+          setTimeRemaining(TIMER_DURATION);
           storage.clearAllSectionTimings();
         }
         setIsTimerInitialized(true);
@@ -316,9 +317,9 @@ const TestOverviewPage = () => {
     } else if (!timerJustInitialized && !wasRecentlyInitialized) {
       // Only initialize if timer doesn't exist AND wasn't just set by TestReadyPage
       // If timer was just initialized, wait for it to be set
-      console.log('No timer found in localStorage, resetting to 180 minutes...');
-      storage.setTimerEndTime(10800);
-      setTimeRemaining(10800);
+      console.log(`No timer found in localStorage, resetting to ${TEST_DURATION_MINUTES_CONSTANT} minutes...`);
+      storage.setTimerEndTime(TIMER_DURATION);
+      setTimeRemaining(TIMER_DURATION);
       storage.clearAllSectionTimings();
       setIsTimerInitialized(true);
     }
@@ -448,7 +449,7 @@ const TestOverviewPage = () => {
           const cachedSystemDesign = sessionStorage.getItem(`system_design_session_${candidateId}`);
           if (!cachedSystemDesign) {
             console.log('[PREFETCH] Creating System Design session in background...');
-            const session = await createSystemDesignSession(candidateId);
+            const session = await createSystemDesignSession({}, candidateId);
             sessionStorage.setItem(`system_design_session_${candidateId}`, JSON.stringify(session));
             console.log('[PREFETCH] ✅ System Design session cached');
           } else {

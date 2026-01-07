@@ -7,10 +7,6 @@ interface DesignHeaderProps {
 const DesignHeader = ({ onSubmit }: DesignHeaderProps) => {
   return (
     <header className="w-full max-w-full flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm m-0 flex-shrink-0">
-      <button className="flex items-center gap-2 px-4 py-2 bg-transparent border-none cursor-pointer text-base text-gray-800 hover:text-blue-600 transition-colors">
-        <span className="text-xl">←</span>
-        Back
-      </button>
       <div className="flex items-center gap-3 flex-1 justify-center">
         <span className="text-2xl text-gray-600">&lt;/&gt;</span>
         <h1 className="text-2xl font-semibold text-gray-800">System Design Assessment</h1>

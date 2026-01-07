@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { VideoProvider } from './context/VideoContext';
@@ -300,6 +301,47 @@ function AppRoutes() {
 }
 
 function App() {
+  // Prevent page refresh during test
+  useEffect(() => {
+    const preventRefresh = (e: KeyboardEvent) => {
+      // Prevent F5 (standard refresh)
+      if (e.key === 'F5') {
+        e.preventDefault();
+        console.log('Refresh prevented (F5) - test in progress');
+        return;
+      }
+      
+      // Prevent Ctrl+R or Cmd+R (standard reload)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'r' && !e.shiftKey) {
+        e.preventDefault();
+        console.log('Refresh prevented (Ctrl/Cmd+R) - test in progress');
+        return;
+      }
+      
+      // Prevent Ctrl+Shift+R or Cmd+Shift+R (hard refresh)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        console.log('Hard refresh prevented (Ctrl/Cmd+Shift+R) - test in progress');
+        return;
+      }
+      
+      // Prevent Ctrl+F5 (hard refresh on Windows/Linux)
+      if (e.ctrlKey && e.key === 'F5') {
+        e.preventDefault();
+        console.log('Hard refresh prevented (Ctrl+F5) - test in progress');
+        return;
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('keydown', preventRefresh);
+
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('keydown', preventRefresh);
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <VideoProvider>

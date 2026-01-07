@@ -13,8 +13,7 @@ import {
 import type { SystemDesignContextType, SystemDesignProblem, ChatMessage } from '../types';
 import { getTestStatus } from '../api/candidate.api';
 import { localStorage as storage } from '../utils/localStorage';
-
-const TIMER_DURATION = 180 * 60; // 180 minutes (3 hours)
+import { TIMER_DURATION } from '../utils/constants';
 
 const SystemDesignContext = createContext<SystemDesignContextType | undefined>(undefined);
 
