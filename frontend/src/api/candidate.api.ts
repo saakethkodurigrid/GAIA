@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../utils/config';
+import { logger } from '../utils/logger';
 
 export interface ScheduleTestRequest {
   scheduled_date: string; // ISO format datetime string
@@ -59,7 +60,7 @@ export const scheduleTest = async (
   };
   
   // Log exact payload being sent to backend
-  console.log('Schedule API Payload:', JSON.stringify(requestPayload));
+  logger.log('Schedule API Payload:', JSON.stringify(requestPayload));
   
   const response = await fetch(
     `${API_BASE_URL}/candidate/schedule-test?candidate_id=${encodeURIComponent(candidateId)}`,
@@ -76,12 +77,12 @@ export const scheduleTest = async (
   // Log response
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to schedule test' }));
-    console.log('Schedule API Response:', error);
+    logger.log('Schedule API Response:', error);
     throw new Error(error.detail || 'Failed to schedule test');
   }
 
   const responseData = await response.json();
-  console.log('Schedule API Response:', responseData);
+  logger.log('Schedule API Response:', responseData);
   
   return responseData;
 };
@@ -105,9 +106,9 @@ export const getScheduledDate = async (
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  console.log('=== getScheduledDate API Call ===');
-  console.log('URL:', `${API_BASE_URL}/candidate/${candidateId}/scheduled-date`);
-  console.log('Candidate ID:', candidateId);
+  logger.log('=== getScheduledDate API Call ===');
+  logger.log('URL:', `${API_BASE_URL}/candidate/${candidateId}/scheduled-date`);
+  logger.log('Candidate ID:', candidateId);
   
   const response = await fetch(
     `${API_BASE_URL}/candidate/${candidateId}/scheduled-date`,
@@ -120,19 +121,19 @@ export const getScheduledDate = async (
     }
   );
 
-  console.log('Response Status:', response.status);
-  console.log('Response OK:', response.ok);
-  console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
+  logger.log('Response Status:', response.status);
+  logger.log('Response OK:', response.ok);
+  logger.log('Response Headers:', Object.fromEntries(response.headers.entries()));
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to get scheduled date' }));
-    console.error('API Error Response:', error);
+    logger.error('API Error Response:', error);
     throw new Error(error.detail || 'Failed to get scheduled date');
   }
 
   const responseData = await response.json();
-  console.log('API Success Response:', JSON.stringify(responseData, null, 2));
-  console.log('===============================');
+  logger.log('API Success Response:', JSON.stringify(responseData, null, 2));
+  logger.log('===============================');
   
   return responseData;
 };
@@ -359,10 +360,10 @@ export const completeTest = async (
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  console.log('=== COMPLETE TEST REQUEST ===');
-  console.log('Candidate ID (from localStorage):', finalCandidateId);
-  console.log('Request:', JSON.stringify(request, null, 2));
-  console.log('============================');
+  logger.log('=== COMPLETE TEST REQUEST ===');
+  logger.log('Candidate ID (from localStorage):', finalCandidateId);
+  logger.log('Request:', JSON.stringify(request, null, 2));
+  logger.log('============================');
 
   const response = await fetch(
     `${API_BASE_URL}/candidate/${finalCandidateId}/test/complete`,
@@ -382,9 +383,9 @@ export const completeTest = async (
   }
 
   const data = await response.json();
-  console.log('=== COMPLETE TEST RESPONSE ===');
-  console.log('Response:', JSON.stringify(data, null, 2));
-  console.log('=============================');
+  logger.log('=== COMPLETE TEST RESPONSE ===');
+  logger.log('Response:', JSON.stringify(data, null, 2));
+  logger.log('=============================');
   
   return data;
 };

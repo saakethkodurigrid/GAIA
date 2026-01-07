@@ -1,5 +1,6 @@
 import type { CodingProblem } from '../types';
 import { API_BASE_URL } from '../utils/config';
+import { logger } from '../utils/logger';
 
 // Get auth token helper
 const getAuthToken = (): string | null => {
@@ -467,7 +468,7 @@ export const runCodeExecution = async (
   request: CodeExecutionRequest
 ): Promise<CodeExecutionResponse> => {
   // Console log the request being sent to the API
-  console.log('Code execution API request:', JSON.stringify(request, null, 2));
+  logger.log('Code execution API request:', JSON.stringify(request, null, 2));
   
   const response = await fetch(CODE_EXECUTOR_API_URL, {
     method: 'POST',
@@ -483,7 +484,7 @@ export const runCodeExecution = async (
   }
 
   const data: CodeExecutionResponse = await response.json();
-  console.log('Code execution API response:', JSON.stringify(data, null, 2));
+  logger.log('Code execution API response:', JSON.stringify(data, null, 2));
   return data;
 };
 
@@ -586,9 +587,9 @@ export const fetchCodingQuestionsFromBackend = async (
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  console.log('=== Fetching Coding Questions ===');
-  console.log('Using candidate_id:', finalCandidateId);
-  console.log('================================');
+  logger.log('=== Fetching Coding Questions ===');
+  logger.log('Using candidate_id:', finalCandidateId);
+  logger.log('================================');
 
   const response = await fetch(
     `${API_BASE_URL}/candidate/${finalCandidateId}/coding-questions`,
@@ -607,13 +608,13 @@ export const fetchCodingQuestionsFromBackend = async (
 
   const data: BackendCodingQuestionsResponse = await response.json();
   
-  console.log('=== CODING QUESTIONS RESPONSE FROM BACKEND ===');
-  console.log('Full Response:', JSON.stringify(data, null, 2));
-  console.log('Success:', data.success);
-  console.log('Message:', data.message);
-  console.log('Count:', data.count);
-  console.log('Questions:', data.questions);
-  console.log('==========================================');
+  logger.log('=== CODING QUESTIONS RESPONSE FROM BACKEND ===');
+  logger.log('Full Response:', JSON.stringify(data, null, 2));
+  logger.log('Success:', data.success);
+  logger.log('Message:', data.message);
+  logger.log('Count:', data.count);
+  logger.log('Questions:', data.questions);
+  logger.log('==========================================');
   
   if (!data.success || !data.questions) {
     throw new Error(data.message || 'Failed to fetch coding questions');
@@ -646,10 +647,10 @@ export const runCodeViaBackend = async (
     codeToRun = fixJavaClassName(request.code);
   }
 
-  console.log('=== RUN CODE REQUEST TO BACKEND ===');
-  console.log('Using candidate_id:', finalCandidateId);
-  console.log('Request:', JSON.stringify({ ...request, code: codeToRun }, null, 2));
-  console.log('===================================');
+  logger.log('=== RUN CODE REQUEST TO BACKEND ===');
+  logger.log('Using candidate_id:', finalCandidateId);
+  logger.log('Request:', JSON.stringify({ ...request, code: codeToRun }, null, 2));
+  logger.log('===================================');
 
   // Measure total API call time (frontend to backend and back)
   const apiStartTime = performance.now();
@@ -683,37 +684,37 @@ export const runCodeViaBackend = async (
   const preprocessingTime = data.metadata?.preprocessing_time_ms;
   const postprocessingTime = data.metadata?.postprocessing_time_ms;
   
-  console.log('=== RUN CODE RESPONSE FROM BACKEND ===');
-  console.log('Response:', JSON.stringify(data, null, 2));
-  console.log('=====================================');
-  console.log('⏱️  TIMING INFORMATION:');
-  console.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
+  logger.log('=== RUN CODE RESPONSE FROM BACKEND ===');
+  logger.log('Response:', JSON.stringify(data, null, 2));
+  logger.log('=====================================');
+  logger.log('⏱️  TIMING INFORMATION:');
+  logger.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
   
   if (executionServiceTime) {
-    console.log(`   Execution Service Time: ${executionServiceTime}ms (Backend → Azure → Backend)`);
+    logger.log(`   Execution Service Time: ${executionServiceTime}ms (Backend → Azure → Backend)`);
     
     // Calculate network time (total - all backend processing)
     const backendProcessingTime = (preprocessingTime || 0) + executionServiceTime + (postprocessingTime || 0);
     const networkTime = totalApiTime - backendProcessingTime;
     
-    console.log(`   📊 Backend Processing Breakdown:`);
+    logger.log(`   📊 Backend Processing Breakdown:`);
     if (preprocessingTime) {
-      console.log(`      - Preprocessing (Redis/DB/Formatting): ${preprocessingTime}ms`);
+      logger.log(`      - Preprocessing (Redis/DB/Formatting): ${preprocessingTime}ms`);
     }
-    console.log(`      - Execution Service: ${executionServiceTime}ms`);
+    logger.log(`      - Execution Service: ${executionServiceTime}ms`);
     if (postprocessingTime) {
-      console.log(`      - Postprocessing (Sanitization): ${postprocessingTime}ms`);
+      logger.log(`      - Postprocessing (Sanitization): ${postprocessingTime}ms`);
     }
-    console.log(`      - Total Backend Processing: ${backendProcessingTime.toFixed(2)}ms`);
-    console.log(`   🌐 Network Time (Frontend ↔ Backend): ${networkTime.toFixed(2)}ms`);
+    logger.log(`      - Total Backend Processing: ${backendProcessingTime.toFixed(2)}ms`);
+    logger.log(`   🌐 Network Time (Frontend ↔ Backend): ${networkTime.toFixed(2)}ms`);
     
     if (networkTime < 0) {
-      console.log(`   ⚠️  Note: Negative network time suggests timing measurement overlap or backend processing not fully captured`);
+      logger.log(`   ⚠️  Note: Negative network time suggests timing measurement overlap or backend processing not fully captured`);
     }
   } else {
-    console.log('   Execution Service Time: Not available in response');
+    logger.log('   Execution Service Time: Not available in response');
   }
-  console.log('=====================================');
+  logger.log('=====================================');
   
   return data;
 };
@@ -742,10 +743,10 @@ export const submitCodingAnswer = async (
     codeToSubmit = fixJavaClassName(request.code);
   }
 
-  console.log('=== SUBMIT CODING ANSWER REQUEST TO BACKEND ===');
-  console.log('Using candidate_id:', finalCandidateId);
-  console.log('Request:', JSON.stringify({ ...request, code: codeToSubmit }, null, 2));
-  console.log('==============================================');
+  logger.log('=== SUBMIT CODING ANSWER REQUEST TO BACKEND ===');
+  logger.log('Using candidate_id:', finalCandidateId);
+  logger.log('Request:', JSON.stringify({ ...request, code: codeToSubmit }, null, 2));
+  logger.log('==============================================');
 
   // Measure total API call time (frontend to backend and back)
   const apiStartTime = performance.now();
@@ -774,13 +775,13 @@ export const submitCodingAnswer = async (
   const apiEndTime = performance.now();
   const totalApiTime = apiEndTime - apiStartTime;
   
-  console.log('=== SUBMIT CODING ANSWER RESPONSE FROM BACKEND ===');
-  console.log('Response:', JSON.stringify(data, null, 2));
-  console.log('=================================================');
-  console.log('⏱️  TIMING INFORMATION:');
-  console.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
-  console.log('   Note: Execution service time is logged on backend for submit endpoint');
-  console.log('=================================================');
+  logger.log('=== SUBMIT CODING ANSWER RESPONSE FROM BACKEND ===');
+  logger.log('Response:', JSON.stringify(data, null, 2));
+  logger.log('=================================================');
+  logger.log('⏱️  TIMING INFORMATION:');
+  logger.log(`   Total API Call Time: ${totalApiTime.toFixed(2)}ms (Frontend → Backend → Frontend)`);
+  logger.log('   Note: Execution service time is logged on backend for submit endpoint');
+  logger.log('=================================================');
   
   return data;
 };
@@ -816,9 +817,9 @@ export const finalizeCodingSection = async (
     throw new Error('Authentication token not found. Please login again.');
   }
 
-  console.log('=== FINALIZE CODING SECTION REQUEST ===');
-  console.log('Candidate ID:', finalCandidateId);
-  console.log('=======================================');
+  logger.log('=== FINALIZE CODING SECTION REQUEST ===');
+  logger.log('Candidate ID:', finalCandidateId);
+  logger.log('=======================================');
 
   const response = await fetch(
     `${API_BASE_URL}/candidate/${finalCandidateId}/coding/finalize`,
@@ -838,9 +839,9 @@ export const finalizeCodingSection = async (
 
   const data = await response.json();
   
-  console.log('=== FINALIZE CODING SECTION RESPONSE ===');
-  console.log('Response:', JSON.stringify(data, null, 2));
-  console.log('========================================');
+  logger.log('=== FINALIZE CODING SECTION RESPONSE ===');
+  logger.log('Response:', JSON.stringify(data, null, 2));
+  logger.log('========================================');
   
   return data;
 };

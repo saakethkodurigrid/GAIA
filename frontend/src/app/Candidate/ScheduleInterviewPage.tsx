@@ -21,14 +21,14 @@ const ScheduleInterviewPage = () => {
   // Get user's timezone abbreviation
   const timezoneAbbr = new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop() || 'IST';
 
-  // Helper function to get minimum allowed date/time (1 hour from now)
+  // Helper function to get minimum allowed date/time (30 minutes from now)
   const getMinimumDateTime = useCallback(() => {
     const now = new Date();
-    const minDateTime = new Date(now.getTime() + 60 * 60 * 1000); // Add 1 hour
+    const minDateTime = new Date(now.getTime() + 30 * 60 * 1000); // Add 30 minutes
     return minDateTime;
   }, []);
 
-  // Helper function to check if a date is in the past (or less than 1 hour from now)
+  // Helper function to check if a date is in the past (or less than 30 minutes from now)
   const isDateDisabled = (day: number, month: number, year: number) => {
     const minDateTime = getMinimumDateTime();
     const dateOnly = new Date(year, month, day);
@@ -43,7 +43,7 @@ const ScheduleInterviewPage = () => {
     return false;
   };
 
-  // Helper function to check if a time slot is valid (at least 1 hour from now)
+  // Helper function to check if a time slot is valid (at least 30 minutes from now)
   const isTimeSlotDisabled = (time: string, selectedDate: Date | null) => {
     if (!selectedDate) return false;
     
@@ -64,15 +64,18 @@ const ScheduleInterviewPage = () => {
     const scheduledDateTime = new Date(selectedDate);
     scheduledDateTime.setHours(hour24, parseInt(minutes, 10), 0, 0);
 
-    // Check if the scheduled time is at least 1 hour from now
+    // Check if the scheduled time is at least 30 minutes from now
     return scheduledDateTime < minDateTime;
   };
 
   // Generate time slots (15-minute intervals from 9:00 AM to 5:00 PM)
   const generateTimeSlots = () => {
     const slots = [];
-    for (let hour = 9; hour < 17; hour++) {
+    for (let hour = 9; hour <= 17; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
+        // Only add 5:00 PM, not 5:15, 5:30, 5:45
+        if (hour === 17 && minute > 0) break;
+        
         const time = new Date();
         time.setHours(hour, minute, 0, 0);
         const timeString = time.toLocaleTimeString('en-US', { 
@@ -149,7 +152,7 @@ const ScheduleInterviewPage = () => {
     
     // Check if this time slot is disabled
     if (isTimeSlotDisabled(time, selectedDate)) {
-      setError('Selected time must be at least 1 hour from now');
+      setError('Selected time must be at least 30 minutes from now');
       return;
     }
     
@@ -183,10 +186,10 @@ const ScheduleInterviewPage = () => {
       const scheduledDateTime = new Date(selectedDate);
       scheduledDateTime.setHours(hour24, parseInt(minutes, 10), 0, 0);
 
-      // Final validation: ensure scheduled time is at least 1 hour from now
+      // Final validation: ensure scheduled time is at least 30 minutes from now
       const minDateTime = getMinimumDateTime();
       if (scheduledDateTime < minDateTime) {
-        setError('Selected date and time must be at least 1 hour from now');
+        setError('Selected date and time must be at least 30 minutes from now');
         setIsLoading(false);
         return;
       }

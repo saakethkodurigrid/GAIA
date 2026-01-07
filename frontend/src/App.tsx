@@ -342,6 +342,70 @@ function App() {
     };
   }, []);
 
+  // Prevent right-click, F12, and developer tools access
+  useEffect(() => {
+    // Prevent right-click context menu
+    const preventContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    // Prevent developer tools shortcuts
+    const preventDevTools = (e: KeyboardEvent) => {
+      // Prevent F12 (DevTools)
+      if (e.key === 'F12') {
+        e.preventDefault();
+        console.log('Developer tools prevented (F12)');
+        return false;
+      }
+
+      // Prevent Ctrl+Shift+I (DevTools)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') {
+        e.preventDefault();
+        console.log('Developer tools prevented (Ctrl+Shift+I)');
+        return false;
+      }
+
+      // Prevent Ctrl+Shift+J (Console)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'J') {
+        e.preventDefault();
+        console.log('Console prevented (Ctrl+Shift+J)');
+        return false;
+      }
+
+      // Prevent Ctrl+Shift+C (Inspect Element)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        console.log('Inspect element prevented (Ctrl+Shift+C)');
+        return false;
+      }
+
+      // Prevent Ctrl+U (View Source)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+        e.preventDefault();
+        console.log('View source prevented (Ctrl+U)');
+        return false;
+      }
+
+      // Prevent Ctrl+S (Save Page)
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        console.log('Save page prevented (Ctrl+S)');
+        return false;
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener('contextmenu', preventContextMenu);
+    window.addEventListener('keydown', preventDevTools);
+
+    // Cleanup on unmount
+    return () => {
+      document.removeEventListener('contextmenu', preventContextMenu);
+      window.removeEventListener('keydown', preventDevTools);
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <VideoProvider>

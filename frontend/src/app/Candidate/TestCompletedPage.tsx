@@ -94,7 +94,32 @@ const TestCompletedPage = () => {
     logout();
   };
 
-  const handleClose = () => {
+  const exitFullscreen = async () => {
+    try {
+      const doc = document as Document & {
+        webkitExitFullscreen?: () => Promise<void>;
+        mozCancelFullScreen?: () => Promise<void>;
+        msExitFullscreen?: () => Promise<void>;
+      };
+      
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        await doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        await doc.mozCancelFullScreen();
+      } else if (doc.msExitFullscreen) {
+        await doc.msExitFullscreen();
+      }
+    } catch (error) {
+      console.error('Error exiting fullscreen:', error);
+    }
+  };
+
+  const handleClose = async () => {
+    // Exit fullscreen first
+    await exitFullscreen();
+    
     // Clear any error states before navigating
     localStorage.removeItem('login_error');
     

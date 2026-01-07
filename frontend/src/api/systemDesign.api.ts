@@ -58,7 +58,7 @@ export const createSession = async (request?: Partial<SessionCreateRequest>, can
   }
 
   const data = await response.json();
-  console.log('[createSession] System Design Question from Backend:', {
+  logger.log('[createSession] System Design Question from Backend:', {
     question_text: data.question_text,
     question_uuid: data.question_uuid,
     full_response: data
@@ -290,7 +290,7 @@ export const createProactivePromptsStream = (
                 onError?.(new Error(data.error));
               }
             } catch (error) {
-              console.error('Error parsing SSE message:', error, 'Content:', dataContent);
+              logger.error('Error parsing SSE message:', error, 'Content:', dataContent);
               onError?.(error as Error);
             }
           }
@@ -302,7 +302,7 @@ export const createProactivePromptsStream = (
         // Clean abort, don't treat as error
         return;
       }
-      console.error('SSE connection error:', error);
+      logger.error('SSE connection error:', error);
       onError?.(error);
     });
 
@@ -421,7 +421,7 @@ export const getAssignedQuestion = async (candidateId?: string): Promise<Assigne
     throw new Error('Candidate ID is required. Please access the page using the invitation link.');
   }
 
-  console.log('[getAssignedQuestion] Using candidate_id:', finalCandidateId);
+  logger.log('[getAssignedQuestion] Using candidate_id:', finalCandidateId);
 
   const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/system-design-questions`, {
     method: 'GET',
@@ -432,7 +432,7 @@ export const getAssignedQuestion = async (candidateId?: string): Promise<Assigne
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Failed to fetch assigned question' }));
-    console.error('[getAssignedQuestion] API Error:', {
+    logger.error('[getAssignedQuestion] API Error:', {
       status: response.status,
       statusText: response.statusText,
       error: error
@@ -441,7 +441,7 @@ export const getAssignedQuestion = async (candidateId?: string): Promise<Assigne
   }
 
   const data = await response.json();
-  console.log('[getAssignedQuestion] API Response:', {
+  logger.log('[getAssignedQuestion] API Response:', {
     candidateId: finalCandidateId,
     response: data
   });

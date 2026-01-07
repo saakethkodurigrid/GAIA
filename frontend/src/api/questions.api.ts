@@ -1,6 +1,7 @@
 import { MOCK_QUESTIONS } from '../utils/constants';
 import type { Question } from '../types';
 import { API_BASE_URL } from '../utils/config';
+import { logger } from '../utils/logger';
 
 // Get auth token from localStorage
 const getAuthToken = (): string | null => {
@@ -39,9 +40,9 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
         throw new Error('Authentication token not found');
       }
 
-      console.log('=== Fetching MCQ Questions ===');
-      console.log('Using candidate_id:', finalCandidateId);
-      console.log('==============================');
+      logger.log('=== Fetching MCQ Questions ===');
+      logger.log('Using candidate_id:', finalCandidateId);
+      logger.log('==============================');
 
       const response = await fetch(`${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions`, {
         method: 'GET',
@@ -57,13 +58,13 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
 
       const data: MCQQuestionsResponse = await response.json();
       
-      console.log('=== MCQ QUESTIONS RESPONSE FROM BACKEND ===');
-      console.log('Full Response:', JSON.stringify(data, null, 2));
-      console.log('Success:', data.success);
-      console.log('Message:', data.message);
-      console.log('Count:', data.count);
-      console.log('Questions:', data.questions);
-      console.log('==========================================');
+      logger.log('=== MCQ QUESTIONS RESPONSE FROM BACKEND ===');
+      logger.log('Full Response:', JSON.stringify(data, null, 2));
+      logger.log('Success:', data.success);
+      logger.log('Message:', data.message);
+      logger.log('Count:', data.count);
+      logger.log('Questions:', data.questions);
+      logger.log('==========================================');
       
       if (!data.success || !data.questions) {
         throw new Error(data.message || 'Failed to fetch questions');
@@ -82,17 +83,17 @@ export const fetchQuestions = async (candidateId?: string): Promise<Question[]> 
         correctAnswer: -1, // Backend doesn't provide correct answer
       }));
 
-      console.log('=== SUCCESSFULLY MAPPED QUESTIONS ===');
-      console.log('Mapped questions count:', mappedQuestions.length);
-      console.log('First mapped question:', mappedQuestions[0]);
-      console.log('All have question_uuid?', mappedQuestions.every(q => q.question_uuid));
-      console.log('===================================');
+      logger.log('=== SUCCESSFULLY MAPPED QUESTIONS ===');
+      logger.log('Mapped questions count:', mappedQuestions.length);
+      logger.log('First mapped question:', mappedQuestions[0]);
+      logger.log('All have question_uuid?', mappedQuestions.every(q => q.question_uuid));
+      logger.log('===================================');
       
       return mappedQuestions;
     } catch (error) {
-      console.error('❌ ERROR fetching questions from backend:', error);
-      console.warn('⚠️ FALLING BACK TO MOCK_QUESTIONS - THESE WILL NOT HAVE question_uuid!');
-      console.warn('⚠️ SUBMISSION WILL FAIL WITH MOCK DATA!');
+      logger.error('❌ ERROR fetching questions from backend:', error);
+      logger.warn('⚠️ FALLING BACK TO MOCK_QUESTIONS - THESE WILL NOT HAVE question_uuid!');
+      logger.warn('⚠️ SUBMISSION WILL FAIL WITH MOCK DATA!');
       // Fallback to mock data on error
       return MOCK_QUESTIONS;
     }
@@ -149,8 +150,8 @@ export const autosaveAssessment = async (
   }
 
   // DEBUG: Log what we received for autosave
-  console.log('[AUTOSAVE] answers object:', Object.keys(answers).length, 'keys');
-  console.log('[AUTOSAVE] questions array:', questions.length, 'questions');
+  logger.log('[AUTOSAVE] answers object:', Object.keys(answers).length, 'keys');
+  logger.log('[AUTOSAVE] questions array:', questions.length, 'questions');
   
   // Convert frontend answers format to backend format
   const answerItems: MCQAnswerItem[] = questions
@@ -168,7 +169,7 @@ export const autosaveAssessment = async (
       };
     });
 
-  console.log('[AUTOSAVE] Prepared', answerItems.length, 'answers for autosave');
+  logger.log('[AUTOSAVE] Prepared', answerItems.length, 'answers for autosave');
 
   const requestBody = {
     answers: answerItems,
@@ -188,13 +189,13 @@ export const autosaveAssessment = async (
   )
     .then((response) => {
       if (!response.ok) {
-        console.warn('Autosave failed:', response.status);
+        logger.warn('Autosave failed:', response.status);
       } else {
-        console.log('Autosave successful');
+        logger.log('Autosave successful');
       }
     })
     .catch((error) => {
-      console.warn('Autosave error (non-blocking):', error);
+      logger.warn('Autosave error (non-blocking):', error);
     });
 
   // Return immediately with success (fire-and-forget)
@@ -223,20 +224,20 @@ export const submitAssessment = async (
   }
 
   // DEBUG: Log what we received
-  console.log('=== submitAssessment DEBUG ===');
-  console.log('Received answers object:', answers);
-  console.log('Received questions array length:', questions.length);
-  console.log('First question sample:', questions[0]);
-  console.log('============================');
+  logger.log('=== submitAssessment DEBUG ===');
+  logger.log('Received answers object:', answers);
+  logger.log('Received questions array length:', questions.length);
+  logger.log('First question sample:', questions[0]);
+  logger.log('============================');
 
   // CRITICAL CHECK: Verify questions have question_uuid
   const questionsWithoutUuid = questions.filter(q => !q.question_uuid);
   if (questionsWithoutUuid.length > 0) {
-    console.error('❌ CRITICAL ERROR: Questions missing question_uuid!');
-    console.error(`${questionsWithoutUuid.length} out of ${questions.length} questions don't have question_uuid`);
-    console.error('First question without UUID:', questionsWithoutUuid[0]);
-    console.error('This means questions were likely loaded from MOCK_QUESTIONS or backend is not returning question_uuid');
-    console.error('SUBMISSION WILL FAIL!');
+    logger.error('❌ CRITICAL ERROR: Questions missing question_uuid!');
+    logger.error(`${questionsWithoutUuid.length} out of ${questions.length} questions don't have question_uuid`);
+    logger.error('First question without UUID:', questionsWithoutUuid[0]);
+    logger.error('This means questions were likely loaded from MOCK_QUESTIONS or backend is not returning question_uuid');
+    logger.error('SUBMISSION WILL FAIL!');
   }
 
   // Convert frontend answers format to backend format
@@ -249,7 +250,7 @@ export const submitAssessment = async (
       
       // DEBUG: Log filtering decision for each question
       if (!hasAnswer || !hasUuid) {
-        console.log(`Question ${q.id} filtered out: hasAnswer=${hasAnswer} (value=${answer}), hasUuid=${hasUuid}`);
+        logger.log(`Question ${q.id} filtered out: hasAnswer=${hasAnswer} (value=${answer}), hasUuid=${hasUuid}`);
       }
       
       return hasAnswer && hasUuid;
@@ -261,7 +262,7 @@ export const submitAssessment = async (
         question_uuid: q.question_uuid!,
         candidate_answer: String(answer + 1), // Add 1 to convert from 0-based to 1-based
       };
-      console.log(`Mapping Q${q.id}: answer=${answer} -> candidate_answer=${mapped.candidate_answer}, uuid=${mapped.question_uuid}`);
+      logger.log(`Mapping Q${q.id}: answer=${answer} -> candidate_answer=${mapped.candidate_answer}, uuid=${mapped.question_uuid}`);
       return mapped;
     });
 
@@ -270,12 +271,12 @@ export const submitAssessment = async (
   };
 
   // Log request body being sent to backend
-  console.log('=== MCQ SUBMISSION REQUEST (FRONTEND) ===');
-  console.log('Using candidate_id:', finalCandidateId);
-  console.log('URL:', `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/submit`);
-  console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-  console.log('Number of answers:', answerItems.length);
-  console.log('==========================================');
+  logger.log('=== MCQ SUBMISSION REQUEST (FRONTEND) ===');
+  logger.log('Using candidate_id:', finalCandidateId);
+  logger.log('URL:', `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/submit`);
+  logger.log('Request Body:', JSON.stringify(requestBody, null, 2));
+  logger.log('Number of answers:', answerItems.length);
+  logger.log('==========================================');
 
   const response = await fetch(
     `${API_BASE_URL}/candidate/${finalCandidateId}/mcq-questions/submit`,

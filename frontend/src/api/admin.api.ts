@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../utils/config';
+import { logger } from '../utils/logger';
 
 // Type for API errors with status code
 interface ApiError extends Error {
@@ -234,15 +235,15 @@ export const getInterviewAnalysis = async (candidateId: string): Promise<Intervi
 
   // Get raw response text first to log exact backend response
   const responseText = await response.text();
-  console.log('=== RAW BACKEND RESPONSE (interview-analysis) ===');
-  console.log('Response Text:', responseText);
-  console.log('================================================');
+  logger.log('=== RAW BACKEND RESPONSE (interview-analysis) ===');
+  logger.log('Response Text:', responseText);
+  logger.log('================================================');
   
   // Parse and return JSON
   const jsonData = JSON.parse(responseText);
-  console.log('=== PARSED JSON RESPONSE (interview-analysis) ===');
-  console.log('Full Response Object:', JSON.stringify(jsonData, null, 2));
-  console.log('================================================');
+  logger.log('=== PARSED JSON RESPONSE (interview-analysis) ===');
+  logger.log('Full Response Object:', JSON.stringify(jsonData, null, 2));
+  logger.log('================================================');
   
   return jsonData;
 };
